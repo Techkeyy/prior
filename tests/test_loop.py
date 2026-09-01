@@ -23,7 +23,9 @@ def test_full_learning_loop_with_labelled_local_provider(monkeypatch):
     hired = service.hire("ws_loop", first.id)
     assert hired.status == "delivered"
     assert hired.provider["source"] == LOCAL_SOURCE
-    assert hired.provider["name"] == "LOCAL PROVIDER"
+    assert hired.provider["name"] == "PRIOR Local Research Agent"
+    assert hired.provider["network"] == "Local"
+    assert hired.worker_requirement["learned_requirements"] == []
     assert hired.acp_job_id is None
     rejected = service.reject("ws_loop", first.id, "Important factual claims should include source links.")
     assert rejected.proposed_lesson
@@ -36,6 +38,9 @@ def test_full_learning_loop_with_labelled_local_provider(monkeypatch):
     assert second.contract.baseline is False
     assert any("source" in item.lower() for item in second.contract.acceptance)
     assert second.contract.applied_lessons[0].id == lessons[0].id
+    hired2 = service.hire("ws_loop", second.id)
+    assert lessons[0].requirement in hired2.worker_requirement["learned_requirements"]
+    assert lessons[0].requirement in hired2.worker_requirement["acceptance"]
 
 
 def test_ignore_does_not_write_policy(monkeypatch):

@@ -58,6 +58,7 @@ def requirement_payload(contract: Contract, spec: JobSpec) -> dict[str, Any]:
         "deliverables": contract.deliverables,
         "acceptance": contract.acceptance,
         "applied_lessons": [lesson.to_dict() for lesson in contract.applied_lessons],
+        "learned_requirements": [lesson.requirement for lesson in contract.applied_lessons],
         "raw": spec.raw,
         "subject": spec.subject,
         "domain": spec.domain,

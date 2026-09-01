@@ -57,8 +57,16 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
     )
 
     for finding in findings:
-        if requires_sources and not finding.get("sources"):
-            finding["warning"] = "No source URL was available for this item."
+        if requires_sources:
+            finding["citations"] = list(finding.get("sources") or [])
+            if not finding["citations"]:
+                finding["warning"] = "No source URL was available for this item."
+            else:
+                finding["summary"] = (
+                    (finding.get("summary") or "")
+                    + " Source: "
+                    + finding["citations"][0].get("url", "")
+                ).strip()
         if requires_recent:
             finding["retrieved_at"] = retrieved_at
 

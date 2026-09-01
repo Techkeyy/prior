@@ -33,7 +33,7 @@ Fresh-session proof (two OS processes, different PIDs): [`scripts/run_sibyl_kill
 1. **Normalizes** a research request into a job spec ([`src/prior/job_spec.py`](src/prior/job_spec.py)).
 2. **Recalls** workspace-scoped lessons from Sibyl before hiring.
 3. **Writes a contract** whose acceptance list includes those lessons.
-4. **Hires** through a `ResearchProvider`. Virtuals ACP v2 when credentials exist. Otherwise LOCAL PROVIDER if explicitly enabled. LOCAL PROVIDER is never labelled as Virtuals.
+4. **Hires** through a `ResearchProvider`. Development mode shows Provider: PRIOR Local Research Agent, Network: Local. ACP mode shows the actual Virtuals provider and Network: Virtuals ACP. No fake ACP badge.
 5. **Shows the real deliverable.** The user accepts or rejects.
 6. **Proposes a reusable lesson** from the rejection reason. Nothing becomes policy until the user adds it.
 7. **Writes the approved lesson to Sibyl.** A new process can recall it.
@@ -96,7 +96,7 @@ Workspace identity is a cookie (`ws_...`) used as the Sibyl tenant. That is isol
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-21 tests covering job normalization, lesson applicability, workspace scoping, contracts with and without memory, approved persistence, fresh-process Sibyl recall, malicious payloads, duplicates, and honest ACP failure.
+`pytest -q` covers job normalization, lesson applicability, workspace scoping, contracts with and without memory, approved persistence, fresh-process Sibyl recall, malicious payloads, duplicates, honest ACP failure, provider labels, and passing Sibyl-derived requirements into the worker payload.
 
 ## Prior Work
 

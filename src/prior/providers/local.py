@@ -9,7 +9,8 @@ from prior.providers.base import ProviderError, ProviderJob, requirement_payload
 from prior.research import run_research
 
 LOCAL_SOURCE = "local-development"
-LOCAL_NAME = "LOCAL PROVIDER"
+LOCAL_NAME = "PRIOR Local Research Agent"
+LOCAL_NETWORK = "Local"
 LOCAL_SUMMARY = "Development provider. Runs research on this machine. Not Virtuals."
 
 
@@ -24,6 +25,7 @@ class LocalResearchProvider:
                 summary=LOCAL_SUMMARY,
                 price_label="no onchain payment",
                 source=LOCAL_SOURCE,
+                network=LOCAL_NETWORK,
             )
         ]
 

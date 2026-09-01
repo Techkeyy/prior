@@ -156,6 +156,7 @@ class AgentOffer:
     summary: str
     price_label: str
     source: str
+    network: str
     wallet_address: str | None = None
     offering_name: str | None = None
 
@@ -166,6 +167,7 @@ class AgentOffer:
             "summary": self.summary,
             "price_label": self.price_label,
             "source": self.source,
+            "network": self.network,
             "wallet_address": self.wallet_address,
             "offering_name": self.offering_name,
         }
@@ -188,6 +190,8 @@ class JobRecord:
     rejection_reason: str | None = None
     proposed_lesson: dict[str, Any] | None = None
     error: str | None = None
+    worker_requirement: dict[str, Any] | None = None
+    tx_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -206,6 +210,8 @@ class JobRecord:
             "rejection_reason": self.rejection_reason,
             "proposed_lesson": self.proposed_lesson,
             "error": self.error,
+            "worker_requirement": self.worker_requirement,
+            "tx_hash": self.tx_hash,
         }
 
     @classmethod
@@ -226,4 +232,6 @@ class JobRecord:
             rejection_reason=data.get("rejection_reason"),
             proposed_lesson=data.get("proposed_lesson"),
             error=data.get("error"),
+            worker_requirement=data.get("worker_requirement"),
+            tx_hash=data.get("tx_hash"),
         )

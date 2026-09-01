@@ -130,13 +130,41 @@ def memory(request: Request, response: Response) -> dict:
     return service.memory_view(workspace_id)
 
 
+@app.post("/api/memory/{lesson_id}/disable")
+def disable_memory(lesson_id: str, request: Request, response: Response) -> dict:
+    workspace_id = _workspace(request, response)
+    try:
+        return service.retire_lesson(workspace_id, lesson_id)
+    except MemoryUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.get("/api/workspace")
 def workspace(request: Request, response: Response) -> dict:
     workspace_id = _workspace(request, response)
+    local = local_provider_enabled() and not acp_enabled()
+    virtuals = acp_enabled()
+    if virtuals:
+        hire_mode = "virtuals"
+        provider_name = None
+        network = "Virtuals ACP"
+    elif local:
+        hire_mode = "local"
+        provider_name = "PRIOR Local Research Agent"
+        network = "Local"
+    else:
+        hire_mode = "none"
+        provider_name = None
+        network = None
     return {
         "workspace_id": workspace_id,
-        "local_provider": local_provider_enabled() and not acp_enabled(),
-        "acp_enabled": acp_enabled(),
+        "hire_mode": hire_mode,
+        "provider_name": provider_name,
+        "network": network,
+        "local_provider": local,
+        "acp_enabled": virtuals,
         "virtuals_credentials_missing": missing_virtuals_credentials(),
         "memory_unavailable_copy": MEMORY_UNAVAILABLE,
     }

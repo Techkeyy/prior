@@ -1,0 +1,44 @@
+{
+  "pass": true,
+  "process_a": {
+    "ok": true,
+    "pid": 16860,
+    "lesson_id": "L_fresh_prior"
+  },
+  "process_b": {
+    "ok": true,
+    "pid": 16692,
+    "baseline": false,
+    "acceptance": [
+      "Cover the requested subject with the named deliverables.",
+      "Separate facts from speculation.",
+      "Material factual claims must include identifiable source links."
+    ],
+    "applied": [
+      {
+        "id": "L_fresh_prior",
+        "workspace_id": "ws_fresh_prior",
+        "job_type": "research",
+        "issue": "Unsupported factual claims",
+        "requirement": "Material factual claims must include identifiable source links.",
+        "reason": "Approved in process A.",
+        "source_job_id": "job_fresh_a",
+        "originating_evaluation": null,
+        "status": "active",
+        "provenance": "user-approved",
+        "created_at": "2026-09-01T23:43:34+00:00",
+        "domains": [
+          "decentralized exchanges"
+        ],
+        "keywords": [
+          "exchanges",
+          "sources",
+          "research"
+        ],
+        "match_reason": "Domain overlap: decentralized exchanges."
+      }
+    ],
+    "memory_status": "ok"
+  },
+  "contract_changed": true
+}

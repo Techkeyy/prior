@@ -87,6 +87,7 @@ button.secondary, a.btn.secondary {
   display: inline-block;
 }
 button:disabled { opacity: 0.5; cursor: wait; }
+label { display: block; margin-bottom: 8px; }
 .row { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 
 .panel {

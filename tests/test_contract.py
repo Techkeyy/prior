@@ -1,6 +1,7 @@
 from prior.contract import build_contract
 from prior.domain import JobSpec, Lesson, SUPPORTED_JOB_TYPE
 from prior.job_spec import parse_job
+from prior.providers.base import requirement_payload
 
 
 def test_contract_without_memory_is_baseline():
@@ -26,6 +27,9 @@ def test_contract_with_memory_adds_requirement():
     assert contract.baseline is False
     assert lesson.requirement in contract.acceptance
     assert contract.applied_lessons[0].id == "L_1"
+    payload = requirement_payload(contract, spec)
+    assert lesson.requirement in payload["learned_requirements"]
+    assert lesson.requirement in payload["acceptance"]
 
 
 def test_unsupported_spec_has_empty_contract():

@@ -37,3 +37,6 @@ def test_user_scoping(tmp_path, monkeypatch):
     assert [item.id for item in bob] == ["L_bob"]
     assert tenant_cannot_see("ws_alice", "L_bob") is True
     assert tenant_cannot_see("ws_bob", "L_alice") is True
+    from prior.memory import disable_lesson, list_lessons as list_again
+    disable_lesson("ws_alice", "L_alice")
+    assert list_again("ws_alice")[0].status == "disabled"

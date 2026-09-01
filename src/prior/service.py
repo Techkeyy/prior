@@ -13,6 +13,7 @@ from prior.lessons import applicable_lessons, is_duplicate, now_iso, propose_les
 from prior.memory import (
     MEMORY_UNAVAILABLE,
     MemoryUnavailable,
+    disable_lesson,
     list_lessons,
     open_memory,
     recall_lessons,
@@ -168,12 +169,18 @@ def memory_view(workspace_id: str) -> dict[str, Any]:
     try:
         lessons = list_lessons(workspace_id)
     except MemoryUnavailable as exc:
-        return {"status": "unavailable", "message": str(exc), "lessons": []}
+        return {"status": "unavailable", "message": str(exc), "lessons": [], "jobs": []}
     return {
         "status": "ok",
         "lessons": [lesson.to_dict() for lesson in lessons],
-        "count": len(lessons),
+        "count": len([item for item in lessons if item.status == "active"]),
+        "jobs": [record.to_dict() for record in jobs.list_for(workspace_id)[:20]],
     }
+
+
+def retire_lesson(workspace_id: str, lesson_id: str) -> dict[str, Any]:
+    disable_lesson(workspace_id, lesson_id)
+    return memory_view(workspace_id)
 
 
 def _owned(workspace_id: str, job_id: str) -> JobRecord:
@@ -187,6 +194,9 @@ def _apply_provider_job(record: JobRecord, started: ProviderJob) -> JobRecord:
     record.provider = started.offer.to_dict()
     record.acp_job_id = started.acp_job_id
     record.acp_phase = started.phase
+    record.worker_requirement = started.requirement
+    if started.extra.get("txHash"):
+        record.tx_hash = str(started.extra["txHash"])
     if started.deliverable:
         record.deliverable = started.deliverable
         record.status = "delivered"
@@ -209,6 +219,7 @@ def _record_to_provider_job(record: JobRecord) -> ProviderJob:
         summary=str(offer_data.get("summary") or ""),
         price_label=str(offer_data.get("price_label") or ""),
         source=str(offer_data.get("source") or ""),
+        network=str(offer_data.get("network") or ""),
         wallet_address=offer_data.get("wallet_address"),
         offering_name=offer_data.get("offering_name"),
     )

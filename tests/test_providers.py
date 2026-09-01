@@ -12,6 +12,7 @@ def test_local_provider_is_labelled_local_not_virtuals(monkeypatch):
     assert isinstance(provider, LocalResearchProvider)
     offers = provider.find_providers(parse_job("Research the top five AI wallet companies."))
     assert offers[0].name == LOCAL_NAME
+    assert offers[0].network == "Local"
     assert offers[0].source == LOCAL_SOURCE
     assert "virtuals" not in offers[0].name.lower()
     assert "virtuals" not in offers[0].summary.lower() or "not virtuals" in offers[0].summary.lower()

@@ -41,6 +41,7 @@ class VirtualsAcpProvider:
                     summary=str(item.get("description") or item.get("offeringName") or ""),
                     price_label=str(item.get("price") if item.get("price") is not None else ""),
                     source=VIRTUALS_SOURCE,
+                    network="Virtuals ACP",
                     wallet_address=item.get("walletAddress"),
                     offering_name=item.get("offeringName"),
                 )
