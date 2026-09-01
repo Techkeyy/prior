@@ -1,0 +1,25 @@
+{
+  "pid": 2832,
+  "db": "C:\\Users\\HomePC\\Desktop\\prior\\data\\sibyl-kill-test.db",
+  "tenant": "ws_killtest_alice",
+  "recalled_name": "L_killtest_sources",
+  "recalled_requirement": "Material factual claims must include identifiable source links.",
+  "recalled_workspace": "ws_killtest_alice",
+  "search_hit_names": [
+    "L_killtest_sources"
+  ],
+  "alice_cannot_read_bob": true,
+  "alice_leak_error": "entity lesson/L_killtest_bob_only not found for tenant ws_killtest_alice",
+  "bob_requirement": "Bob-only rule that Alice must never see.",
+  "baseline_acceptance": [
+    "Cover the requested subjects.",
+    "Include names, products, pricing, strengths, and weaknesses."
+  ],
+  "memory_mutated_acceptance": [
+    "Cover the requested subjects.",
+    "Include names, products, pricing, strengths, and weaknesses.",
+    "Material factual claims must include identifiable source links."
+  ],
+  "contract_changed": true,
+  "process_a_pid": 2560
+}
