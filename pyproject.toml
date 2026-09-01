@@ -21,8 +21,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-acp = ["virtuals-acp"]
-web3 = ["web3"]
 
 [project.scripts]
 prior = "prior.cli:main"
@@ -34,3 +32,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "--basetemp=C:/Users/HomePC/Desktop/prior/.pytest-tmp"
