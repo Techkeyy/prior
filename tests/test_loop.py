@@ -1,15 +1,9 @@
-from prior import acp, service
-from prior.lessons import is_duplicate
-from prior.memory import list_lessons, recall_lessons
-from prior.job_spec import parse_job
-from prior.lessons import applicable_lessons
-from prior.contract import build_contract
+from prior import service
+from prior.memory import list_lessons
+from prior.providers.local import LOCAL_SOURCE, LocalResearchProvider
 
 
 def test_full_learning_loop_with_labelled_local_provider(monkeypatch):
-    monkeypatch.setattr(acp, "acp_ready", lambda: False)
-    monkeypatch.setattr(acp, "local_provider_enabled", lambda: True)
-
     def fake_research(spec, contract):
         return {
             "type": "object",
@@ -21,13 +15,15 @@ def test_full_learning_loop_with_labelled_local_provider(monkeypatch):
             },
         }
 
-    monkeypatch.setattr(service, "run_research", fake_research)
+    monkeypatch.setattr("prior.providers.local.run_research", fake_research)
+    monkeypatch.setattr(service, "active_provider", lambda: LocalResearchProvider())
 
     first = service.specify("ws_loop", "Research the top five AI wallet companies.")
     assert first.contract.baseline is True
     hired = service.hire("ws_loop", first.id)
     assert hired.status == "delivered"
-    assert hired.provider["source"] == "local-development"
+    assert hired.provider["source"] == LOCAL_SOURCE
+    assert hired.provider["name"] == "LOCAL PROVIDER"
     assert hired.acp_job_id is None
     rejected = service.reject("ws_loop", first.id, "Important factual claims should include source links.")
     assert rejected.proposed_lesson
@@ -43,13 +39,11 @@ def test_full_learning_loop_with_labelled_local_provider(monkeypatch):
 
 
 def test_ignore_does_not_write_policy(monkeypatch):
-    monkeypatch.setattr(acp, "acp_ready", lambda: False)
-    monkeypatch.setattr(acp, "local_provider_enabled", lambda: True)
     monkeypatch.setattr(
-        service,
-        "run_research",
+        "prior.providers.local.run_research",
         lambda spec, contract: {"type": "object", "value": {"findings": []}},
     )
+    monkeypatch.setattr(service, "active_provider", lambda: LocalResearchProvider())
     first = service.specify("ws_ignore", "Research the top five AI wallet companies.")
     service.hire("ws_ignore", first.id)
     service.reject("ws_ignore", first.id, "Pricing was missing.")

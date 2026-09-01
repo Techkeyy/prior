@@ -94,14 +94,24 @@ function renderContract(job) {
   `);
 }
 
+function providerLabel(job) {
+  const source = job.provider && job.provider.source;
+  if (source === "local-development") {
+    return `<p class="kicker">LOCAL PROVIDER</p><p class="warn">Development provider. This is not Virtuals.</p>`;
+  }
+  if (source === "virtuals-acp") {
+    return `<p class="kicker">Virtuals ACP</p>${job.acp_job_id ? `<p class="meta">ACP job ${escapeHtml(job.acp_job_id)}</p>` : ""}`;
+  }
+  return `<p class="meta">Provider: ${escapeHtml((job.provider && job.provider.name) || "unknown")}</p>`;
+}
+
 function renderProgress(job) {
   shell(`
     <h1>Working</h1>
     <div class="panel">
-      <p>Provider: ${escapeHtml((job.provider && job.provider.name) || "unknown")}</p>
-      <p class="meta">Source: ${escapeHtml((job.provider && job.provider.source) || "")}</p>
+      ${providerLabel(job)}
+      <p>${escapeHtml((job.provider && job.provider.summary) || (job.provider && job.provider.name) || "")}</p>
       <p class="meta">Phase: ${escapeHtml(job.acp_phase || job.status)}</p>
-      ${job.acp_job_id ? `<p class="meta">ACP job ${escapeHtml(job.acp_job_id)}</p>` : `<p class="warn">Not a Virtuals ACP job.</p>`}
     </div>
   `);
   poll(job.id);
@@ -112,6 +122,7 @@ function renderDeliverable(job) {
   const findings = value.findings || [];
   shell(`
     <p class="kicker">Deliverable</p>
+    ${providerLabel(job)}
     <h1>${escapeHtml(value.title || job.contract.title)}</h1>
     <p class="meta">Retrieved ${escapeHtml(value.retrieved_at || "")}</p>
     ${(value.honored_requirements || []).length ? `<div class="panel"><p class="kicker">Requirements the worker received</p><ul>${value.honored_requirements.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul></div>` : ""}

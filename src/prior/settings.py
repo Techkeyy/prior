@@ -11,6 +11,17 @@ load_dotenv(ROOT / ".env")
 DATA_DIR = ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+BUYER_CREDENTIAL_NAMES = (
+    "BUYER_WALLET_ADDRESS",
+    "BUYER_WALLET_ID",
+    "BUYER_SIGNER_PRIVATE_KEY",
+)
+SELLER_CREDENTIAL_NAMES = (
+    "SELLER_WALLET_ADDRESS",
+    "SELLER_WALLET_ID",
+    "SELLER_SIGNER_PRIVATE_KEY",
+)
+
 
 def memory_db_path() -> Path:
     raw = os.getenv("PRIOR_MEMORY_DB", str(DATA_DIR / "sibyl-memory.db"))
@@ -22,8 +33,7 @@ def memory_db_path() -> Path:
 
 
 def jobs_path() -> Path:
-    path = DATA_DIR / "jobs.json"
-    return path
+    return DATA_DIR / "jobs.json"
 
 
 def host() -> str:
@@ -47,25 +57,33 @@ def acp_enabled() -> bool:
     return os.getenv("ACP_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _present(name: str) -> bool:
+    value = os.getenv(name)
+    return bool(value and value.strip())
+
+
 def acp_env() -> dict[str, str | None]:
-    return {
-        "WHITELISTED_WALLET_PRIVATE_KEY": os.getenv("WHITELISTED_WALLET_PRIVATE_KEY") or None,
-        "BUYER_AGENT_WALLET_ADDRESS": os.getenv("BUYER_AGENT_WALLET_ADDRESS") or None,
-        "BUYER_ENTITY_ID": os.getenv("BUYER_ENTITY_ID") or None,
-        "SELLER_AGENT_WALLET_ADDRESS": os.getenv("SELLER_AGENT_WALLET_ADDRESS") or None,
-        "SELLER_ENTITY_ID": os.getenv("SELLER_ENTITY_ID") or None,
-        "ACP_NETWORK": os.getenv("ACP_NETWORK", "base-mainnet"),
-    }
+    names = BUYER_CREDENTIAL_NAMES + SELLER_CREDENTIAL_NAMES + ("ACP_NETWORK", "ACP_JOB_PRICE_USDC")
+    out: dict[str, str | None] = {}
+    for name in names:
+        raw = os.getenv(name)
+        out[name] = raw if raw and raw.strip() else None
+    if not out.get("ACP_NETWORK"):
+        out["ACP_NETWORK"] = "base-mainnet"
+    return out
+
+
+def missing_virtuals_credentials(*, role: str = "buyer") -> list[str]:
+    names = BUYER_CREDENTIAL_NAMES if role == "buyer" else SELLER_CREDENTIAL_NAMES
+    return [name for name in names if not _present(name)]
 
 
 def acp_ready() -> bool:
-    env = acp_env()
-    return bool(
-        acp_enabled()
-        and env["WHITELISTED_WALLET_PRIVATE_KEY"]
-        and env["BUYER_AGENT_WALLET_ADDRESS"]
-        and env["BUYER_ENTITY_ID"]
-    )
+    return acp_enabled() and not missing_virtuals_credentials(role="buyer")
+
+
+def seller_ready() -> bool:
+    return not missing_virtuals_credentials(role="seller")
 
 
 def base_rpc_url() -> str:

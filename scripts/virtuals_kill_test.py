@@ -60,12 +60,7 @@ def main() -> int:
         "probe_code": probe.returncode,
         "probe_stdout": probe.stdout.strip(),
         "probe_stderr": (probe.stderr or "")[-2000:],
-        "credentials_present": bool(
-            Path(ROOT / ".env").exists()
-            and "WHITELISTED_WALLET_PRIVATE_KEY=" in (ROOT / ".env").read_text(encoding="utf-8")
-            and "WHITELISTED_WALLET_PRIVATE_KEY=\n"
-            not in (ROOT / ".env").read_text(encoding="utf-8").replace("\r\n", "\n")
-        ),
+        "credentials_present": False,
         "python_virtuals_acp": None,
         "blocker": None,
         "pass": False,

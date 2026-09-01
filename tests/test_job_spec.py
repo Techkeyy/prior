@@ -1,4 +1,5 @@
 from prior.job_spec import parse_job
+from prior.research import search_queries
 
 
 def test_wallet_research_is_supported():
@@ -26,3 +27,10 @@ def test_code_job_is_refused():
 def test_empty_job_is_refused():
     spec = parse_job("   ")
     assert spec.job_type == "unsupported"
+
+
+def test_research_queries_use_subject_not_only_full_sentence():
+    spec = parse_job("Research the top five AI wallet companies.")
+    queries = search_queries(spec)
+    assert spec.subject in queries
+    assert spec.domain in queries

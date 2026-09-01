@@ -18,17 +18,33 @@ HEADERS = {
 }
 
 
+def search_queries(spec: JobSpec) -> list[str]:
+    queries: list[str] = []
+    for item in (spec.subject, spec.domain, spec.goal, spec.raw):
+        text = (item or "").strip()
+        if text and text.lower() not in {q.lower() for q in queries}:
+            queries.append(text)
+    return queries or ["research"]
+
+
 def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
     retrieved_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    query = spec.goal or spec.raw
     limit = spec.count or 5
-    wiki_hits = _wiki_search(query, limit=max(limit, 5))
+    seen_titles: set[str] = set()
     findings: list[dict[str, Any]] = []
-    for hit in wiki_hits[:limit]:
-        summary = _wiki_summary(hit["title"])
-        findings.append(summary)
+    for query in search_queries(spec):
+        for hit in _wiki_search(query, limit=max(limit, 5)):
+            title = str(hit.get("title") or "").strip()
+            if not title or title.lower() in seen_titles:
+                continue
+            seen_titles.add(title.lower())
+            findings.append(_wiki_summary(title))
+            if len(findings) >= limit:
+                break
+        if len(findings) >= limit:
+            break
     if not findings:
-        ddg = _duckduckgo(query)
+        ddg = _duckduckgo(search_queries(spec)[0])
         if ddg:
             findings.append(ddg)
 

@@ -12,7 +12,7 @@
 
 ## Virtuals
 
-- [ ] `ACP_ENABLED=true` with registry credentials.
+- [ ] `ACP_ENABLED=true` with v2 Privy credentials: `BUYER_WALLET_ADDRESS`, `BUYER_WALLET_ID`, `BUYER_SIGNER_PRIVATE_KEY`.
 - [ ] `node acp-bridge/run.mjs probe` loads `AcpAgent`.
 - [ ] Browse returns a real provider (or our registered PRIOR seller).
 - [ ] Create job sends `acceptance` including learned lessons in `service_requirement`.

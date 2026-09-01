@@ -57,8 +57,10 @@ Sources:
 
 Relied-on facts:
 
-- Official current Node SDK is `@virtuals-protocol/acp-node-v2` (`AcpAgent`, `browseAgents`, `createJobByOfferingName`, `session.fund` / `submit` / `complete` / `reject`).
-- Official Python SDK is `virtuals-acp` (`VirtualsACP`, `ACPContractClientV2`, `browse_agents`, `initiate_job` / offering `initiate_job(service_requirement, evaluator_address)`, `respond_job`, `pay_job`, `deliver_job`).
+- Official current Node SDK is `@virtuals-protocol/acp-node-v2` (`AcpAgent`, `PrivyAlchemyEvmProviderAdapter`, `browseAgents`, `createJobByOfferingName`, `session.fund` / `submit` / `complete` / `reject`).
+- v2 credentials are `*_WALLET_ADDRESS`, `*_WALLET_ID`, `*_SIGNER_PRIVATE_KEY` (Privy authorization key, not an EOA).
+- `@virtuals-protocol/acp-node` (v1) is deprecated as of 1 Jun 2026.
+- Official Python SDK is `virtuals-acp` and requires Python `<3.13`. This machine is 3.14, so PRIOR does not use it.
 - Job phases documented for the Python/v1 mental model: REQUEST → NEGOTIATION → TRANSACTION → EVALUATION → COMPLETED / REJECTED.
 - v2 event names: `job.created` → `budget.set` → `job.funded` → `job.submitted` → `job.completed` / `job.rejected`.
 - Service requirements can be a dict validated against the seller offering's JSON schema.
@@ -66,7 +68,7 @@ Relied-on facts:
 - Official FAQ currently recommends Base mainnet for testing (tiny job prices such as $0.01). Base Sepolia is documented (`BASE_SEPOLIA_CONFIG_V2`) but FAQ says contact DevRel for testnet access.
 - ACP jobs settle via the ACP contract (escrow / x402 config `BASE_MAINNET_ACP_X402_CONFIG_V2` in current Python examples). That settlement is a Base onchain action if and when a real job is funded.
 
-PRIOR will use the official Python SDK (`virtuals-acp`) because the rest of the app is Python. Method names will be taken from the installed package at import time, not guessed. If credentials are missing, the app reports the failure and does not invent a job.
+PRIOR uses the official Node SDK v2 through `acp-bridge/`. If credentials are missing, the app reports the failure and does not invent a job. See `docs/VIRTUALS_STATUS.md`.
 
 ## Base
 

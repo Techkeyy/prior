@@ -33,7 +33,7 @@ Fresh-session proof (two OS processes, different PIDs): [`scripts/run_sibyl_kill
 1. **Normalizes** a research request into a job spec ([`src/prior/job_spec.py`](src/prior/job_spec.py)).
 2. **Recalls** workspace-scoped lessons from Sibyl before hiring.
 3. **Writes a contract** whose acceptance list includes those lessons.
-4. **Hires** via official Virtuals ACP when credentials exist ([`acp-bridge/run.mjs`](acp-bridge/run.mjs), `@virtuals-protocol/acp-node-v2`). Otherwise it refuses to invent a worker, unless `PRIOR_LOCAL_PROVIDER=true` (labelled, not Virtuals).
+4. **Hires** through a `ResearchProvider`. Virtuals ACP v2 when credentials exist. Otherwise LOCAL PROVIDER if explicitly enabled. LOCAL PROVIDER is never labelled as Virtuals.
 5. **Shows the real deliverable.** The user accepts or rejects.
 6. **Proposes a reusable lesson** from the rejection reason. Nothing becomes policy until the user adds it.
 7. **Writes the approved lesson to Sibyl.** A new process can recall it.
@@ -75,7 +75,7 @@ Open http://127.0.0.1:8787
 | `src/prior/lessons.py` | Applicability, proposal, payload sanitizer |
 | `src/prior/contract.py` | Baseline contract, then mutate from recalled lessons |
 | `src/prior/research.py` | Live Wikipedia/DuckDuckGo research worker |
-| `src/prior/acp.py` | Official Virtuals ACP Node SDK v2, or labelled local path |
+| `src/prior/providers/` | `ResearchProvider`: LOCAL PROVIDER or Virtuals ACP v2 |
 | `src/prior/service.py` | The hire / reject / approve loop |
 | `src/prior/app.py` | Consumer HTTP API + UI |
 | `acp-bridge/run.mjs` | `AcpAgent.browseAgents` / `createJobByOfferingName` / `complete` / `reject` |
@@ -86,7 +86,7 @@ Workspace identity is a cookie (`ws_...`) used as the Sibyl tenant. That is isol
 
 **Sibyl Memory** is mandatory and load-bearing. See WRITE/READ/ACTION above.
 
-**Virtuals.** Current official SDK is `@virtuals-protocol/acp-node-v2` (`AcpAgent`, confirmed by [`scripts/virtuals_kill_test.py`](scripts/virtuals_kill_test.py)). The Python package `virtuals-acp` requires Python <3.13; this machine is 3.14, so PRIOR does not fake that SDK. A live ACP job still needs registry credentials (buyer wallet, entity id, private key). Without them the app reports the failure.
+**Virtuals.** `@virtuals-protocol/acp-node-v2` 0.1.12 with `PrivyAlchemyEvmProviderAdapter`. Status: [`docs/VIRTUALS_STATUS.md`](docs/VIRTUALS_STATUS.md). Live jobs need `BUYER_WALLET_ADDRESS`, `BUYER_WALLET_ID`, `BUYER_SIGNER_PRIVATE_KEY`. Missing credentials raise `Virtuals credentials are not configured.` There is no silent ACP success.
 
 **Base.** RPCs for mainnet (8453) and Sepolia (84532) respond ([`scripts/base_kill_test.py`](scripts/base_kill_test.py)). The product-native Base action is the ACP job payment/escrow once a real job is funded. PRIOR will not show a fake USDC confirmation.
 

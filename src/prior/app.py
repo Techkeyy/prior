@@ -9,9 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from prior import service
-from prior.acp import AcpUnavailable
 from prior.memory import MEMORY_UNAVAILABLE, MemoryUnavailable
-from prior.settings import local_provider_enabled
+from prior.providers.base import ProviderError
+from prior.settings import acp_enabled, local_provider_enabled, missing_virtuals_credentials
 
 STATIC = Path(__file__).resolve().parent / "static"
 COOKIE = "prior_workspace"
@@ -65,7 +65,9 @@ def specify_job(payload: SpecifyIn, request: Request, response: Response) -> dic
 def get_job(job_id: str, request: Request, response: Response) -> dict:
     workspace_id = _workspace(request, response)
     try:
-        return service._owned(workspace_id, job_id).to_dict()
+        return service.refresh(workspace_id, job_id).to_dict()
+    except ProviderError as exc:
+        raise HTTPException(503, str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -77,7 +79,7 @@ def hire_job(job_id: str, request: Request, response: Response) -> dict:
         return service.hire(workspace_id, job_id).to_dict()
     except MemoryUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
-    except AcpUnavailable as exc:
+    except ProviderError as exc:
         raise HTTPException(503, str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -88,7 +90,7 @@ def accept_job(job_id: str, request: Request, response: Response) -> dict:
     workspace_id = _workspace(request, response)
     try:
         return service.accept(workspace_id, job_id).to_dict()
-    except AcpUnavailable as exc:
+    except ProviderError as exc:
         raise HTTPException(503, str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -99,7 +101,7 @@ def reject_job(payload: RejectIn, job_id: str, request: Request, response: Respo
     workspace_id = _workspace(request, response)
     try:
         return service.reject(workspace_id, job_id, payload.reason).to_dict()
-    except AcpUnavailable as exc:
+    except ProviderError as exc:
         raise HTTPException(503, str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -133,7 +135,9 @@ def workspace(request: Request, response: Response) -> dict:
     workspace_id = _workspace(request, response)
     return {
         "workspace_id": workspace_id,
-        "local_provider": local_provider_enabled(),
+        "local_provider": local_provider_enabled() and not acp_enabled(),
+        "acp_enabled": acp_enabled(),
+        "virtuals_credentials_missing": missing_virtuals_credentials(),
         "memory_unavailable_copy": MEMORY_UNAVAILABLE,
     }
 
