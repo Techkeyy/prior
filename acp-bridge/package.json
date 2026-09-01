@@ -1,0 +1,15 @@
+{
+  "name": "prior-acp-bridge",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@virtuals-protocol/acp-node-v2": "latest",
+    "viem": "latest",
+    "@account-kit/infra": "latest",
+    "@account-kit/smart-contracts": "latest",
+    "@aa-sdk/core": "latest"
+  }
+}
