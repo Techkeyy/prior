@@ -75,9 +75,13 @@ c = MemoryClient.local(r"{db}", tenant_id="ws_fresh")
 row = c.get_entity("lesson", "L_fresh")
 print(row["body"]["requirement"])
 """
-    subprocess.check_output([sys.executable, "-c", writer], text=True)
-    out = subprocess.check_output([sys.executable, "-c", reader], text=True).strip()
-    assert "source links" in out.lower()
+    writer_file = tmp_path / "writer.py"
+    reader_file = tmp_path / "reader.py"
+    writer_file.write_text(writer, encoding="utf-8")
+    reader_file.write_text(reader, encoding="utf-8")
+    subprocess.run([sys.executable, str(writer_file)], check=True, stdin=subprocess.DEVNULL, capture_output=True)
+    res = subprocess.run([sys.executable, str(reader_file)], check=True, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    assert "source links" in res.stdout.strip().lower()
 
 
 def test_recalled_lesson_changes_contract(tmp_path, monkeypatch):

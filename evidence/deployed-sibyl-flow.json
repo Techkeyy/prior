@@ -1,0 +1,84 @@
+{
+  "pass": true,
+  "deployment_url": "https://transcription-modern-tobago-dodge.trycloudflare.com",
+  "workspace_id": "ws_1059df2fd3046afb",
+  "base_proof": {
+    "ok": true,
+    "network": "Base Mainnet",
+    "policy_registry": "0x8453000000000000000000000000000000000002",
+    "policyExists_0": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "isB20_factory": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "rpc": "https://mainnet.base.org",
+    "qualifies_as": "B20 read"
+  },
+  "job_1": {
+    "id": "job_493c46327ae6",
+    "baseline": true,
+    "provider": {
+      "id": "local-research-provider",
+      "name": "PRIOR Local Research Agent",
+      "summary": "Development provider. Runs research on this machine. Not Virtuals.",
+      "price_label": "no onchain payment",
+      "source": "local-development",
+      "network": "Local",
+      "wallet_address": null,
+      "offering_name": null
+    },
+    "rejection_reason": "Material factual claims must include identifiable source links.",
+    "approved_lesson": {
+      "id": "L_372590a15ca04738",
+      "workspace_id": "ws_1059df2fd3046afb",
+      "job_type": "research",
+      "issue": "Material factual claims must include identifiable source links.",
+      "requirement": "Material factual claims must include identifiable source links.",
+      "reason": "Learned from rejected job job_493c46327ae6: Material factual claims must include identifiable source links.",
+      "source_job_id": "job_493c46327ae6",
+      "originating_evaluation": "rejected",
+      "status": "active",
+      "provenance": "user-approved",
+      "created_at": "2026-09-02T00:23:00+00:00",
+      "domains": [
+        "ai wallets"
+      ],
+      "keywords": [
+        "wallet",
+        "ai wallets"
+      ],
+      "match_reason": null
+    }
+  },
+  "job_2": {
+    "id": "job_844600d900d6",
+    "baseline": false,
+    "applied_lessons": [
+      {
+        "id": "L_372590a15ca04738",
+        "workspace_id": "ws_1059df2fd3046afb",
+        "job_type": "research",
+        "issue": "Material factual claims must include identifiable source links.",
+        "requirement": "Material factual claims must include identifiable source links.",
+        "reason": "Learned from rejected job job_493c46327ae6: Material factual claims must include identifiable source links.",
+        "source_job_id": "job_493c46327ae6",
+        "originating_evaluation": "rejected",
+        "status": "active",
+        "provenance": "user-approved",
+        "created_at": "2026-09-02T00:23:00+00:00",
+        "domains": [
+          "ai wallets"
+        ],
+        "keywords": [
+          "wallet",
+          "ai wallets"
+        ],
+        "match_reason": "Research job lesson."
+      }
+    ],
+    "worker_learned_requirements": [
+      "Material factual claims must include identifiable source links."
+    ]
+  },
+  "sibyl_memory": {
+    "status": "ok",
+    "count": 1
+  }
+}

@@ -11,7 +11,6 @@ import json
 from pathlib import Path
 
 import httpx
-from web3 import Web3
 
 from prior.settings import ROOT, base_rpc_url
 
@@ -20,9 +19,9 @@ from prior.settings import ROOT, base_rpc_url
 B20_FACTORY = "0xB20f000000000000000000000000000000000000"
 POLICY_REGISTRY = "0x8453000000000000000000000000000000000002"
 
-
-def _selector(signature: str) -> str:
-    return "0x" + Web3.keccak(text=signature)[:4].hex()
+# 4-byte keccak256 function selectors
+IS_B20_SELECTOR = "0xfa19b927"  # isB20(address)
+POLICY_EXISTS_SELECTOR = "0x330f5637"  # policyExists(uint64)
 
 
 def _eth_call(to: str, data: str, url: str | None = None) -> str:
@@ -49,9 +48,9 @@ def read_b20_factory(*, url: str | None = None) -> dict:
     network is Base with the native token factory before treating a payment
     as Base-native.
     """
-    factory_data = _selector("isB20(address)") + ("0" * 24) + B20_FACTORY[2:]
+    factory_data = IS_B20_SELECTOR + ("0" * 24) + B20_FACTORY[2:]
     factory_result = _eth_call(B20_FACTORY, factory_data, url=url)
-    policy_data = _selector("policyExists(uint64)") + ("0" * 64)
+    policy_data = POLICY_EXISTS_SELECTOR + ("0" * 64)
     policy_result = _eth_call(POLICY_REGISTRY, policy_data, url=url)
     return {
         "ok": bool(factory_result) and bool(policy_result),

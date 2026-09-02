@@ -1,26 +1,26 @@
 {
   "job1": {
-    "id": "job_6dee05c0e3a0",
+    "id": "job_5ec55d65acb5",
     "baseline": true,
     "hire_source": "local-development",
-    "findings": 1
+    "findings": 4
   },
   "job2": {
-    "id": "job_88dd4a627a98",
+    "id": "job_4e37fc65e7b2",
     "baseline": false,
     "applied": [
       {
-        "id": "L_8d4cd1c0fee1409a",
-        "workspace_id": "ws_511d542fce816c67",
+        "id": "L_c0c628d5dcb543da",
+        "workspace_id": "ws_efd09fb252fb2b88",
         "job_type": "research",
         "issue": "Important factual claims should include source links.",
         "requirement": "Material factual claims must include identifiable source links.",
-        "reason": "Learned from rejected job job_6dee05c0e3a0: Important factual claims should include source links.",
-        "source_job_id": "job_6dee05c0e3a0",
+        "reason": "Learned from rejected job job_5ec55d65acb5: Important factual claims should include source links.",
+        "source_job_id": "job_5ec55d65acb5",
         "originating_evaluation": "rejected",
         "status": "active",
         "provenance": "user-approved",
-        "created_at": "2026-09-01T23:15:11+00:00",
+        "created_at": "2026-09-01T23:37:12+00:00",
         "domains": [
           "ai wallets"
         ],

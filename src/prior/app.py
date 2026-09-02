@@ -141,6 +141,19 @@ def disable_memory(lesson_id: str, request: Request, response: Response) -> dict
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.get("/api/base/verify")
+def verify_base(network: str = "mainnet") -> dict:
+    from prior.base_action import read_b20_factory
+
+    url = "https://sepolia.base.org" if network == "sepolia" else "https://mainnet.base.org"
+    try:
+        data = read_b20_factory(url=url)
+        data["network_name"] = "Base Sepolia" if network == "sepolia" else "Base Mainnet"
+        return data
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"Base RPC read error: {exc}") from exc
+
+
 @app.get("/api/workspace")
 def workspace(request: Request, response: Response) -> dict:
     workspace_id = _workspace(request, response)
@@ -181,4 +194,9 @@ def index() -> FileResponse:
 
 @app.get("/memory")
 def memory_page() -> FileResponse:
+    return FileResponse(STATIC / "index.html")
+
+
+@app.get("/proof")
+def proof_page() -> FileResponse:
     return FileResponse(STATIC / "index.html")
