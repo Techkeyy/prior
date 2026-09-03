@@ -1,8 +1,8 @@
-"""Base onchain reads used by PRIOR.
+"""Live Base onchain reads used by PRIOR.
 
-Preferred commercial action is still a real ACP payment on Base.
-This module performs a documented B20 factory read so the Base path is
-a real chain call, not a logo. It does not invent a transaction hash.
+This module performs documented B20 Factory and Policy Registry reads so the
+Base path is a real chain call, not a logo. It does not write chain state or
+invent a transaction hash.
 """
 
 from __future__ import annotations
@@ -44,10 +44,7 @@ def _eth_call(to: str, data: str, url: str | None = None) -> str:
 
 
 def read_b20_factory(*, url: str | None = None) -> dict:
-    """Call B20Factory.isB20(factory). Product reason: confirm the hire
-    network is Base with the native token factory before treating a payment
-    as Base-native.
-    """
+    """Read B20Factory.isB20(factory) and PolicyRegistry.policyExists(0)."""
     factory_data = IS_B20_SELECTOR + ("0" * 24) + B20_FACTORY[2:]
     factory_result = _eth_call(B20_FACTORY, factory_data, url=url)
     policy_data = POLICY_EXISTS_SELECTOR + ("0" * 64)
@@ -60,11 +57,11 @@ def read_b20_factory(*, url: str | None = None) -> dict:
         "policyExists_0": policy_result,
         "rpc": url or base_rpc_url(),
         "product_reason": (
-            "PRIOR hires settle on Base. These calls read the official B20 factory "
-            "and Policy Registry precompiles. They are not an ACP payment."
+            "PRIOR performs a live B20 Policy Registry read on Base. These calls "
+            "read official B20 Factory and Policy Registry precompiles."
         ),
         "qualifies_as": "B20 read",
-        "not_claimed": "ACP payment / wallet transfer",
+        "not_claimed": "No B20 registration, ACP payment, wallet transfer, or settlement was performed.",
     }
 
 

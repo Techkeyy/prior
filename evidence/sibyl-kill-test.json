@@ -2,14 +2,14 @@
   "pass": true,
   "process_a": {
     "ok": true,
-    "evidence": "C:\\Users\\HomePC\\Desktop\\prior\\evidence\\sibyl-kill-test-a.json",
-    "pid": 2560
+    "evidence": "evidence/sibyl-kill-test-a.json",
+    "pid": 2384
   },
   "process_b": {
     "ok": true,
-    "evidence": "C:\\Users\\HomePC\\Desktop\\prior\\evidence\\sibyl-kill-test-b.json",
-    "pid": 2832,
-    "db": "C:\\Users\\HomePC\\Desktop\\prior\\data\\sibyl-kill-test.db",
+    "evidence": "evidence/sibyl-kill-test-b.json",
+    "pid": 19248,
+    "db": "data/sibyl-kill-test.db",
     "tenant": "ws_killtest_alice",
     "recalled_name": "L_killtest_sources",
     "recalled_requirement": "Material factual claims must include identifiable source links.",
@@ -30,6 +30,6 @@
       "Material factual claims must include identifiable source links."
     ],
     "contract_changed": true,
-    "process_a_pid": 2560
+    "process_a_pid": 2384
   }
 }

@@ -7,9 +7,9 @@
     "isB20_factory": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "policyExists_0": "0x0000000000000000000000000000000000000000000000000000000000000001",
     "rpc": "https://mainnet.base.org",
-    "product_reason": "PRIOR hires settle on Base. These calls read the official B20 factory and Policy Registry precompiles. They are not an ACP payment.",
+    "product_reason": "PRIOR performs a live B20 Policy Registry read on Base. These calls read official B20 Factory and Policy Registry precompiles.",
     "qualifies_as": "B20 read",
-    "not_claimed": "ACP payment / wallet transfer"
+    "not_claimed": "No B20 registration, ACP payment, wallet transfer, or settlement was performed."
   },
   "sepolia": {
     "ok": true,
@@ -18,8 +18,8 @@
     "isB20_factory": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "policyExists_0": "0x0000000000000000000000000000000000000000000000000000000000000001",
     "rpc": "https://sepolia.base.org",
-    "product_reason": "PRIOR hires settle on Base. These calls read the official B20 factory and Policy Registry precompiles. They are not an ACP payment.",
+    "product_reason": "PRIOR performs a live B20 Policy Registry read on Base. These calls read official B20 Factory and Policy Registry precompiles.",
     "qualifies_as": "B20 read",
-    "not_claimed": "ACP payment / wallet transfer"
+    "not_claimed": "No B20 registration, ACP payment, wallet transfer, or settlement was performed."
   }
 }

@@ -1,0 +1,9 @@
+# Stable public route for the VPS deployment. sslip.io resolves this hostname
+# to the VPS address and Caddy obtains and renews the HTTPS certificate.
+prior.103-195-188-198.sslip.io {
+    encode gzip
+    reverse_proxy 127.0.0.1:8789
+    header {
+        -Server
+    }
+}

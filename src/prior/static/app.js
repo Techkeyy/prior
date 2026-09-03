@@ -394,7 +394,7 @@ async function renderProof() {
 
     <div class="panel">
       <h2>3. Provider Status</h2>
-      <p><strong>Active Mode:</strong> ${state.workspace && state.workspace.hire_mode === "local" ? "Local Research Agent (Wikipedia API)" : "Virtuals ACP"}</p>
+      <p><strong>Active Mode:</strong> ${state.workspace && state.workspace.hire_mode === "local" ? "Local Research Agent (Wikipedia API)" : state.workspace && state.workspace.hire_mode === "virtuals" ? "Virtuals ACP" : "No hire provider configured"}</p>
       <p class="meta">Truthful attribution: Local runs do not claim to be Virtuals.</p>
     </div>
 
@@ -568,12 +568,27 @@ function escapeHtml(value) {
 }
 function escapeAttr(value) { return escapeHtml(value); }
 
+function updateWorkspaceBadge() {
+  const badge = document.getElementById("workspace-badge");
+  if (!badge) return;
+  const wsId = state.workspace && state.workspace.workspace_id;
+  if (wsId) {
+    const raw = wsId.replace(/^ws_/, "");
+    const shortId = raw.length > 8 ? `${raw.slice(0, 4)}…${raw.slice(-4)}` : raw;
+    badge.textContent = `ws: ${shortId}`;
+    badge.title = `Workspace ID: ${wsId}`;
+  } else {
+    badge.textContent = `ws: local`;
+  }
+}
+
 async function boot() {
   try {
     state.workspace = await api("/api/workspace");
   } catch (err) {
     state.workspace = { hire_mode: "none" };
   }
+  updateWorkspaceBadge();
   render();
 }
 

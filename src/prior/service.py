@@ -97,7 +97,12 @@ def accept(workspace_id: str, job_id: str) -> JobRecord:
     if record.status != "delivered":
         raise ValueError("Only a delivered job can be accepted.")
     provider = provider_for_record(record)
-    provider.evaluate(_record_to_provider_job(record), True, "Accepted by the hiring user.")
+    evaluated = provider.evaluate(
+        _record_to_provider_job(record), True, "Accepted by the hiring user."
+    )
+    record.acp_phase = evaluated.phase
+    if evaluated.extra.get("txHash"):
+        record.tx_hash = str(evaluated.extra["txHash"])
     record.evaluation = "accepted"
     record.status = "accepted"
     record.updated_at = now_iso()
@@ -111,7 +116,10 @@ def reject(workspace_id: str, job_id: str, reason: str) -> JobRecord:
     if not (reason or "").strip():
         raise ValueError("A rejection needs a useful reason.")
     provider = provider_for_record(record)
-    provider.evaluate(_record_to_provider_job(record), False, reason.strip())
+    evaluated = provider.evaluate(_record_to_provider_job(record), False, reason.strip())
+    record.acp_phase = evaluated.phase
+    if evaluated.extra.get("txHash"):
+        record.tx_hash = str(evaluated.extra["txHash"])
     record.evaluation = "rejected"
     record.rejection_reason = reason.strip()
     record.status = "rejected"

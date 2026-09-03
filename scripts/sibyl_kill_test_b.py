@@ -50,7 +50,7 @@ def main() -> int:
 
     evidence = {
         "pid": os.getpid(),
-        "db": str(DB),
+        "db": "data/sibyl-kill-test.db",
         "tenant": client.get_tenant(),
         "recalled_name": entity["name"],
         "recalled_requirement": body["requirement"],
@@ -76,7 +76,7 @@ def main() -> int:
         and evidence["contract_changed"]
         and evidence["process_a_pid"] != evidence["pid"]
     )
-    print(json.dumps({"ok": ok, "evidence": str(EVIDENCE_B), **evidence}, indent=2))
+    print(json.dumps({"ok": ok, "evidence": "evidence/sibyl-kill-test-b.json", **evidence}, indent=2))
     return 0 if ok else 2
 
 

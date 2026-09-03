@@ -24,7 +24,7 @@ SELLER_CREDENTIAL_NAMES = (
 
 
 def memory_db_path() -> Path:
-    raw = os.getenv("PRIOR_MEMORY_DB", str(DATA_DIR / "sibyl-memory.db"))
+    raw = os.getenv("PRIOR_MEMORY_DB", str(data_dir() / "sibyl-memory.db"))
     path = Path(raw)
     if not path.is_absolute():
         path = ROOT / path
@@ -32,8 +32,17 @@ def memory_db_path() -> Path:
     return path
 
 
+def data_dir() -> Path:
+    raw = os.getenv("PRIOR_DATA_DIR", str(DATA_DIR))
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def jobs_path() -> Path:
-    return DATA_DIR / "jobs.json"
+    return data_dir() / "jobs.json"
 
 
 def host() -> str:
@@ -92,3 +101,7 @@ def base_rpc_url() -> str:
 
 def base_chain_id() -> int:
     return int(os.getenv("BASE_CHAIN_ID", "84532"))
+
+
+def build_commit() -> str:
+    return os.getenv("PRIOR_BUILD_COMMIT", "unknown").strip() or "unknown"

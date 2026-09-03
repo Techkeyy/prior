@@ -63,7 +63,7 @@ def main() -> int:
 
     recalled = client.get_entity("lesson", LESSON_NAME)
     payload = {
-        "db": str(DB),
+        "db": "data/sibyl-kill-test.db",
         "tenant": client.get_tenant(),
         "lesson_name": LESSON_NAME,
         "written_id": written.get("id"),
@@ -74,7 +74,7 @@ def main() -> int:
     }
     EVIDENCE.parent.mkdir(parents=True, exist_ok=True)
     EVIDENCE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(json.dumps({"ok": True, "evidence": str(EVIDENCE), "pid": payload["pid"]}))
+    print(json.dumps({"ok": True, "evidence": "evidence/sibyl-kill-test-a.json", "pid": payload["pid"]}))
     return 0
 
 

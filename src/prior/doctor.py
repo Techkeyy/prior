@@ -6,6 +6,7 @@ from prior.settings import (
     acp_enabled,
     acp_ready,
     base_rpc_url,
+    build_commit,
     host,
     local_provider_enabled,
     memory_db_path,
@@ -73,6 +74,7 @@ def snapshot() -> dict:
         overall = "READY"
     return {
         "overall": overall,
+        "build_commit": build_commit(),
         "listen": f"{host()}:{port()}",
         "checks": checks,
     }
@@ -82,3 +84,7 @@ def main() -> None:
     import json
 
     print(json.dumps(snapshot(), indent=2))
+
+
+if __name__ == "__main__":
+    main()

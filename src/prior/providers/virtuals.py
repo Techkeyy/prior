@@ -86,7 +86,7 @@ class VirtualsAcpProvider:
         raw = _bridge(["status", job.acp_job_id])
         job.phase = str(raw.get("phase") or job.phase)
         if raw.get("deliverable"):
-            job.deliverable = raw["deliverable"]
+            job.deliverable = _decode_deliverable(raw["deliverable"])
         if raw.get("txHash"):
             job.extra["txHash"] = raw["txHash"]
         return job
@@ -147,3 +147,17 @@ def _bridge(args: list[str]) -> dict[str, Any]:
         return json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         raise ProviderError(f"ACP bridge returned non-JSON: {proc.stdout[:500]}") from exc
+
+
+def _decode_deliverable(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+        return {"type": "text", "value": {"text": value}}
+    return {"type": "text", "value": {"text": str(value)}}

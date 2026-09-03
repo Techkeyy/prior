@@ -1,6 +1,6 @@
 # PRIOR Takeover Status
 
-Recorded: 2026-09-02 (Takeover from d835e3b)
+Recorded: 2026-09-03 (handoff from b9987dc)
 
 ## Verified Working
 1. **Sibyl Memory Learning Loop & Cold-Start Isolation**:
@@ -16,19 +16,16 @@ Recorded: 2026-09-02 (Takeover from d835e3b)
    - Direct eth_call against official B20 Factory (`0xB20f...0000`) and Policy Registry (`0x8453...0002`).
    - Verified live on both Base mainnet (chain 8453) and Base Sepolia (chain 84532) in `evidence/base-b20-read.json`.
 4. **Test Suite**:
-   - 25/25 unit & integration tests pass with pytest.
+   - 30/30 unit & integration tests pass with pytest.
 
-## Verified Incomplete
-1. **Public Deployment**: App running locally (`127.0.0.1:8787`), no hosted public production deployment yet.
-2. **Base UI Verification**: Base B20 proof needs product-visible endpoint and UI panel.
-3. **Consumer UI Polish**: Refine layout, typography, empty states, error handling, and visual fidelity per `design-skill`.
-4. **Virtuals ACP Live Credentials**: `@virtuals-protocol/acp-node-v2` adapter prepared with Privy v2 credential schema; live execution blocked on registered agent credentials.
+## Verified Since Handoff
+1. **Stable Public Deployment**: `https://prior.103-195-188-198.sslip.io` runs behind Caddy on a VPS, with an enabled `systemd` service and Sibyl storage under `/var/lib/prior`.
+2. **Production Sibyl Loop**: The public endpoint completed Job 1 rejection, approved lesson write, Job 2 recall, contract mutation, and worker learned requirements in `evidence/stable-deployment-flow.json`.
+3. **Workspace Continuity**: `/api/workspace` accepts only generated workspace IDs, and `tests/test_scoping.py` verifies the same cookie maps to the same tenant across separate OS processes.
+4. **Base UI Verification**: `/proof` performs and displays live Base B20 Factory and Policy Registry reads.
+5. **Consumer UI**: Workspace badge, truthful provider identity, memory states, progress, deliverables, rejection, lesson approval, memory management, and proof states are present.
+6. **Virtuals ACP Live Credentials**: `@virtuals-protocol/acp-node-v2` adapter and drop-in verification script are prepared, but live execution remains blocked on registered agent credentials.
 
-## Blockers
-- Live ACP onchain execution blocked on registered Privy buyer/seller credentials (`BUYER_*`, `SELLER_*`). Adapter fails honestly without faking.
-
-## Immediate Next Actions
-1. Expose Base verification endpoint and add interactive proof drawer in UI.
-2. Polish consumer UI flow (Specify -> Contract Review with Sibyl badges -> Deliverable -> Rejection / Lesson Proposal -> Approval -> Sibyl Write).
-3. Set up public deployment and run production verification test.
-4. Update README and demo documentation per `perfect-readme`.
+## Remaining Blockers
+1. Virtuals ACP cannot be marked verified until buyer and seller credentials, registration, an offering, and a real funded job are available.
+2. The current public hostname is stable for this VPS but uses `sslip.io`; a custom domain would be a presentation improvement, not a product requirement.

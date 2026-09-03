@@ -49,9 +49,8 @@ def main() -> int:
         "pass": all(item.get("ok") for item in results.values()),
         "networks": results,
         "product_action": (
-            "Preferred Base action is the Virtuals ACP job payment/escrow on Base, "
-            "once ACP credentials exist. This probe only proves the RPCs are live. "
-            "No self-transfer was sent."
+            "This probe only proves the Base RPCs are live. It performs no B20 "
+            "registration, payment, transfer, or settlement."
         ),
     }
     OUT.write_text(json.dumps(evidence, indent=2), encoding="utf-8")

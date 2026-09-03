@@ -39,7 +39,7 @@ Relied-on API:
 - Unactivated use is local-first and makes no network calls (official privacy statement).
 - Free tier has a local size cap (docs: 2 MB; installed client comments mention 5 MB). Stay well under either figure.
 
-PRIOR mapping we will implement:
+PRIOR mapping implemented in this repository:
 
 - Each consumer workspace is a Sibyl `tenant_id`.
 - An approved lesson is a WARM entity: `category="lesson"`, `name=<lesson id>`.

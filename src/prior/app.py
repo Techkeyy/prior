@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from prior.settings import acp_enabled, local_provider_enabled, missing_virtuals
 
 STATIC = Path(__file__).resolve().parent / "static"
 COOKIE = "prior_workspace"
+WORKSPACE_PATTERN = re.compile(r"^ws_[a-f0-9]{16}$")
 app = FastAPI(title="PRIOR", version="0.1.0")
 
 
@@ -34,7 +36,7 @@ class LessonIn(BaseModel):
 
 def _workspace(request: Request, response: Response) -> str:
     current = request.cookies.get(COOKIE)
-    if current and current.startswith("ws_") and ".." not in current:
+    if current and WORKSPACE_PATTERN.fullmatch(current):
         return current
     workspace_id = "ws_" + secrets.token_hex(8)
     response.set_cookie(

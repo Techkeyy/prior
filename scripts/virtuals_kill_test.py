@@ -100,7 +100,8 @@ def main() -> int:
         evidence["pass"] = False
         evidence["blocker"] = (
             "Official ACP SDK loaded, but a live browse/create requires Virtuals registry "
-            "credentials (buyer wallet, entity id, private key) which are not usable here. "
+            "credentials (buyer wallet address, wallet id, and Privy authorization key) "
+            "which are not present here. "
             "See browse_stderr."
         )
     else:

@@ -2,12 +2,12 @@
   "pass": true,
   "process_a": {
     "ok": true,
-    "pid": 1908,
+    "pid": 18288,
     "lesson_id": "L_fresh_prior"
   },
   "process_b": {
     "ok": true,
-    "pid": 20284,
+    "pid": 21284,
     "baseline": false,
     "acceptance": [
       "Cover the requested subject with the named deliverables.",
@@ -26,7 +26,7 @@
         "originating_evaluation": null,
         "status": "active",
         "provenance": "user-approved",
-        "created_at": "2026-09-02T00:17:37+00:00",
+        "created_at": "2026-09-03T00:06:46+00:00",
         "domains": [
           "decentralized exchanges"
         ],

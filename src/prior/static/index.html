@@ -11,7 +11,10 @@
 </head>
 <body>
   <header class="top">
-    <a class="mark" href="/">PRIOR</a>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <a class="mark" href="/">PRIOR</a>
+      <span id="workspace-badge" class="badge badge-neutral" aria-live="polite" style="font-family:monospace; font-size:12px; letter-spacing:0.04em;">ws: loading...</span>
+    </div>
     <nav>
       <a href="/" data-nav="home">New job</a>
       <a href="/memory" data-nav="memory">Memory</a>

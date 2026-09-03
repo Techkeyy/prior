@@ -1,0 +1,28 @@
+{
+  "pass": false,
+  "status": "NOT VERIFIED",
+  "timestamp": "2026-09-02T23:26:54.257450+00:00",
+  "package": "@virtuals-protocol/acp-node-v2",
+  "package_version": "0.1.12",
+  "credentials_present": false,
+  "missing_credentials": {
+    "buyer": [
+      "BUYER_WALLET_ADDRESS",
+      "BUYER_WALLET_ID",
+      "BUYER_SIGNER_PRIVATE_KEY"
+    ],
+    "seller": [
+      "SELLER_WALLET_ADDRESS",
+      "SELLER_WALLET_ID",
+      "SELLER_SIGNER_PRIVATE_KEY"
+    ]
+  },
+  "missing_configuration": [
+    "ACP_ENABLED=true"
+  ],
+  "registered_buyer": null,
+  "registered_seller": null,
+  "seller_offering": null,
+  "real_acp_job": false,
+  "evidence_note": "Credentials are absent. No ACP request was attempted."
+}

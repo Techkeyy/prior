@@ -1,10 +1,10 @@
 {
-  "db": "C:\\Users\\HomePC\\Desktop\\prior\\data\\sibyl-kill-test.db",
+  "db": "data/sibyl-kill-test.db",
   "tenant": "ws_killtest_alice",
   "lesson_name": "L_killtest_sources",
-  "written_id": "7f78327e-7934-471f-bd15-fd8cbd7e93fa",
-  "event_id": "c594474e-4855-4934-b994-2a231319e1d6",
+  "written_id": "453c27b0-deb7-4adf-b451-bc51290f5ffa",
+  "event_id": "e3479e5f-ded7-4995-921f-189b49d34e09",
   "requirement": "Material factual claims must include identifiable source links.",
   "workspace_id": "ws_killtest_alice",
-  "pid": 2560
+  "pid": 2384
 }

@@ -6,15 +6,15 @@
       "url": "https://sepolia.base.org",
       "expected_chain_id": 84532,
       "observed_chain_id": 84532,
-      "block_number_hex": "0x2c1fd92"
+      "block_number_hex": "0x2c2ada4"
     },
     "base-mainnet": {
       "ok": true,
       "url": "https://mainnet.base.org",
       "expected_chain_id": 8453,
       "observed_chain_id": 8453,
-      "block_number_hex": "0x3067e92"
+      "block_number_hex": "0x3072ea5"
     }
   },
-  "product_action": "Preferred Base action is the Virtuals ACP job payment/escrow on Base, once ACP credentials exist. This probe only proves the RPCs are live. No self-transfer was sent."
+  "product_action": "This probe only proves the Base RPCs are live. It performs no B20 registration, payment, transfer, or settlement."
 }

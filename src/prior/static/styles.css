@@ -288,7 +288,10 @@ ul.clean li { margin: 8px 0; }
 
 @media (max-width: 640px) {
   h1 { font-size: 30px; }
-  .top { padding: 16px 18px; }
+  .top { padding: 16px 18px; flex-wrap: wrap; gap: 12px; }
+  .top > div { max-width: 100%; }
+  nav { width: 100%; gap: 4px; }
+  nav a { padding: 6px 8px; font-size: 14px; }
   main { padding: 24px 16px 64px; }
   .grid-2 { grid-template-columns: 1fr; }
 }

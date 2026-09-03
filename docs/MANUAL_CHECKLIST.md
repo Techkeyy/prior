@@ -24,7 +24,7 @@
 - [ ] RPC probe: `python scripts/base_kill_test.py`
 - [ ] B20 read: `python scripts/base_b20_read.py` (Policy Registry `policyExists(0)` returned true on mainnet and Sepolia)
 - [ ] When an ACP job is funded, capture the Base explorer URL for the payment/escrow tx.
-- [ ] Never display "Payment secured" without that tx.
+- [ ] Never display an ACP payment or settlement state without that tx.
 - [ ] Do not treat the B20 read as an ACP payment.
 
 ## Fresh-session demo

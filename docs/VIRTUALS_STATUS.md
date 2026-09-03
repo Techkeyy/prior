@@ -91,3 +91,5 @@ Once credentials exist:
 2. `PRIOR_LOCAL_PROVIDER=false`.
 3. Run `node acp-bridge/seller.mjs` and `node acp-bridge/buyer.mjs`.
 4. Hire in PRIOR: browse registered seller offering → `createJobByOfferingName` with learned `acceptance` in the requirement payload → fund → seller submits real research → user complete/reject.
+
+For a complete validation run, use `python scripts/verify_virtuals_acp.py`. With all six credentials present, it starts the seller listener, confirms the seller offering, creates and funds two real ACP jobs, waits for the seller deliverable, rejects Job 1, recalls the Sibyl lesson for Job 2, and completes Job 2. Without credentials it writes a sanitized `NOT VERIFIED` result to `evidence/virtuals-acp-live.json` and makes no ACP request.

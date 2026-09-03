@@ -1,0 +1,24 @@
+[Unit]
+Description=PRIOR research agent hiring application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=prior
+Group=prior
+WorkingDirectory=/opt/prior
+EnvironmentFile=/etc/prior/prior.env
+ExecStart=/opt/prior/.venv/bin/uvicorn prior.app:app --app-dir /opt/prior/src --host 127.0.0.1 --port 8789
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/prior
+ReadWritePaths=/opt/prior/data /var/lib/prior
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

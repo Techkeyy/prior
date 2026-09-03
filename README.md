@@ -1,6 +1,6 @@
 # PRIOR
 
-**[Live Public Application](https://transcription-modern-tobago-dodge.trycloudflare.com)** &middot; **[GitHub Repository](https://github.com/Techkeyy/prior)** &middot; **[Fresh-Session Proof](evidence/fresh-session-prior.json)** &middot; **[Base B20 Evidence](evidence/base-b20-read.json)** &middot; **[Deployed Flow Evidence](evidence/deployed-sibyl-flow.json)**
+**[LIVE APP](https://prior.103-195-188-198.sslip.io)** &middot; **[GITHUB](https://github.com/Techkeyy/prior)** &middot; **[Fresh-Session Proof](evidence/fresh-session-prior.json)** &middot; **[Base B20 Evidence](evidence/base-b20-read.json)** &middot; **[Stable Deployment Evidence](evidence/stable-deployment-flow.json)**
 
 Hire a research agent. When the work is wrong, keep the lesson. The next contract gets stricter.
 
@@ -35,8 +35,8 @@ JOB 2 (DEXs)       -> Sibyl Query  -> Contract Mutates (baseline=false) -> Worke
 | **READ PATH** | [`src/prior/memory.py`](src/prior/memory.py) (`recall_lessons`) | Fresh query calls `search_entities` (FTS5) and `list_entities` scoped to `tenant_id`. |
 | **CONTRACT MUTATION** | [`src/prior/contract.py`](src/prior/contract.py) (`build_contract`) | Recalled lessons are appended to `acceptance` criteria and `baseline` is set to `false`. |
 | **WORKER EFFECT** | [`src/prior/providers/base.py`](src/prior/providers/base.py) (`requirement_payload`) | `learned_requirements` are directly injected into the worker payload. |
-| **FRESH-SESSION PROOF** | [`scripts/fresh_session_prior.py`](scripts/fresh_session_prior.py) | Two isolated OS processes (different PIDs). Verified in [`evidence/fresh-session-prior.json`](evidence/fresh-session-prior.json). |
-| **DEPLOYED PROOF** | [`scripts/verify_deployed_loop.py`](scripts/verify_deployed_loop.py) | Live loop against public HTTPS endpoint. Verified in [`evidence/deployed-sibyl-flow.json`](evidence/deployed-sibyl-flow.json). |
+| **FRESH-SESSION PROOF** | [`scripts/fresh_session_prior.py`](scripts/fresh_session_prior.py) + [`tests/test_scoping.py`](tests/test_scoping.py) | Two isolated OS processes (different PIDs), plus same-cookie workspace continuity across processes. Verified in [`evidence/fresh-session-prior.json`](evidence/fresh-session-prior.json). |
+| **STABLE DEPLOYED PROOF** | [`scripts/verify_deployed_loop.py`](scripts/verify_deployed_loop.py) | Live loop against stable public HTTPS endpoint. Verified in [`evidence/stable-deployment-flow.json`](evidence/stable-deployment-flow.json). |
 
 ---
 
@@ -53,26 +53,29 @@ JOB 2 (DEXs)       -> Sibyl Query  -> Contract Mutates (baseline=false) -> Worke
 
 ---
 
-## Partner Integrations
+## Verified Integrations Status
 
-### 1. Sibyl Memory (Core Qualifier)
-- **Status**: Verified & load-bearing across fresh OS processes and production deployments.
-- **Client**: `sibyl-memory-client==0.8.0`.
-- **Mapping**: Each workspace cookie maps to a Sibyl `tenant_id`. Approved lessons are WARM entities (`category="lesson"`). Search uses FTS5 lexical matching across domains and keywords.
+| Partner / Stack | Status | Verification & Evidence |
+| --- | --- | --- |
+| **Sibyl Memory** | **VERIFIED (Load-Bearing)** | SQLite WARM entities (`category="lesson"`), tenant-scoped search, verified across isolated OS processes in [`evidence/fresh-session-prior.json`](evidence/fresh-session-prior.json). |
+| **Base** | **VERIFIED (B20 Read)** | Live `eth_call` read against Base B20 Policy Registry (`policyExists(0) == true`) and Factory, verified on mainnet & Sepolia in [`evidence/base-b20-read.json`](evidence/base-b20-read.json). |
+| **Virtuals ACP** | **NOT VERIFIED (Adapter Prepared)** | `@virtuals-protocol/acp-node-v2` v0.1.12 adapter in [`src/prior/providers/virtuals.py`](src/prior/providers/virtuals.py), with live validation in [`scripts/verify_virtuals_acp.py`](scripts/verify_virtuals_acp.py). Unconfigured runs fail honestly without faking. |
 
-### 2. Base (Executed Onchain Read)
-- **Status**: Live onchain verification against official Base precompiles.
-- **Mechanism**: Direct `eth_call` queries to:
+### Base Integration Details
+- **Mechanism**: PRIOR performs a live B20 Policy Registry read on Base.
+- **RPC Calls**: Direct `eth_call` queries to:
   - Base B20 Policy Registry (`0x8453000000000000000000000000000000000002`): `policyExists(0)` &rarr; `0x000...0001` (`true`).
   - Base B20 Factory (`0xB20f000000000000000000000000000000000000`): `isB20(factory)` &rarr; `0x000...0000` (`false`).
-- **Endpoints & UI**: Implemented in [`src/prior/base_action.py`](src/prior/base_action.py) and exposed via `/api/base/verify` and the interactive System Proof UI tab (`/proof`).
-- **Evidence**: [`evidence/base-b20-read.json`](evidence/base-b20-read.json).
-- *Honest claim*: This is a real Base onchain B20 precompile read. It is not an ACP payment.
+- **Endpoints & UI**: Implemented in [`src/prior/base_action.py`](src/prior/base_action.py), exposed via `/api/base/verify` and the interactive System Proof UI tab (`/proof`).
+- *Honest claim*: This is a live Base onchain B20 Policy Registry read. It is not an ACP payment.
 
-### 3. Virtuals Protocol ACP v2
-- **Status**: Prepared with `@virtuals-protocol/acp-node-v2` v0.1.12.
-- **Adapter**: [`src/prior/providers/virtuals.py`](src/prior/providers/virtuals.py) and [`acp-bridge/lib.mjs`](acp-bridge/lib.mjs) implement `PrivyAlchemyEvmProviderAdapter` with Privy authorization signer keys (`BUYER_WALLET_ADDRESS`, `BUYER_WALLET_ID`, `BUYER_SIGNER_PRIVATE_KEY`).
-- *Honest claim*: Live ACP jobs require registered agent registry credentials. When unconfigured, PRIOR fails honestly (`Virtuals credentials are not configured`) and executes development hires through `PRIOR Local Research Agent` (clearly labelled `Network: Local`, never falsely badged as Virtuals).
+---
+
+## Stable Deployment
+
+The live app runs on a VPS at [`prior.103-195-188-198.sslip.io`](https://prior.103-195-188-198.sslip.io), with HTTPS terminated by Caddy and the FastAPI process supervised by `systemd` (`deploy/prior.service`). The laptop and its development tunnel are not required. Sibyl's SQLite database persists at `/var/lib/prior`, and the local research provider is explicitly labelled `Network: Local`.
+
+The production loop was exercised against the public endpoint and recorded in [`evidence/stable-deployment-flow.json`](evidence/stable-deployment-flow.json). That evidence includes a shortened workspace ID, a real rejection and approved lesson, the changed second contract, the worker's learned requirement, and the live Base read.
 
 ---
 
@@ -96,11 +99,12 @@ cd acp-bridge && npm install && cd ..
 
 # Configure environment
 cp .env.example .env
+# Set PRIOR_LOCAL_PROVIDER=true in .env for the local Wikipedia-backed demo.
 
 # Run self-check doctor
 python -m prior.doctor
 
-# Run test suite (27 tests)
+# Run test suite (30 tests)
 python -m pytest
 
 # Run server
@@ -118,19 +122,19 @@ python -m pytest
 ```
 
 ```
-collected 27 items
+collected 30 items
 
 tests/test_base_action.py ..                                             [  7%]
-tests/test_contract.py ...                                               [ 18%]
-tests/test_failures.py ...                                               [ 29%]
-tests/test_job_spec.py .....                                             [ 48%]
-tests/test_lessons.py ....                                               [ 62%]
-tests/test_loop.py ..                                                    [ 70%]
-tests/test_memory_persistence.py ....                                    [ 85%]
-tests/test_providers.py ...                                              [ 96%]
-tests/test_scoping.py .                                                  [100%]
+tests/test_contract.py ...                                               [ 17%]
+tests/test_failures.py ...                                               [ 27%]
+tests/test_job_spec.py .....                                             [ 43%]
+tests/test_lessons.py ....                                               [ 57%]
+tests/test_loop.py ..                                                    [ 63%]
+tests/test_memory_persistence.py ....                                    [ 77%]
+tests/test_providers.py ....                                             [ 90%]
+tests/test_scoping.py ...                                                [100%]
 
-======================== 27 passed in 7.78s ========================
+============================== 30 passed ================================
 ```
 
 ---
@@ -145,7 +149,7 @@ prior/
 │   ├── contract.py         # Dynamic contract builder with learned rules
 │   ├── lessons.py          # Lesson proposer, duplicate check & domain matching
 │   ├── job_spec.py         # Natural language job normalization
-│   ├── base_action.py      # Base B20 Policy Registry & Factory onchain reads
+│   ├── base_action.py      # Base B20 Policy Registry onchain read
 │   ├── research.py         # Real Wikipedia API research worker
 │   ├── service.py          # Core workflow coordinator
 │   ├── settings.py         # Environment configuration
@@ -156,8 +160,8 @@ prior/
 │   └── static/             # Clean, responsive consumer web UI
 ├── acp-bridge/             # Node.js ACP v2 integration (@virtuals-protocol/acp-node-v2)
 ├── evidence/               # Cryptographic and empirical verification files
-├── scripts/                # Fresh-session, Base B20, and live loop test scripts
-├── tests/                  # 27 unit & integration tests
+├── scripts/                # Fresh-session, Base B20, Virtuals ACP, and live loop scripts
+├── tests/                  # 30 unit & integration tests
 └── docs/                   # Product specifications, demo scripts & status notes
 ```
 
