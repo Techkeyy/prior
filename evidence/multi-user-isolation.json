@@ -1,0 +1,22 @@
+{
+  "pass": true,
+  "timestamp": "2026-09-03T13:58:37.941719+00:00",
+  "workspace_a": "ws: e583...dd16 (len 19)",
+  "workspace_b": "ws: 342c...5ec4 (len 19)",
+  "workspaces_distinct": true,
+  "user_a": {
+    "job_1_baseline": true,
+    "lesson_approved": true,
+    "memory_count": 1,
+    "returned_same_workspace": true,
+    "job_2_baseline": false,
+    "job_2_applied_lessons": 1,
+    "worker_received_lesson": true
+  },
+  "user_b": {
+    "baseline_contract": true,
+    "applied_lessons": 0,
+    "memory_empty": true
+  },
+  "note": "Identifiers are shortened. No cookies or secrets are stored."
+}

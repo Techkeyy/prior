@@ -114,3 +114,50 @@ def test_disabled_lessons_do_not_apply_after_restart(tmp_path, monkeypatch):
     # Contract should be baseline because the active lesson was disabled
     assert j2.contract.baseline is True
     assert len(j2.contract.applied_lessons) == 0
+
+
+def test_two_browsers_keep_isolated_memory(monkeypatch):
+    """User A and user B are different cookies and never share lessons."""
+    from fastapi.testclient import TestClient
+
+    from prior import service
+    from prior.app import app
+    from prior.providers.local import LocalResearchProvider
+
+    monkeypatch.setattr(service, "active_provider", lambda: LocalResearchProvider())
+    monkeypatch.setattr(
+        "prior.providers.local.run_research",
+        lambda spec, contract: {"type": "object", "value": {"findings": []}},
+    )
+
+    browser_a = TestClient(app)
+    ws_a = browser_a.get("/api/workspace").json()["workspace_id"]
+    job_a = browser_a.post("/api/jobs", json={"text": "Research the top five AI wallet companies."}).json()
+    browser_a.post(f"/api/jobs/{job_a['id']}/hire")
+    browser_a.post(
+        f"/api/jobs/{job_a['id']}/reject",
+        json={"reason": "Material factual claims must include identifiable source links."},
+    )
+    decided = browser_a.post(f"/api/jobs/{job_a['id']}/lessons", json={"action": "add"}).json()
+    assert decided["proposed_lesson"]["status"] == "active"
+
+    browser_b = TestClient(app)
+    ws_b = browser_b.get("/api/workspace").json()["workspace_id"]
+    assert ws_b != ws_a
+    job_b = browser_b.post(
+        "/api/jobs",
+        json={"text": "Research the top five AI wallet companies."},
+    ).json()
+    assert job_b["contract"]["baseline"] is True
+    assert job_b["contract"]["applied_lessons"] == []
+    assert browser_b.get("/api/memory").json()["lessons"] == []
+    assert browser_b.get("/api/memory").json()["count"] == 0
+
+    browser_a_again = TestClient(app)
+    browser_a_again.cookies.set("prior_workspace", ws_a)
+    assert browser_a_again.get("/api/workspace").json()["workspace_id"] == ws_a
+    job_a2 = browser_a_again.post(
+        "/api/jobs", json={"text": "Research the top five decentralized exchanges."}
+    ).json()
+    assert job_a2["contract"]["baseline"] is False
+    assert len(job_a2["contract"]["applied_lessons"]) == 1

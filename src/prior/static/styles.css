@@ -148,10 +148,70 @@ p.lead { font-size: 18px; color: var(--muted); margin: 0 0 20px; line-height: 1.
 .stages li.now { color: var(--ink); border-color: var(--ink); }
 
 /* Sections: eyebrow plus title, generous controlled spacing */
-.ws-section { margin: 44px 0; }
+.ws-section { margin: 36px 0; }
 .ws-section > .kicker { margin-bottom: 8px; }
 .ws-section > h2 { margin-bottom: 8px; }
 .ws-section > .meta { max-width: 70ch; }
+
+/* Operational blocks: contained workspace units with status headers */
+.ws-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.ws-status {
+  font-family: "Source Sans 3", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.ws-status.hot { color: var(--ok); }
+.opblock {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 22px 24px;
+  margin: 12px 0;
+}
+.opblock.spotlight { border-color: var(--ink); box-shadow: var(--shadow-md); }
+.opblock.memory-applied {
+  background: var(--ok-soft);
+  border: 1px solid var(--ok-line);
+  border-left: 5px solid var(--ok);
+}
+.opblock.quiet {
+  padding: 12px 18px;
+  background: var(--surface-raised);
+  box-shadow: none;
+}
+.opblock.quiet p { margin: 2px 0; }
+.opgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+.opgrid > div + div { border-left: 1px solid var(--line-light); padding-left: 28px; }
+.opgrid h3 {
+  font-family: "Source Sans 3", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.factgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin: 12px 0 4px; }
+.factgrid .fact .fl {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 2px;
+}
+.factgrid .fact .fv { font-size: 16px; font-weight: 600; color: var(--ink); margin: 0; }
 
 /* Operation card: centered working surface */
 .opcard {

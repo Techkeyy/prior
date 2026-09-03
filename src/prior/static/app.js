@@ -57,12 +57,50 @@ function stageOf(job) {
 }
 
 function stagesHtml(active) {
-  const items = ["Request", "Memory", "Contract", "Agent", "Work", "Review", "Learning"];
-  const reached = { Request: 0, Memory: 1, Contract: 2, Agent: 3, Work: 4, Review: 5, Learning: 6 };
+  const items = ["Request", "Memory", "Contract", "Agent", "Work", "Review", "Learning", "Activity"];
+  const reached = { Request: 0, Memory: 1, Contract: 2, Agent: 3, Work: 4, Review: 5, Learning: 6, Activity: 7 };
   return `<ol class="stages" aria-label="Workflow progress">${items.map((label) => {
     const cls = reached[label] < reached[active] ? "done" : label === active ? "now" : "";
     return `<li class="${cls}">${escapeHtml(label)}</li>`;
   }).join("")}</ol>`;
+}
+
+/* Visual priority follows the job. The active stage gets the spotlight;
+   irrelevant stages collapse to quiet placeholders. */
+function priority(job, section) {
+  const s = job ? job.status : null;
+  const stored = job && job.proposed_lesson && job.proposed_lesson.status === "active";
+  const proposed = job && job.status === "rejected" && job.proposed_lesson && job.proposed_lesson.status !== "ignored";
+  switch (section) {
+    case "memory":
+      if (s === "specified" && job.contract && !job.contract.baseline) return "spot";
+      return "";
+    case "contract":
+      if (s === "specified") return "spot";
+      if (s === "working" || s === "hired" || s === "delivered") return "";
+      return "quiet";
+    case "agent":
+      if (s === "specified") return "spot";
+      if (!job) return "quiet";
+      return "";
+    case "work":
+      if (s === "working" || s === "hired") return "spot";
+      if (!job || s === "specified") return "quiet";
+      return "";
+    case "review":
+      if (s === "delivered") return "spot";
+      return "quiet";
+    case "learning":
+      if (proposed || stored) return "spot";
+      if (!job) return "quiet";
+      return "";
+    default:
+      return "";
+  }
+}
+
+function head(eyebrow, status, hot) {
+  return `<div class="ws-head"><p class="kicker${eyebrow === "Memory" || eyebrow === "Learning" ? " memory" : ""}">${escapeHtml(eyebrow)}</p><span class="ws-status${hot ? " hot" : ""}">${escapeHtml(status)}</span></div>`;
 }
 
 function contractStatus(job) {
@@ -78,7 +116,7 @@ function providerCard(job) {
   const p = (job && job.provider) || {};
   const source = p.source;
   if (source === "local-development") {
-    return `<dl class="kv"><dt>Agent</dt><dd><strong>${escapeHtml(p.name || "PRIOR Local Research Agent")}</strong></dd><dt>Network</dt><dd>Local</dd><dt>Status</dt><dd>Ready</dd></dl><p class="meta small">Research source: Wikipedia. Local runs never claim to be Virtuals.</p>`;
+    return `<p style="font-size:19px;font-weight:700;margin:0 0 8px;">${escapeHtml(p.name || "PRIOR Local Research Agent")}</p><div class="factgrid"><div class="fact"><p class="fl">Network</p><p class="fv">Local</p></div><div class="fact"><p class="fl">Research source</p><p class="fv">Wikipedia</p></div></div><p class="meta small">Development provider. Not Virtuals ACP.</p>`;
   }
   if (source === "virtuals-acp") {
     return `<dl class="kv"><dt>Agent</dt><dd><strong>${escapeHtml(p.name || "Virtuals ACP Agent")}</strong></dd><dt>Network</dt><dd>Virtuals ACP</dd>${job.acp_job_id ? `<dt>Job</dt><dd><span class="mono">${escapeHtml(job.acp_job_id)}</span></dd>` : ""}${job.tx_hash ? `<dt>Tx</dt><dd><span class="mono">${escapeHtml(job.tx_hash)}</span></dd>` : ""}</dl>`;
@@ -90,7 +128,7 @@ function agentSection(job) {
   const ws = state.workspace;
   if (job && job.provider) return providerCard(job);
   if (ws && ws.hire_mode === "local") {
-    return `<dl class="kv"><dt>Agent</dt><dd><strong>PRIOR Local Research Agent</strong></dd><dt>Network</dt><dd>Local</dd><dt>Status</dt><dd>Ready</dd></dl><p class="meta small">Research source: Wikipedia.</p>`;
+    return `<p style="font-size:19px;font-weight:700;margin:0 0 8px;">PRIOR Local Research Agent</p><div class="factgrid"><div class="fact"><p class="fl">Network</p><p class="fv">Local</p></div><div class="fact"><p class="fl">Research source</p><p class="fv">Wikipedia</p></div></div><p class="meta small">Development provider. Not Virtuals ACP.</p>`;
   }
   if (ws && ws.hire_mode === "virtuals") {
     return `<p><strong>Virtuals ACP.</strong> <span class="meta">A registered offering is required before hiring.</span></p>`;
@@ -219,103 +257,125 @@ async function renderDashboard() {
       </div>
     </section>
 
-    ${memorySection(lessons, dash.count)}
-    ${contractSection(job)}
-    ${agentSectionHtml(job)}
-    ${workSection(job)}
+    ${memorySection(lessons, dash.count, priority(job, "memory"))}
+    ${contractSection(job, priority(job, "contract"))}
+    ${agentSectionHtml(job, priority(job, "agent"))}
+    ${workSection(job, priority(job, "work"))}
     ${reviewSection(job)}
-    ${learningSection(job)}
+    ${learningSection(job, priority(job, "learning"))}
     ${activitySection(dash.jobs)}
   `);
   if (job && (job.status === "working" || job.status === "hired")) poll(job.id);
 }
 
-function memorySection(lessons, count) {
+function memorySection(lessons, count, level) {
+  const status = `${count} active ${count === 1 ? "lesson" : "lessons"}`;
   const preview = lessons.slice(0, 2).map((l) => `
     <div class="learned" aria-label="Learned clause">
       <p class="kicker memory">Learned clause</p>
       <p class="clause">${escapeHtml(l.requirement)}</p>
       <dl class="memory-facts">
-        <dt>Learned from</dt><dd>Rejected research job</dd>
         <dt>Applies to</dt><dd>${escapeHtml(l.job_type)} jobs</dd>
         <dt>Status</dt><dd>Active</dd>
       </dl>
     </div>`).join("");
   return `
     <section class="ws-section" aria-label="Memory">
-      <p class="kicker">Memory</p>
-      <h2>What PRIOR already knows.</h2>
+      ${head("Memory", status, count > 0)}
+      <h2>Your memory.</h2>
+      <p class="meta">What PRIOR already knows.</p>
+      <div class="opblock${level === "spot" ? " spotlight" : ""}">
       ${lessons.length ? `
-        <p class="meta"><strong>${count} active ${count === 1 ? "lesson" : "lessons"}.</strong> ${lessons.length > 2 ? `Showing the 2 most recent.` : ""}</p>
         ${preview}
+        ${lessons.length > 2 ? `<p class="meta small">Showing the 2 most recent of ${lessons.length}.</p>` : ""}
         <p><a href="/memory" data-nav="memory">View Memory</a></p>
       ` : `
-        <p class="meta"><strong>0 active lessons.</strong> No lessons yet. When you reject work for a real reason and approve the lesson, PRIOR can use it to improve future contracts.</p>
+        <p><strong>No lessons yet.</strong></p>
+        <p class="meta">Rejected work can become a reusable requirement after you approve it.</p>
         <p><a href="/memory" data-nav="memory">View Memory</a></p>
       `}
+      </div>
     </section>`;
 }
 
-function contractSection(job) {
+function contractSection(job, level) {
   if (!job) {
     return `
     <section class="ws-section" aria-label="Contract">
-      <p class="kicker">Contract</p>
+      ${head("Contract", "Not prepared", false)}
       <h2>What the agent will actually be asked to do.</h2>
-      <p class="meta"><span class="badge badge-neutral">Not prepared</span></p>
-      <p class="meta">Submit a request above. PRIOR queries memory first, then writes the contract.</p>
+      <div class="opblock quiet">
+        <div class="opgrid">
+          <div><h3>Request</h3><p class="meta">No request yet.</p></div>
+          <div><h3>Requirements</h3><p class="meta">Created after the memory check.</p></div>
+        </div>
+      </div>
     </section>`;
   }
   const c = job.contract || {};
   const learnedSet = new Set((c.applied_lessons || []).map((l) => l.requirement));
   const standard = (c.acceptance || []).filter((item) => !learnedSet.has(item));
   const status = contractStatus(job);
-  const badge = status === "MEMORY APPLIED" ? "badge-ok" : status === "READY" ? "badge-ok" : status === "IN PROGRESS" ? "badge-warn" : "badge-neutral";
   return `
     <section class="ws-section" aria-label="Contract">
-      <p class="kicker">Contract</p>
+      ${head("Contract", status, status === "MEMORY APPLIED" || status === "READY")}
       <h2>What the agent will actually be asked to do.</h2>
-      <p class="meta"><span class="badge ${badge}">${escapeHtml(status)}</span> <span class="meta small">${escapeHtml(c.title || "")}</span></p>
       ${memoryBanner(job)}
-      <div class="grid-2">
-        <div class="panel"><h3>Request</h3><p>${escapeHtml((job.spec && job.spec.raw) || c.goal || "")}</p>
-          <h3>Deliverables</h3><ul class="clean">${(c.deliverables || []).map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
+      <div class="opblock${status === "MEMORY APPLIED" ? " memory-applied" : level === "spot" ? " spotlight" : ""}">
+        <div class="opgrid">
+          <div><h3>Request</h3><p>${escapeHtml((job.spec && job.spec.raw) || c.goal || "")}</p>
+            <h3>Deliverables</h3><ul class="clean">${(c.deliverables || []).map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
+          </div>
+          <div><h3>Standard</h3><ul class="clean">${standard.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
+            ${(c.applied_lessons || []).length ? `<h3>Learned from Prior</h3><ul class="clean">${(c.applied_lessons || []).map((l) => `<li><strong>${escapeHtml(l.requirement)}</strong></li>`).join("")}</ul>` : `<p class="meta small">Standard requirements apply. No learned clause matched.</p>`}
+          </div>
         </div>
-        <div class="panel"><h3>Standard requirements</h3><ul class="clean">${standard.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul></div>
       </div>
-      ${!(c.applied_lessons || []).length ? `<p class="meta">No learned clauses matched this request. Standard requirements apply.</p>` : ""}
       ${job.status === "specified" ? `<div class="row"><button data-hire${state.busy ? " disabled" : ""}>${state.busy ? "Hiring..." : "Hire agent with this contract"}</button><button class="secondary" data-reset>Cancel</button></div>` : ""}
     </section>`;
 }
 
-function agentSectionHtml(job) {
+function agentSectionHtml(job, level) {
+  const ready = (job && job.provider) || (state.workspace && (state.workspace.hire_mode === "local" || state.workspace.hire_mode === "virtuals"));
+  const status = ready ? "Ready" : "Not configured";
+  const quiet = level === "quiet";
   return `
     <section class="ws-section" aria-label="Agent">
-      <p class="kicker">Agent</p>
+      ${head("Agent", status, !!ready)}
       <h2>Who is doing the work.</h2>
-      ${agentSection(job)}
+      ${quiet ? `<div class="opblock quiet"><p class="meta">No agent needed yet. The provider appears once a request exists.</p></div>` : `
+      <div class="opblock${level === "spot" ? " spotlight" : ""}">
+        ${agentSection(job)}
+      </div>`}
     </section>`;
 }
 
-function workSection(job) {
+function workSection(job, level) {
   if (!job || job.status === "specified" || job.status === "refused") {
     return `
     <section class="ws-section" aria-label="Work">
-      <p class="kicker">Work</p>
+      ${head("Work", "Idle", false)}
       <h2>Current job.</h2>
-      <p class="meta">${!job ? "No active job. Hire an agent to start work." : "Contract ready. Hire the agent to start work."}</p>
+      <div class="opblock quiet"><p class="meta">${!job ? "Nothing is running. Submit a request and hire an agent to start work." : "Contract ready. Work starts when you hire the agent."}</p></div>
     </section>`;
   }
   if (job.status === "working" || job.status === "hired") {
     return `
     <section class="ws-section" aria-label="Work">
-      <p class="kicker">Work</p>
+      ${head("Work", "Working", true)}
       <h2>Current job.</h2>
-      <div class="skeleton" role="status">Agent selected. Working now. Gathering research and applying your contract requirements.</div>
-      <p class="meta">Stage: <strong>${escapeHtml(job.acp_phase || job.status)}</strong>. This section updates when the deliverable is ready.</p>
+      <div class="opblock${level === "spot" ? " spotlight" : ""}">
+        <div class="skeleton" role="status">Agent selected. Working now. Gathering research and applying your contract requirements.</div>
+        <p class="meta">Stage: <strong>${escapeHtml(job.acp_phase || job.status)}</strong>. This section updates when the deliverable is ready.</p>
+      </div>
     </section>`;
   }
-  return "";
+  return `
+    <section class="ws-section" aria-label="Work">
+      ${head("Work", "Done", false)}
+      <h2>Current job.</h2>
+      <div class="opblock quiet"><p class="meta">This job finished the work stage. See Review and Learning below.</p></div>
+    </section>`;
 }
 
 function reviewSection(job) {
@@ -324,7 +384,7 @@ function reviewSection(job) {
   const findings = value.findings || [];
   return `
     <section class="ws-section" aria-label="Review">
-      <p class="kicker">Review</p>
+      ${head("Review", "Ready", true)}
       <h2>Review the agent work.</h2>
       <p class="meta">Retrieved: ${escapeHtml(value.retrieved_at || "just now")}</p>
       ${workerReceived(job)}
@@ -356,14 +416,13 @@ function reviewSection(job) {
     </section>`;
 }
 
-function learningSection(job) {
+function learningSection(job, level) {
   if (!job || job.status === "specified" || job.status === "working" || job.status === "hired" || job.status === "delivered") {
     return `
     <section class="ws-section" aria-label="Learning">
-      <p class="kicker">Learning</p>
+      ${head("Learning", "No lesson yet", false)}
       <h2>What this job taught PRIOR.</h2>
-      <p class="meta"><span class="badge badge-neutral">No lesson yet</span></p>
-      <p class="meta">PRIOR only learns after you reject work for a real reason and approve the resulting lesson.</p>
+      <div class="opblock quiet"><p class="meta">PRIOR only learns after you reject work for a real reason and approve the resulting lesson.</p></div>
     </section>`;
   }
   if (job.status === "rejected" && job.proposed_lesson && job.proposed_lesson.status !== "ignored") {
@@ -371,9 +430,9 @@ function learningSection(job) {
     const stored = lesson.status === "active";
     return `
     <section class="ws-section" aria-label="Learning">
-      <p class="kicker memory">Learning</p>
+      ${head("Learning", stored ? "Stored" : "Gap found", true)}
       <h2>What this job taught PRIOR.</h2>
-      ${stored ? `<p class="meta"><span class="badge badge-ok">Stored</span> Stored with Sibyl Memory. Future matching jobs can now inherit this requirement.</p>` : ""}
+      ${stored ? `<p class="meta">Stored with Sibyl Memory. Future matching jobs can now inherit this requirement.</p>` : ""}
       <div class="learned" aria-label="Contract gap">
         <p class="kicker memory">Contract gap found</p>
         <p class="meta">Your feedback:</p>
@@ -396,20 +455,25 @@ function learningSection(job) {
   const saved = job.proposed_lesson && job.proposed_lesson.status === "active";
   return `
     <section class="ws-section" aria-label="Learning">
-      <p class="kicker">Learning</p>
+      ${head("Learning", saved ? "Stored" : "No lesson yet", !!saved)}
       <h2>What this job taught PRIOR.</h2>
-      ${saved ? `<p class="meta"><span class="badge badge-ok">Stored</span> Learned clause saved: <strong>${escapeHtml(job.proposed_lesson.requirement)}</strong>. Stored with Sibyl Memory.</p>` : `<p class="meta"><span class="badge badge-neutral">No lesson yet</span> No reusable rule came out of this job.</p>`}
+      <div class="opblock${saved ? " spotlight" : " quiet"}">
+      ${saved ? `<p>Learned clause saved: <strong>${escapeHtml(job.proposed_lesson.requirement)}</strong>. Stored with Sibyl Memory.</p>` : `<p class="meta">No reusable rule came out of this job.</p>`}
+      </div>
       <div class="row"><button data-reset>Start a new job</button><a class="btn secondary" href="/memory" data-nav="memory">Open Memory</a></div>
     </section>`;
 }
 
 function activitySection(jobs) {
+  const n = (jobs || []).length;
   return `
     <section class="ws-section" aria-label="Activity">
-      <p class="kicker">Activity</p>
-      <h2>Recent jobs.</h2>
-      <p class="meta">Real workspace history only. Select a job to reopen its summary.</p>
-      ${activityHtml(jobs)}
+      ${head("Activity", n ? `${n} ${n === 1 ? "job" : "jobs"}` : "Empty", n > 0)}
+      <h2>Your recent jobs.</h2>
+      <div class="opblock">
+        <p class="meta">Real workspace history only. Select a job to reopen its summary.</p>
+        ${activityHtml(jobs)}
+      </div>
     </section>`;
 }
 
@@ -424,9 +488,9 @@ async function renderMemory() {
   const activeLessons = lessons.filter((l) => l.status === "active");
   const inactiveLessons = lessons.filter((l) => l.status !== "active");
   shell(`
-    <p class="kicker">Memory</p>
-    <h1>What PRIOR has learned.</h1>
-    <p class="lead">These are reusable requirements learned from previous work in this workspace.</p>
+    <p class="kicker">Your memory</p>
+    <h1>Your memory.</h1>
+    <p class="lead">Reusable requirements learned from previous work in this workspace. Other workspaces never see them.</p>
     ${state.memory && state.memory.status === "unavailable" ? `<div class="error">${escapeHtml(state.memory.message)}</div>` : ""}
     <section class="ws-section" aria-label="Active lessons">
       <p class="kicker">Active lessons</p>
