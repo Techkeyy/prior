@@ -75,6 +75,8 @@ JOB 2 (DEXs)       -> Sibyl Query  -> Contract Mutates (baseline=false) -> Worke
 
 The live app runs on a VPS at [`prior.103-195-188-198.sslip.io`](https://prior.103-195-188-198.sslip.io), with HTTPS terminated by Caddy and the FastAPI process supervised by `systemd` (`deploy/prior.service`). The laptop and its development tunnel are not required. Sibyl's SQLite database persists at `/var/lib/prior`, and the local research provider is explicitly labelled `Network: Local`.
 
+Verified application revision: `66f3238d126607fec3b193d40b57165d445fe8fb`. This identifier is also exposed by `/api/health` and recorded in the stable deployment evidence.
+
 The production loop was exercised against the public endpoint and recorded in [`evidence/stable-deployment-flow.json`](evidence/stable-deployment-flow.json). That evidence includes a shortened workspace ID, a real rejection and approved lesson, the changed second contract, the worker's learned requirement, and the live Base read.
 
 ---
