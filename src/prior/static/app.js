@@ -2,6 +2,7 @@ const app = document.getElementById("app");
 const state = {
   job: null,
   memory: null,
+  dash: null,
   workspace: null,
   baseProof: null,
   error: "",
@@ -44,35 +45,55 @@ async function api(path, options) {
   return data;
 }
 
-function stepsHtml(active) {
-  const items = ["Request", "Contract", "Work", "Review", "Learning"];
-  return `<ol class="steps" aria-label="Job progress">${items.map((label) => {
-    const order = { Request: 0, Contract: 1, Work: 2, Review: 3, Learning: 4 };
-    const cls = order[label] < order[active] ? "done" : order[label] === order[active] ? "now" : "";
+/* Stage pills follow the backbone: request, memory, contract, agent,
+   work, review, learning. Activity is a section, not a stage. */
+function stageOf(job) {
+  if (!job) return "Request";
+  if (job.status === "specified") return "Contract";
+  if (job.status === "working" || job.status === "hired") return "Work";
+  if (job.status === "delivered") return "Review";
+  if (job.status === "rejected") return "Learning";
+  return "Learning";
+}
+
+function stagesHtml(active) {
+  const items = ["Request", "Memory", "Contract", "Agent", "Work", "Review", "Learning"];
+  const reached = { Request: 0, Memory: 1, Contract: 2, Agent: 3, Work: 4, Review: 5, Learning: 6 };
+  return `<ol class="stages" aria-label="Workflow progress">${items.map((label) => {
+    const cls = reached[label] < reached[active] ? "done" : label === active ? "now" : "";
     return `<li class="${cls}">${escapeHtml(label)}</li>`;
   }).join("")}</ol>`;
+}
+
+function contractStatus(job) {
+  if (!job) return "NOT PREPARED";
+  if (job.status === "specified" && job.contract && !job.contract.baseline) return "MEMORY APPLIED";
+  if (job.status === "specified") return "READY";
+  if (job.status === "working" || job.status === "hired") return "IN PROGRESS";
+  if (job.status === "delivered") return "IN PROGRESS";
+  return "COMPLETED";
 }
 
 function providerCard(job) {
   const p = (job && job.provider) || {};
   const source = p.source;
   if (source === "local-development") {
-    return `<div class="provider-line"><span><strong>Agent:</strong> ${escapeHtml(p.name || "PRIOR Local Research Agent")}</span><span><strong>Network:</strong> Local</span><span class="small">Research source: Wikipedia</span></div>`;
+    return `<dl class="kv"><dt>Agent</dt><dd><strong>${escapeHtml(p.name || "PRIOR Local Research Agent")}</strong></dd><dt>Network</dt><dd>Local</dd><dt>Status</dt><dd>Ready</dd></dl><p class="meta small">Research source: Wikipedia. Local runs never claim to be Virtuals.</p>`;
   }
   if (source === "virtuals-acp") {
-    return `<div class="provider-line"><span><strong>Agent:</strong> ${escapeHtml(p.name || "Virtuals ACP Agent")}</span><span><strong>Network:</strong> Virtuals ACP</span>${job.acp_job_id ? `<span class="mono">Job ${escapeHtml(job.acp_job_id)}</span>` : ""}${job.tx_hash ? `<span class="mono">Tx ${escapeHtml(job.tx_hash)}</span>` : ""}</div>`;
+    return `<dl class="kv"><dt>Agent</dt><dd><strong>${escapeHtml(p.name || "Virtuals ACP Agent")}</strong></dd><dt>Network</dt><dd>Virtuals ACP</dd>${job.acp_job_id ? `<dt>Job</dt><dd><span class="mono">${escapeHtml(job.acp_job_id)}</span></dd>` : ""}${job.tx_hash ? `<dt>Tx</dt><dd><span class="mono">${escapeHtml(job.tx_hash)}</span></dd>` : ""}</dl>`;
   }
   return "";
 }
 
-function networkHint() {
+function agentSection(job) {
   const ws = state.workspace;
-  if (!ws) return "";
-  if (ws.hire_mode === "local") {
-    return `<p class="meta">Agent: <strong>PRIOR Local Research Agent</strong>, Local network. Research source: Wikipedia.</p>`;
+  if (job && job.provider) return providerCard(job);
+  if (ws && ws.hire_mode === "local") {
+    return `<dl class="kv"><dt>Agent</dt><dd><strong>PRIOR Local Research Agent</strong></dd><dt>Network</dt><dd>Local</dd><dt>Status</dt><dd>Ready</dd></dl><p class="meta small">Research source: Wikipedia.</p>`;
   }
-  if (ws.hire_mode === "virtuals") {
-    return `<p class="meta">Agent network: <strong>Virtuals ACP</strong>.</p>`;
+  if (ws && ws.hire_mode === "virtuals") {
+    return `<p><strong>Virtuals ACP.</strong> <span class="meta">A registered offering is required before hiring.</span></p>`;
   }
   return `<p class="meta">No hire path configured yet. Jobs will fail honestly.</p>`;
 }
@@ -86,34 +107,44 @@ function memoryBanner(job) {
     const items = c.applied_lessons.map((l) => `
       <li>
         <span class="clause">${escapeHtml(l.requirement)}</span>
-        <div class="meta small">Learned because a previous research deliverable was rejected. ${escapeHtml(l.match_reason || "Matched to this research request.")}</div>
+        <div class="meta small">Learned from a previous rejected research job. ${escapeHtml(l.match_reason || "Matched to this research request.")}</div>
       </li>`).join("");
     return `
-      <section class="learned" aria-label="Remembered requirements">
-        <p class="kicker memory">Prior remembered</p>
-        <h2>${c.applied_lessons.length} lesson from a previous research job</h2>
-        <p class="meta"><strong>Added to this contract:</strong></p>
+      <div class="learned" aria-label="Remembered requirements">
+        <p class="kicker memory">Memory applied</p>
+        <p><strong>${c.applied_lessons.length} previous lesson changed this contract.</strong></p>
+        <p class="meta"><strong>Learned from Prior:</strong></p>
         <ul class="clean">${items}</ul>
         <p class="clause-note">This requirement will be sent to whichever agent performs this job.</p>
-      </section>
+      </div>
     `;
   }
-  return `
-    <section class="panel" aria-label="Memory check">
-      <p class="kicker">Memory check</p>
-      <p class="meta">${escapeHtml(c.memory_message || "No matching lesson yet. This job starts from the standard requirements.")}</p>
-    </section>
-  `;
+  return "";
 }
 
 function workerReceived(job) {
   const req = job.worker_requirement;
   if (!req) return "";
   const learned = req.learned_requirements || [];
-  return `<section class="panel" aria-label="What the worker received">
+  return `<div class="panel" aria-label="What the worker received">
     <p class="kicker">Sent to the worker</p>
     ${learned.length ? `<p class="clause">${escapeHtml(learned.join("; "))}</p><p class="meta">This learned clause was included in the worker instructions.</p>` : `<p class="meta">No learned clause was needed for this job.</p>`}
-  </section>`;
+  </div>`;
+}
+
+function activityHtml(jobs) {
+  if (!jobs || !jobs.length) {
+    return `<p class="meta">No jobs yet in this workspace. Your first job will appear here with its date, status, provider, and memory outcome.</p>`;
+  }
+  const rows = jobs.slice(0, 8).map((j, i) => {
+    const when = String(j.created_at || "").replace("T", " ").replace(/(\+00:00|Z)$/, "");
+    const applied = (j.contract && j.contract.applied_lessons && j.contract.applied_lessons.length) || 0;
+    const learned = j.proposed_lesson && j.proposed_lesson.status === "active" ? 1 : 0;
+    const title = (j.spec && j.spec.raw) || (j.contract && j.contract.title) || j.id;
+    const provider = (j.provider && j.provider.name) || "Not hired yet";
+    return `<li><span class="n">${String(i + 1).padStart(2, "0")}</span><span class="t"><a href="/" data-open-job="${escapeAttr(j.id)}">${escapeHtml(title)}</a><br /><span class="s">${escapeHtml(j.status)} · ${escapeHtml(provider)} · ${applied ? "1 remembered clause applied" : "no clause applied"}${learned ? " · 1 lesson learned" : ""} · ${escapeHtml(when)}</span></span></li>`;
+  }).join("");
+  return `<ol class="journey">${rows}</ol>`;
 }
 
 function render() {
@@ -121,17 +152,11 @@ function render() {
   const current = route();
   if (current === "memory") return renderMemory();
   if (current === "proof") return renderProof();
-  if (!state.job) return renderHome();
+  return renderDashboard();
+}
 
-  const job = state.job;
-  if (job.status === "refused") return renderRefused(job);
-  if (job.status === "specified") return renderContract(job);
-  if (job.status === "working" || job.status === "hired") return renderProgress(job);
-  if (job.status === "delivered") return renderDeliverable(job);
-  if (job.status === "rejected" && job.proposed_lesson && job.proposed_lesson.status !== "ignored") {
-    return renderLesson(job);
-  }
-  return renderDone(job);
+function foot() {
+  return `<footer class="workspace-foot"><span><a class="mark" href="/" data-nav="home" style="font-size:15px;">PRIOR</a> <span class="meta small">Contracts that learn.</span></span><span><a href="/" data-nav="home">New job</a> · <a href="/memory" data-nav="memory">Memory</a> · <a href="/proof" data-nav="proof">Technical proof</a></span></footer>`;
 }
 
 function shell(html) {
@@ -143,194 +168,249 @@ function shell(html) {
   if (state.error) {
     err = `<div class="error" role="alert">${escapeHtml(state.error)}</div>`;
   }
-  app.innerHTML = `${notif}${err}${html}`;
+  app.innerHTML = `${notif}${err}${html}${foot()}`;
   bind();
 }
 
-function renderHome() {
-  shell(`
-    <section class="hero">
-      <p class="kicker">Prior</p>
+async function renderDashboard() {
+  try {
+    state.dash = await api("/api/memory");
+  } catch (err) {
+    state.error = err.message;
+    state.dash = { lessons: [], count: 0, jobs: [], status: "unavailable" };
+  }
+  const job = state.job;
+  const dash = state.dash || { lessons: [], count: 0, jobs: [] };
+  const lessons = (dash.lessons || []).filter((l) => l.status === "active");
+  const stage = stageOf(job && job.status !== "refused" ? job : null);
+
+  if (job && job.status === "refused") {
+    shell(`
+      ${stagesHtml("Request")}
+      <p class="kicker">Your workspace</p>
       <h1>What do you need done?</h1>
-      <p class="sub">Every rejected job teaches PRIOR a clause the next contract should not forget.</p>
-    </section>
-    <form id="specify">
-      <label for="need">Research request</label>
-      <textarea id="need" name="text" placeholder="Example: Research the top five AI wallet companies and compare their features" required></textarea>
-      <div class="row">
-        <button type="submit"${state.busy ? " disabled" : ""}>
-          ${state.busy ? "Checking memory..." : "Find an agent"}
-        </button>
-      </div>
-    </form>
-    <p class="meta small">Try one:</p>
-    <div class="chips">
-      <span class="chip" data-chip="Research the top five AI wallet companies." role="button" tabindex="0">Top AI wallet companies</span>
-      <span class="chip" data-chip="Research the top five decentralized exchanges." role="button" tabindex="0">Top decentralized exchanges</span>
-      <span class="chip" data-chip="Compare leading Layer-2 rollups by volume." role="button" tabindex="0">Leading L2 rollups</span>
-    </div>
-    <div class="footer-proof">Learned clauses live in <a href="/memory" data-nav="memory">Memory</a>. Implementation details live under <a href="/proof" data-nav="proof">Technical proof</a>.</div>
-  `);
-}
+      <p class="lead">Every rejected job can teach PRIOR a clause the next contract should not forget.</p>
+      <div class="error" role="alert">${escapeHtml(job.error || "PRIOR focuses on research jobs.")}</div>
+      <div class="row"><button class="secondary" data-reset>Start over</button></div>
+      ${memorySection(lessons, dash.count)}
+      ${activitySection(dash.jobs)}
+    `);
+    return;
+  }
 
-function renderRefused(job) {
   shell(`
-    <p class="kicker bad">Outside research scope</p>
-    <h1>PRIOR focuses on research</h1>
-    <div class="panel">
-      <p>${escapeHtml(job.error || job.spec.refusal_reason || "Unsupported request category.")}</p>
-      <p class="meta">PRIOR currently handles market analysis, company comparisons, and information gathering.</p>
-    </div>
-    <div class="row">
-      <button class="secondary" data-reset>Start over</button>
-    </div>
+    ${stagesHtml(stage)}
+    <p class="kicker">Your workspace</p>
+    <h1>What do you need done?</h1>
+    <p class="lead">Every rejected job can teach PRIOR a clause the next contract should not forget.</p>
+
+    <section class="opcard" aria-label="New request">
+      <form id="specify">
+        <label class="left" for="need">Research request</label>
+        <textarea id="need" name="text" placeholder="Example: Research the top five AI wallet companies and compare their features" required></textarea>
+        <div class="row center">
+          <button type="submit"${state.busy ? " disabled" : ""}>${state.busy ? "Checking memory..." : "Find an agent"}</button>
+        </div>
+      </form>
+      <div class="chips">
+        <span class="chip" data-chip="Research the top five AI wallet companies." role="button" tabindex="0">Top AI wallet companies</span>
+        <span class="chip" data-chip="Research the top five decentralized exchanges." role="button" tabindex="0">Top decentralized exchanges</span>
+        <span class="chip" data-chip="Compare leading Layer-2 rollups by volume." role="button" tabindex="0">Leading L2 rollups</span>
+      </div>
+    </section>
+
+    ${memorySection(lessons, dash.count)}
+    ${contractSection(job)}
+    ${agentSectionHtml(job)}
+    ${workSection(job)}
+    ${reviewSection(job)}
+    ${learningSection(job)}
+    ${activitySection(dash.jobs)}
   `);
+  if (job && (job.status === "working" || job.status === "hired")) poll(job.id);
 }
 
-function renderContract(job) {
-  const c = job.contract;
+function memorySection(lessons, count) {
+  const preview = lessons.slice(0, 2).map((l) => `
+    <div class="learned" aria-label="Learned clause">
+      <p class="kicker memory">Learned clause</p>
+      <p class="clause">${escapeHtml(l.requirement)}</p>
+      <dl class="memory-facts">
+        <dt>Learned from</dt><dd>Rejected research job</dd>
+        <dt>Applies to</dt><dd>${escapeHtml(l.job_type)} jobs</dd>
+        <dt>Status</dt><dd>Active</dd>
+      </dl>
+    </div>`).join("");
+  return `
+    <section class="ws-section" aria-label="Memory">
+      <p class="kicker">Memory</p>
+      <h2>What PRIOR already knows.</h2>
+      ${lessons.length ? `
+        <p class="meta"><strong>${count} active ${count === 1 ? "lesson" : "lessons"}.</strong> ${lessons.length > 2 ? `Showing the 2 most recent.` : ""}</p>
+        ${preview}
+        <p><a href="/memory" data-nav="memory">View Memory</a></p>
+      ` : `
+        <p class="meta"><strong>0 active lessons.</strong> No lessons yet. When you reject work for a real reason and approve the lesson, PRIOR can use it to improve future contracts.</p>
+        <p><a href="/memory" data-nav="memory">View Memory</a></p>
+      `}
+    </section>`;
+}
+
+function contractSection(job) {
+  if (!job) {
+    return `
+    <section class="ws-section" aria-label="Contract">
+      <p class="kicker">Contract</p>
+      <h2>What the agent will actually be asked to do.</h2>
+      <p class="meta"><span class="badge badge-neutral">Not prepared</span></p>
+      <p class="meta">Submit a request above. PRIOR queries memory first, then writes the contract.</p>
+    </section>`;
+  }
+  const c = job.contract || {};
   const learnedSet = new Set((c.applied_lessons || []).map((l) => l.requirement));
   const standard = (c.acceptance || []).filter((item) => !learnedSet.has(item));
-  const hireLabel = state.busy ? "Hiring..." : "Hire agent with this contract";
-  shell(`
-    ${stepsHtml("Contract")}
-    <p class="kicker">Contract review</p>
-    <h1>${escapeHtml(c.title || "Research contract")}</h1>
-
-    ${memoryBanner(job)}
-
-    <section class="section" aria-label="Your request">
-      <div class="section-head"><h2>Your request</h2></div>
-      <p>${escapeHtml((job.spec && job.spec.raw) || c.goal || "")}</p>
-    </section>
-
-    <section class="section" aria-label="Deliverables">
-      <div class="section-head"><h2>Deliverables</h2><span class="count">${(c.deliverables || []).length} items</span></div>
-      <ul class="clean">${(c.deliverables || []).map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
-    </section>
-
-    <section class="section" aria-label="Standard requirements">
-      <div class="section-head"><h2>Standard requirements</h2></div>
-      <ul class="clean">${standard.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
-    </section>
-
-    ${(c.applied_lessons || []).length ? "" : `<p class="meta">No learned clauses matched this request.</p>`}
-
-    <section class="section" aria-label="Provider">
-      <div class="section-head"><h2>Agent</h2></div>
-      ${providerCard(job) || networkHint()}
-    </section>
-
-    <div class="row">
-      <button data-hire${state.busy ? " disabled" : ""}>${hireLabel}</button>
-      <button class="secondary" data-reset>Cancel</button>
-    </div>
-  `);
+  const status = contractStatus(job);
+  const badge = status === "MEMORY APPLIED" ? "badge-ok" : status === "READY" ? "badge-ok" : status === "IN PROGRESS" ? "badge-warn" : "badge-neutral";
+  return `
+    <section class="ws-section" aria-label="Contract">
+      <p class="kicker">Contract</p>
+      <h2>What the agent will actually be asked to do.</h2>
+      <p class="meta"><span class="badge ${badge}">${escapeHtml(status)}</span> <span class="meta small">${escapeHtml(c.title || "")}</span></p>
+      ${memoryBanner(job)}
+      <div class="grid-2">
+        <div class="panel"><h3>Request</h3><p>${escapeHtml((job.spec && job.spec.raw) || c.goal || "")}</p>
+          <h3>Deliverables</h3><ul class="clean">${(c.deliverables || []).map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
+        </div>
+        <div class="panel"><h3>Standard requirements</h3><ul class="clean">${standard.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul></div>
+      </div>
+      ${!(c.applied_lessons || []).length ? `<p class="meta">No learned clauses matched this request. Standard requirements apply.</p>` : ""}
+      ${job.status === "specified" ? `<div class="row"><button data-hire${state.busy ? " disabled" : ""}>${state.busy ? "Hiring..." : "Hire agent with this contract"}</button><button class="secondary" data-reset>Cancel</button></div>` : ""}
+    </section>`;
 }
 
-function renderProgress(job) {
-  shell(`
-    ${stepsHtml("Work")}
-    <p class="kicker">Agent execution</p>
-    <h1>Agent selected. Working now.</h1>
-    ${providerCard(job)}
-    <div class="skeleton" role="status">Gathering research and applying your contract requirements.</div>
-    <p class="meta">Stage: <strong>${escapeHtml(job.acp_phase || job.status)}</strong>. This page updates when the deliverable is ready.</p>
-  `);
-  poll(job.id);
+function agentSectionHtml(job) {
+  return `
+    <section class="ws-section" aria-label="Agent">
+      <p class="kicker">Agent</p>
+      <h2>Who is doing the work.</h2>
+      ${agentSection(job)}
+    </section>`;
 }
 
-function renderDeliverable(job) {
+function workSection(job) {
+  if (!job || job.status === "specified" || job.status === "refused") {
+    return `
+    <section class="ws-section" aria-label="Work">
+      <p class="kicker">Work</p>
+      <h2>Current job.</h2>
+      <p class="meta">${!job ? "No active job. Hire an agent to start work." : "Contract ready. Hire the agent to start work."}</p>
+    </section>`;
+  }
+  if (job.status === "working" || job.status === "hired") {
+    return `
+    <section class="ws-section" aria-label="Work">
+      <p class="kicker">Work</p>
+      <h2>Current job.</h2>
+      <div class="skeleton" role="status">Agent selected. Working now. Gathering research and applying your contract requirements.</div>
+      <p class="meta">Stage: <strong>${escapeHtml(job.acp_phase || job.status)}</strong>. This section updates when the deliverable is ready.</p>
+    </section>`;
+  }
+  return "";
+}
+
+function reviewSection(job) {
+  if (!job || job.status !== "delivered") return "";
   const value = (job.deliverable && job.deliverable.value) || {};
   const findings = value.findings || [];
-  shell(`
-    ${stepsHtml("Review")}
-    <p class="kicker">Research result</p>
-    <h1>${escapeHtml(value.title || job.contract.title)}</h1>
-    ${providerCard(job)}
-    <p class="meta">Retrieved: ${escapeHtml(value.retrieved_at || "just now")}</p>
-
-    ${workerReceived(job)}
-
-    <div class="findings">
-      ${findings.map((f, i) => `
-        <article class="finding">
-          <h3>${i + 1}. ${escapeHtml(f.name || "Finding")}</h3>
-          <p>${escapeHtml(f.summary || "")}</p>
-          ${(f.sources || []).map((s) => `
-            <p class="meta">Source: <a href="${escapeAttr(s.url)}" target="_blank" rel="noreferrer">${escapeHtml(s.label || s.url)}</a></p>
-          `).join("")}
-        </article>
-      `).join("") || `<div class="panel"><p>No findings returned from worker.</p></div>`}
-    </div>
-
-    ${(value.notes || []).length ? `<ul class="meta">${value.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>` : ""}
-
-    <div class="row" id="deliverable-actions">
-      <button data-accept${state.busy ? " disabled" : ""}>Accept work</button>
-      <button class="secondary" data-show-reject>Reject work</button>
-    </div>
-
-    <form id="reject" hidden style="margin-top:20px;">
-      <div class="panel" style="border-left:4px solid var(--accent);">
-        <p class="kicker bad">Reject and teach Prior</p>
-        <p>What was missing or wrong? PRIOR will propose one reusable clause from your answer.</p>
-        <label for="reason">Rejection reason</label>
-        <textarea name="reason" id="reason" placeholder="Example: Material factual claims lacked verifiable source links." required></textarea>
-        <div class="row">
-          <button type="submit"${state.busy ? " disabled" : ""}>Submit rejection</button>
-          <button type="button" class="secondary" data-hide-reject>Cancel</button>
+  return `
+    <section class="ws-section" aria-label="Review">
+      <p class="kicker">Review</p>
+      <h2>Review the agent work.</h2>
+      <p class="meta">Retrieved: ${escapeHtml(value.retrieved_at || "just now")}</p>
+      ${workerReceived(job)}
+      <div class="findings">
+        ${findings.map((f, i) => `
+          <article class="finding">
+            <h3>${i + 1}. ${escapeHtml(f.name || "Finding")}</h3>
+            <p>${escapeHtml(f.summary || "")}</p>
+            ${(f.sources || []).map((s) => `<p class="meta">Source: <a href="${escapeAttr(s.url)}" target="_blank" rel="noreferrer">${escapeHtml(s.label || s.url)}</a></p>`).join("")}
+          </article>`).join("") || `<div class="panel"><p>No findings returned from worker.</p></div>`}
+      </div>
+      ${(value.notes || []).length ? `<ul class="meta">${value.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>` : ""}
+      <div class="row" id="deliverable-actions">
+        <button data-accept${state.busy ? " disabled" : ""}>Accept work</button>
+        <button class="secondary" data-show-reject>Reject work</button>
+      </div>
+      <form id="reject" hidden style="margin-top:20px;">
+        <div class="panel" style="border-left:4px solid var(--accent);">
+          <p class="kicker bad">Reject and teach Prior</p>
+          <p>What was missing or wrong? PRIOR will propose one reusable clause from your answer.</p>
+          <label for="reason">Rejection reason</label>
+          <textarea name="reason" id="reason" placeholder="Example: Material factual claims lacked verifiable source links." required></textarea>
+          <div class="row">
+            <button type="submit"${state.busy ? " disabled" : ""}>Submit rejection</button>
+            <button type="button" class="secondary" data-hide-reject>Cancel</button>
+          </div>
         </div>
-      </div>
-    </form>
-  `);
+      </form>
+    </section>`;
 }
 
-function renderLesson(job) {
-  const lesson = job.proposed_lesson;
-  shell(`
-    ${stepsHtml("Learning")}
-    <p class="kicker memory">You found a contract gap</p>
-    <h1>Add this clause to future contracts?</h1>
-    <p class="lead">Based on your feedback, PRIOR proposes one reusable clause for matching research jobs.</p>
-
-    <section class="learned" aria-label="Proposed clause">
-      <p class="kicker memory">Proposed clause</p>
-      <p class="clause">"${escapeHtml(lesson.requirement)}"</p>
-      <p class="meta">Applies to: ${escapeHtml(lesson.job_type)} jobs. Trigger: ${escapeHtml(lesson.issue || "Quality requirement")}.</p>
-      <p class="meta small">Derived from: "${escapeHtml(lesson.reason || "")}"</p>
-    </section>
-
-    <form id="edit-lesson">
-      <label for="requirement">Clause text (you can edit it)</label>
-      <input id="requirement" name="requirement" type="text" value="${escapeAttr(lesson.requirement)}" required />
-      <div class="row">
-        <button data-add${state.busy ? " disabled" : ""}>Add to PRIOR</button>
-        <button class="secondary" data-edit${state.busy ? " disabled" : ""}>Save edited text</button>
-        <button class="secondary" data-ignore${state.busy ? " disabled" : ""}>Ignore</button>
+function learningSection(job) {
+  if (!job || job.status === "specified" || job.status === "working" || job.status === "hired" || job.status === "delivered") {
+    return `
+    <section class="ws-section" aria-label="Learning">
+      <p class="kicker">Learning</p>
+      <h2>What this job taught PRIOR.</h2>
+      <p class="meta"><span class="badge badge-neutral">No lesson yet</span></p>
+      <p class="meta">PRIOR only learns after you reject work for a real reason and approve the resulting lesson.</p>
+    </section>`;
+  }
+  if (job.status === "rejected" && job.proposed_lesson && job.proposed_lesson.status !== "ignored") {
+    const lesson = job.proposed_lesson;
+    const stored = lesson.status === "active";
+    return `
+    <section class="ws-section" aria-label="Learning">
+      <p class="kicker memory">Learning</p>
+      <h2>What this job taught PRIOR.</h2>
+      ${stored ? `<p class="meta"><span class="badge badge-ok">Stored</span> Stored with Sibyl Memory. Future matching jobs can now inherit this requirement.</p>` : ""}
+      <div class="learned" aria-label="Contract gap">
+        <p class="kicker memory">Contract gap found</p>
+        <p class="meta">Your feedback:</p>
+        <p>"${escapeHtml(lesson.reason || job.rejection_reason || "")}"</p>
+        <p class="meta">PRIOR proposes:</p>
+        <p class="clause">"${escapeHtml(lesson.requirement)}"</p>
+        <p class="meta">If approved, this becomes a reusable requirement for future matching jobs.</p>
       </div>
-    </form>
-    <p class="meta small">If added, PRIOR stores it with Sibyl Memory and applies it to future matching jobs.</p>
-  `);
+      <form id="edit-lesson">
+        <label for="requirement">Clause text (you can edit it)</label>
+        <input id="requirement" name="requirement" type="text" value="${escapeAttr(lesson.requirement)}" required />
+        <div class="row">
+          <button data-add${state.busy ? " disabled" : ""}>Add to PRIOR</button>
+          <button class="secondary" data-edit${state.busy ? " disabled" : ""}>Save edited text</button>
+          <button class="secondary" data-ignore${state.busy ? " disabled" : ""}>Ignore</button>
+        </div>
+      </form>
+    </section>`;
+  }
+  const saved = job.proposed_lesson && job.proposed_lesson.status === "active";
+  return `
+    <section class="ws-section" aria-label="Learning">
+      <p class="kicker">Learning</p>
+      <h2>What this job taught PRIOR.</h2>
+      ${saved ? `<p class="meta"><span class="badge badge-ok">Stored</span> Learned clause saved: <strong>${escapeHtml(job.proposed_lesson.requirement)}</strong>. Stored with Sibyl Memory.</p>` : `<p class="meta"><span class="badge badge-neutral">No lesson yet</span> No reusable rule came out of this job.</p>`}
+      <div class="row"><button data-reset>Start a new job</button><a class="btn secondary" href="/memory" data-nav="memory">Open Memory</a></div>
+    </section>`;
 }
 
-function renderDone(job) {
-  const accepted = job.evaluation === "accepted";
-  shell(`
-    ${stepsHtml("Learning")}
-    <p class="kicker ${accepted ? "ok" : "warn"}">Job complete</p>
-    <h1>${accepted ? "Work accepted" : "Outcome recorded"}</h1>
-    ${providerCard(job)}
-    <div class="panel">
-      <p>Job <code class="mono">${escapeHtml(job.id)}</code> is now <strong>${escapeHtml(job.status)}</strong>.</p>
-      ${job.proposed_lesson && job.proposed_lesson.status === "active" ? `<p class="ok">Learned clause saved: <strong>${escapeHtml(job.proposed_lesson.requirement)}</strong></p><p class="meta small">Stored with Sibyl Memory.</p>` : ""}
-      ${job.proposed_lesson && job.proposed_lesson.status === "duplicate" ? `<p class="warn">An identical clause was already active, so nothing new was stored.</p>` : ""}
-    </div>
-    <div class="row">
-      <button data-reset>Start a new job</button>
-      <a class="btn secondary" href="/memory" data-nav="memory">Open Memory</a>
-    </div>
-  `);
+function activitySection(jobs) {
+  return `
+    <section class="ws-section" aria-label="Activity">
+      <p class="kicker">Activity</p>
+      <h2>Recent jobs.</h2>
+      <p class="meta">Real workspace history only. Select a job to reopen its summary.</p>
+      ${activityHtml(jobs)}
+    </section>`;
 }
 
 async function renderMemory() {
@@ -344,54 +424,38 @@ async function renderMemory() {
   const activeLessons = lessons.filter((l) => l.status === "active");
   const inactiveLessons = lessons.filter((l) => l.status !== "active");
   shell(`
-    <p class="kicker memory">Memory</p>
-    <h1>Clauses PRIOR has learned</h1>
-    <p class="lead">Failed work becomes contract language. PRIOR adds these requirements to future matching jobs.</p>
-
+    <p class="kicker">Memory</p>
+    <h1>What PRIOR has learned.</h1>
+    <p class="lead">These are reusable requirements learned from previous work in this workspace.</p>
     ${state.memory && state.memory.status === "unavailable" ? `<div class="error">${escapeHtml(state.memory.message)}</div>` : ""}
-
-    <p class="meta"><strong>${active} active ${active === 1 ? "clause" : "clauses"}</strong> will be added to future matching jobs.</p>
-
-    ${!lessons.length ? `
-      <section class="panel" aria-label="Empty memory">
-        <h2>PRIOR has not learned anything here yet.</h2>
-        <p class="meta">Complete a job and reject work for a real reason. If you approve the lesson, PRIOR will use it to improve future contracts.</p>
-        <div class="row"><a class="btn" href="/" data-nav="home">Start a job</a></div>
-      </section>
-    ` : ""}
-
-    ${activeLessons.map((l) => `
-      <article class="memory-card" aria-label="Learned clause">
-        <div class="memory-top">
-          <span class="badge badge-ok">Active</span>
-          <span class="meta small">${escapeHtml(l.job_type)}</span>
-        </div>
-        <p class="kicker memory">Learned clause</p>
-        <h2>${escapeHtml(l.requirement)}</h2>
-        <dl class="memory-facts">
-          <dt>Learned from</dt><dd>Rejected research job${l.source_job_id ? ` ${escapeHtml(l.source_job_id)}` : ""}</dd>
-          <dt>Applies to</dt><dd>${escapeHtml(l.job_type)} jobs</dd>
-          <dt>Status</dt><dd>Active</dd>
-        </dl>
-        <p class="meta">PRIOR will add this requirement to future matching jobs.</p>
-        <div class="row"><button class="secondary" data-disable="${escapeAttr(l.id)}">Disable</button></div>
-      </article>
-    `).join("")}
-
-    ${inactiveLessons.map((l) => `
-      <article class="memory-card inactive" aria-label="Inactive clause">
-        <div class="memory-top">
-          <span class="badge badge-neutral">${escapeHtml(l.status)}</span>
-          <span class="meta small">${escapeHtml(l.job_type)}</span>
-        </div>
-        <h2>${escapeHtml(l.requirement)}</h2>
-      </article>
-    `).join("")}
-
-    ${lessons.length ? `
-    <div class="row">
-      <a class="btn" href="/" data-nav="home">New job</a>
-    </div>` : ""}
+    <section class="ws-section" aria-label="Active lessons">
+      <p class="kicker">Active lessons</p>
+      <p class="meta"><strong>${active} active ${active === 1 ? "clause" : "clauses"}.</strong></p>
+      ${!lessons.length ? `
+        <div class="panel" aria-label="Empty memory">
+          <h2>PRIOR has not learned anything here yet.</h2>
+          <p class="meta">Complete a job and reject work for a real reason. If you approve the lesson, PRIOR will use it to improve future contracts.</p>
+          <div class="row"><a class="btn" href="/" data-nav="home">Start a job</a></div>
+        </div>` : ""}
+      ${activeLessons.map((l, i) => `
+        <article class="memory-card" aria-label="Learned clause">
+          <div class="memory-top"><span class="badge badge-ok">Active</span><span class="meta small mono">L_${escapeHtml(String(i + 1).padStart(3, "0"))}</span></div>
+          <p class="kicker memory">Learned clause</p>
+          <h2>${escapeHtml(l.requirement)}</h2>
+          <dl class="memory-facts">
+            <dt>Source</dt><dd>Rejected job · ${escapeHtml((l.source_job_id || "past research").replace(/^job_/, ""))}</dd>
+            <dt>Applies to</dt><dd>${escapeHtml(l.job_type)} jobs</dd>
+            <dt>Status</dt><dd>Active</dd>
+          </dl>
+          <p class="meta">PRIOR will automatically consider this clause for future matching jobs.</p>
+          <div class="row"><button class="secondary" data-disable="${escapeAttr(l.id)}">Disable</button></div>
+        </article>`).join("")}
+      ${inactiveLessons.map((l) => `
+        <article class="memory-card inactive" aria-label="Inactive clause">
+          <div class="memory-top"><span class="badge badge-neutral">${escapeHtml(l.status)}</span><span class="meta small">${escapeHtml(l.job_type)}</span></div>
+          <h2>${escapeHtml(l.requirement)}</h2>
+        </article>`).join("")}
+    </section>
   `);
 }
 
@@ -407,27 +471,27 @@ async function renderProof() {
         <p><strong>Policy Registry:</strong> <code class="mono">${escapeHtml(bp.policy_registry)}</code>, <code class="mono">policyExists(0)</code> = <strong>${bp.policyExists_0 === "0x0000000000000000000000000000000000000000000000000000000000000001" ? "true (0x01)" : escapeHtml(bp.policyExists_0)}</strong></p>
         <p><strong>B20 Factory:</strong> <code class="mono">${escapeHtml(bp.factory)}</code>, <code class="mono">isB20(factory)</code> = <strong>${bp.isB20_factory === "0x0000000000000000000000000000000000000000000000000000000000000000" ? "false (0x00)" : escapeHtml(bp.isB20_factory)}</strong></p>
         <p class="meta">${escapeHtml(bp.product_reason)}</p>
-      </div>
-    `;
+      </div>`;
   }
   const ws = state.workspace;
-  const sibyl = ws ? "Connected" : "Checking";
   const mode = ws && ws.hire_mode === "local" ? "Local Research Agent" : ws && ws.hire_mode === "virtuals" ? "Virtuals ACP" : "No hire provider configured";
-
   shell(`
     <p class="kicker">Technical proof</p>
-    <h1>How PRIOR proves it works</h1>
-    <p class="lead">Consumer product first. This page is for judges and developers who want the underlying evidence.</p>
+    <h1>What PRIOR has actually demonstrated.</h1>
+    <p class="lead">Read-only evidence from real runs. Nothing here sends a transaction or spends funds.</p>
 
-    <section class="panel" aria-label="Integration status">
-      <p class="kicker">Status</p>
-      <p><strong>Sibyl Memory:</strong> <span class="badge badge-ok">Verified</span> <span class="meta">${escapeHtml(sibyl)}</span></p>
-      <p><strong>Base:</strong> <span class="badge badge-ok">Verified B20 read</span></p>
-      <p><strong>Virtuals ACP:</strong> <span class="badge badge-neutral">Not verified</span></p>
+    <section class="ws-section" aria-label="Sibyl Memory">
+      <p class="kicker">01 · Sibyl Memory</p>
+      <h2>Verified</h2>
+      <p class="meta">Rejected jobs become approved clauses. New requests recall them before the next contract is written.</p>
+      <details class="proof"><summary>View implementation details</summary>
+        <p class="meta">Approved lessons are stored as WARM lesson records, isolated per workspace. Recall uses text search plus listing in the same workspace. Relevant files: <code class="mono">src/prior/memory.py</code>, <code class="mono">src/prior/contract.py</code>, <code class="mono">src/prior/providers/base.py</code>. Evidence: <code class="mono">evidence/fresh-session-prior.json</code>, <code class="mono">evidence/stable-deployment-flow.json</code>.</p>
+      </details>
     </section>
 
-    <section class="panel" aria-label="Base verification">
-      <h2>Base onchain check</h2>
+    <section class="ws-section" aria-label="Base">
+      <p class="kicker">02 · Base</p>
+      <h2>Verified B20 read</h2>
       <p class="meta">Runs a live read when you click below. No payment, registration, transfer, or settlement is performed here.</p>
       <div class="row">
         <button data-verify-base="mainnet"${state.busy ? " disabled" : ""}>Run Base mainnet read</button>
@@ -436,16 +500,16 @@ async function renderProof() {
       ${proofHtml}
     </section>
 
-    <details class="proof">
-      <summary>View implementation details</summary>
-      <p class="meta">Memory is stored as workspace scoped lesson records and recalled with text search before every new contract. The browser workspace cookie selects the memory scope. Deleting memory removes future recall.</p>
-      <p class="meta">Base uses direct RPC reads against the B20 Factory and Policy Registry addresses. The ACP path uses the official Node SDK and requires registered credentials.</p>
-      <p class="meta">Active provider: ${escapeHtml(mode)}. Local runs never claim to be Virtuals.</p>
-    </details>
+    <section class="ws-section" aria-label="Virtuals ACP">
+      <p class="kicker">03 · Virtuals ACP</p>
+      <h2>Not verified</h2>
+      <p class="meta">No registered buyer, no registered seller, no offering, and no real ACP job exist yet, so no partner credit is claimed. The adapter is ready and fails honestly without credentials. Active provider: ${escapeHtml(mode)}.</p>
+      <details class="proof"><summary>View implementation details</summary>
+        <p class="meta">Adapter: <code class="mono">src/prior/providers/virtuals.py</code> through <code class="mono">acp-bridge/</code> with the official Node SDK v2. Validation: <code class="mono">scripts/verify_virtuals_acp.py</code>. Evidence: <code class="mono">evidence/virtuals-acp-live.json</code>.</p>
+      </details>
+    </section>
 
-    <div class="row">
-      <a class="btn" href="/" data-nav="home">Back to new job</a>
-    </div>
+    <div class="row"><a class="btn" href="/" data-nav="home">Back to workspace</a></div>
   `);
 }
 
@@ -457,7 +521,19 @@ function bind() {
       history.pushState({}, "", href);
       state.error = "";
       state.notification = "";
+      if (route() === "home" && href === "/") state.job = null;
       render();
+    });
+  });
+
+  document.querySelectorAll("[data-open-job]").forEach(a => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const id = a.getAttribute("data-open-job");
+      run(async () => {
+        state.job = await api(`/api/jobs/${id}`);
+        history.pushState({}, "", "/");
+      });
     });
   });
 
@@ -629,10 +705,10 @@ function updateWorkspaceBadge() {
   if (wsId) {
     const raw = wsId.replace(/^ws_/, "");
     const shortId = raw.length > 8 ? `${raw.slice(0, 4)}...${raw.slice(-4)}` : raw;
-    badge.textContent = `ws: ${shortId}`;
+    badge.textContent = `WS ${shortId}`;
     badge.title = `Workspace: ${wsId}`;
   } else {
-    badge.textContent = `ws: local`;
+    badge.textContent = `WS local`;
   }
 }
 
