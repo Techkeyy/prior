@@ -6,11 +6,11 @@
     "process_supervision": "systemd on VPS",
     "persistent_storage": "Sibyl SQLite and job records under /var/lib/prior"
   },
-  "timestamp": "2026-09-03T13:05:27.248858+00:00",
-  "commit_hash": "f4258cba40b1d084114186f1be40d6c541e86598",
-  "deployed_commit": "f4258cba40b1d084114186f1be40d6c541e86598",
+  "timestamp": "2026-09-03T14:12:33.350483+00:00",
+  "commit_hash": "562a5f4dbeae09592de07afa65fbab5c26d2cb5c",
+  "deployed_commit": "562a5f4dbeae09592de07afa65fbab5c26d2cb5c",
   "source_tree_dirty": false,
-  "workspace_id": "ws: 9eda\u20266bcf",
+  "workspace_id": "ws: cac2\u2026ecdc",
   "workspace_id_length": 19,
   "base_proof": {
     "ok": true,
@@ -22,7 +22,7 @@
     "qualifies_as": "B20 read"
   },
   "job_1": {
-    "id": "job_4b631e7ae2ba",
+    "id": "job_12f4f575b1e7",
     "baseline": true,
     "provider": {
       "id": "local-research-provider",
@@ -36,16 +36,16 @@
     },
     "rejection_reason": "Material factual claims must include identifiable source links.",
     "approved_lesson": {
-      "id": "L_291b74256319491b",
+      "id": "L_db58a53c3e6642a2",
       "job_type": "research",
       "issue": "Material factual claims must include identifiable source links.",
       "requirement": "Material factual claims must include identifiable source links.",
-      "reason": "Learned from rejected job job_4b631e7ae2ba: Material factual claims must include identifiable source links.",
-      "source_job_id": "job_4b631e7ae2ba",
+      "reason": "Learned from rejected job job_12f4f575b1e7: Material factual claims must include identifiable source links.",
+      "source_job_id": "job_12f4f575b1e7",
       "originating_evaluation": "rejected",
       "status": "active",
       "provenance": "user-approved",
-      "created_at": "2026-09-03T13:05:24+00:00",
+      "created_at": "2026-09-03T14:12:32+00:00",
       "domains": [
         "ai wallets"
       ],
@@ -57,20 +57,20 @@
     }
   },
   "job_2": {
-    "id": "job_d96e3a9f7b07",
+    "id": "job_b7ca7d26f0a0",
     "baseline": false,
     "applied_lessons": [
       {
-        "id": "L_291b74256319491b",
+        "id": "L_db58a53c3e6642a2",
         "job_type": "research",
         "issue": "Material factual claims must include identifiable source links.",
         "requirement": "Material factual claims must include identifiable source links.",
-        "reason": "Learned from rejected job job_4b631e7ae2ba: Material factual claims must include identifiable source links.",
-        "source_job_id": "job_4b631e7ae2ba",
+        "reason": "Learned from rejected job job_12f4f575b1e7: Material factual claims must include identifiable source links.",
+        "source_job_id": "job_12f4f575b1e7",
         "originating_evaluation": "rejected",
         "status": "active",
         "provenance": "user-approved",
-        "created_at": "2026-09-03T13:05:24+00:00",
+        "created_at": "2026-09-03T14:12:32+00:00",
         "domains": [
           "ai wallets"
         ],
