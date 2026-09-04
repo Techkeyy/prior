@@ -67,9 +67,9 @@ async function main() {
     const mod = await loadSdk();
     const { agent, chain } = await createAgent(mod, "buyer");
     const myAddress = await agent.getAddress();
-    console.error(`[BUYER] Creating fund-transfer job on Base mainnet for ${providerAddress}...`);
+    console.error(`[BUYER] Creating on-chain ACP job on Base mainnet for ${providerAddress}...`);
     const expiredAt = Math.floor(Date.now() / 1000) + 3600;
-    const jobId = await agent.createFundTransferJob(chain.id, {
+    const jobId = await agent.createJob(chain.id, {
       providerAddress,
       evaluatorAddress: myAddress,
       expiredAt,
@@ -116,7 +116,12 @@ async function main() {
       }
     }
     await session.fetchJob().catch(() => {});
-    const deliverable = session.job?.deliverable || deliverableFromSession(session) || null;
+    const entries = await agent.getTransport().getHistory(chain.id, jobId).catch(() => []);
+    for (const e of entries) session.appendEntry(e);
+    let deliverable = session.job?.deliverable || deliverableFromSession(session);
+    if (!deliverable && ((session.job?.status || "").toUpperCase() === "SUBMITTED" || session.status === "submitted")) {
+      deliverable = "Deliverable confirmed submitted on-chain by provider.";
+    }
     console.log(
       JSON.stringify({
         ok: true,

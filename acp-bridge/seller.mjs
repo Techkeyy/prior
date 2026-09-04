@@ -51,6 +51,7 @@ function runResearch(requirement) {
 async function main() {
   requiredEnv("SELLER_WALLET_ADDRESS");
   requiredEnv("SELLER_WALLET_ID");
+  requiredEnv("SELLER_SIGNER_PRIVATE_KEY");
   const mod = await loadSdk();
   const { AssetToken, ACP_SELECTORS } = mod;
   const { agent, chain } = await createAgent(mod, "seller");
@@ -98,6 +99,11 @@ async function main() {
         const report = await runResearch(requirement);
         console.error(`[SELLER] Submitting deliverable for job ${session.jobId}...`);
         await session.submit(report);
+        try {
+          await agent.sendMessage(session.chainId, session.jobId.toString(), report, "deliverable");
+        } catch (err) {
+          console.error("Deliverable message send:", String(err?.message || err));
+        }
         console.error(`[SELLER] Deliverable submitted for job ${session.jobId}`);
       }
     } catch (err) {

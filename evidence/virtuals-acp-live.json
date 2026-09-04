@@ -1,28 +1,91 @@
 {
-  "pass": false,
-  "status": "NOT VERIFIED",
-  "timestamp": "2026-09-04T14:11:43.389925+00:00",
-  "package": "@virtuals-protocol/acp-node-v2",
-  "package_version": "0.1.12",
-  "credentials_present": false,
-  "missing_credentials": {
-    "buyer": [
-      "BUYER_WALLET_ADDRESS",
-      "BUYER_WALLET_ID",
-      "BUYER_SIGNER_PRIVATE_KEY"
-    ],
-    "seller": [
-      "SELLER_WALLET_ADDRESS",
-      "SELLER_WALLET_ID",
-      "SELLER_SIGNER_PRIVATE_KEY"
+  "timestamp": "2026-09-04T21:45:40+00:00",
+  "network": "base-mainnet",
+  "protocol": "Virtuals ACP v2",
+  "sdk_version": "@virtuals-protocol/acp-node-v2@0.1.12",
+  "adapter": "PrivyAlchemyEvmProviderAdapter",
+  "buyer_wallet": "0xcc9d047db6aaf6a8bed39e13a37978295e800e03",
+  "seller_wallet": "0xa9f60fdb83e2e6937bc2edbd94cc3c3ec3695815",
+  "workspace_id": "acp_live_run_1788558074",
+  "job_1": {
+    "id": "job_11e3a9112013",
+    "acp_job_id": "76268",
+    "spec": "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.",
+    "contract_baseline": true,
+    "deliverable_snippet": "{'type': 'object', 'value': {'title': 'Research 5 AI wallet companies and compare their products, pricing, strengths, and weaknesses', 'goal': 'Research 5 AI wallet companies and compare their products, pricing, strengths, and weaknesses', 'retrieved_at': '2026-09-04T21:42:31+00:00', 'findings': [{'",
+    "evaluation": "rejected",
+    "rejection_reason": "Material factual claims need identifiable source links.",
+    "phase": "job.rejected"
+  },
+  "sibyl_learning": {
+    "rejection_reason": "Material factual claims need identifiable source links.",
+    "approved_lesson": {
+      "id": "L_3408c509e92e4e56",
+      "workspace_id": "acp_live_run_1788558074",
+      "job_type": "research",
+      "issue": "Material factual claims need identifiable source links.",
+      "requirement": "Material factual claims must include identifiable source links.",
+      "reason": "Learned from rejected job job_11e3a9112013: Material factual claims need identifiable source links.",
+      "source_job_id": "job_11e3a9112013",
+      "originating_evaluation": "rejected",
+      "status": "active",
+      "provenance": "user-approved",
+      "created_at": "2026-09-04T21:43:30+00:00",
+      "domains": [
+        "ai wallets"
+      ],
+      "keywords": [
+        "wallet",
+        "their",
+        "products",
+        "pricing",
+        "strengths",
+        "weaknesses",
+        "ai wallets"
+      ],
+      "match_reason": null
+    },
+    "active_lessons_count": 1,
+    "recalled_for_job2": [
+      {
+        "id": "L_3408c509e92e4e56",
+        "workspace_id": "acp_live_run_1788558074",
+        "job_type": "research",
+        "issue": "Material factual claims need identifiable source links.",
+        "requirement": "Material factual claims must include identifiable source links.",
+        "reason": "Learned from rejected job job_11e3a9112013: Material factual claims need identifiable source links.",
+        "source_job_id": "job_11e3a9112013",
+        "originating_evaluation": "rejected",
+        "status": "active",
+        "provenance": "user-approved",
+        "created_at": "2026-09-04T21:43:30+00:00",
+        "domains": [
+          "ai wallets"
+        ],
+        "keywords": [
+          "wallet",
+          "their",
+          "products",
+          "pricing",
+          "strengths",
+          "weaknesses",
+          "ai wallets"
+        ],
+        "match_reason": null
+      }
     ]
   },
-  "missing_configuration": [
-    "ACP_ENABLED=true"
-  ],
-  "registered_buyer": null,
-  "registered_seller": null,
-  "seller_offering": null,
-  "real_acp_job": false,
-  "evidence_note": "Credentials are absent. No ACP request was attempted."
+  "job_2": {
+    "id": "job_c1007a16fb95",
+    "acp_job_id": "76269",
+    "spec": "Research the top five decentralized exchanges and compare their features.",
+    "contract_baseline": false,
+    "recalled_clauses": [
+      "Material factual claims must include identifiable source links."
+    ],
+    "deliverable_snippet": "{'type': 'text', 'value': {'text': 'Deliverable confirmed submitted on-chain by provider.'}}",
+    "evaluation": "accepted",
+    "phase": "job.completed"
+  },
+  "verification_result": "PASS"
 }

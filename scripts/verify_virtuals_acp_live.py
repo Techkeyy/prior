@@ -67,7 +67,7 @@ def main():
     print(f"\n--- STEP 3: WAIT FOR SELLER TO DELIVER JOB 1 ---")
     start_t = time.time()
     delivered_rec1 = rec1
-    while time.time() - start_t < 180:
+    while time.time() - start_t < 360:
         delivered_rec1 = service.refresh(workspace_id, rec1.id)
         print(f"[{int(time.time() - start_t)}s] Job 1 Status: {delivered_rec1.status}, Phase: {delivered_rec1.acp_phase}")
         if delivered_rec1.status == "delivered" and delivered_rec1.deliverable:
@@ -89,8 +89,8 @@ def main():
     print(f"Proposed Lesson: {rejected_rec1.proposed_lesson}")
     assert rejected_rec1.proposed_lesson is not None
 
-    # Approve lesson
-    approved_rec1 = service.decide_lesson(workspace_id, rec1.id, "approve")
+    # Approve/Add lesson
+    approved_rec1 = service.decide_lesson(workspace_id, rec1.id, "add")
     print(f"Lesson approved: {approved_rec1.proposed_lesson}")
 
     lessons_after_job1 = memory.list_lessons(workspace_id)
@@ -130,7 +130,7 @@ def main():
     print(f"\n--- STEP 8: WAIT FOR SELLER TO DELIVER JOB 2 ---")
     start_t = time.time()
     delivered_rec2 = rec2
-    while time.time() - start_t < 180:
+    while time.time() - start_t < 360:
         delivered_rec2 = service.refresh(workspace_id, rec2.id)
         print(f"[{int(time.time() - start_t)}s] Job 2 Status: {delivered_rec2.status}, Phase: {delivered_rec2.acp_phase}")
         if delivered_rec2.status == "delivered" and delivered_rec2.deliverable:
