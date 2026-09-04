@@ -1,7 +1,7 @@
 {
   "pass": false,
   "status": "NOT VERIFIED",
-  "timestamp": "2026-09-02T23:26:54.257450+00:00",
+  "timestamp": "2026-09-04T14:11:43.389925+00:00",
   "package": "@virtuals-protocol/acp-node-v2",
   "package_version": "0.1.12",
   "credentials_present": false,
