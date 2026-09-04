@@ -51,40 +51,72 @@ function runResearch(requirement) {
 async function main() {
   requiredEnv("SELLER_WALLET_ADDRESS");
   requiredEnv("SELLER_WALLET_ID");
-  requiredEnv("SELLER_SIGNER_PRIVATE_KEY");
   const mod = await loadSdk();
-  const { AssetToken } = mod;
+  const { AssetToken, ACP_SELECTORS } = mod;
   const { agent, chain } = await createAgent(mod, "seller");
-  const price = Number(process.env.ACP_JOB_PRICE_USDC || "0.01");
+  const price = 0;
 
-  agent.on("entry", async (session, entry) => {
-    if (entry?.kind !== "system") return;
-    const type = entry.event?.type;
+  async function processSession(session) {
     try {
-      if (type === "job.created") {
-        await session.setBudget(AssetToken.usdc(price, chain.id));
-        return;
-      }
-      if (type === "job.funded") {
-        const requirementEntry = [...(session.entries || [])]
+      await session.fetchJob().catch(() => {});
+      const onChainStatus = (session.job?.status || "").toUpperCase();
+      const hasBudgetEvent = (session.entries || []).some(
+        (e) => e.kind === "system" && e.event?.type === "budget.set"
+      );
+
+      if (onChainStatus === "OPEN" && !hasBudgetEvent && !session._budgetSetting) {
+        session._budgetSetting = true;
+        console.error(`[SELLER] Setting budget for job ${session.jobId}...`);
+        const token = AssetToken.usdc(price, chain.id);
+        const myAddr = await agent.getAddress();
+        const { hasFund } = session.detectConfiguredHooks(ACP_SELECTORS.setBudget);
+        if (hasFund) {
+          await session.setBudgetWithFundRequest(token, token, myAddr);
+        } else {
+          await session.setBudget(token);
+        }
+        console.error(`[SELLER] Budget set for job ${session.jobId}`);
+      } else if (onChainStatus === "FUNDED" && !session._submitting) {
+        session._submitting = true;
+        console.error(`[SELLER] Job ${session.jobId} funded. Running research...`);
+        const entries = session.entries?.length
+          ? session.entries
+          : await agent.getTransport().getHistory(session.chainId, session.jobId).catch(() => []);
+        const requirementEntry = [...entries]
           .reverse()
           .find((item) => item.kind === "message" && item.contentType === "requirement");
         let requirement = {};
-        try {
-          requirement = JSON.parse(requirementEntry?.content || "{}");
-        } catch {
-          requirement = { raw: requirementEntry?.content || "" };
+        if (requirementEntry?.content) {
+          try {
+            requirement = JSON.parse(requirementEntry.content);
+          } catch {
+            requirement = { raw: requirementEntry.content };
+          }
+        } else if (session.job?.description) {
+          requirement = { raw: session.job.description, goal: session.job.description };
         }
         const report = await runResearch(requirement);
+        console.error(`[SELLER] Submitting deliverable for job ${session.jobId}...`);
         await session.submit(report);
+        console.error(`[SELLER] Deliverable submitted for job ${session.jobId}`);
       }
     } catch (err) {
-      console.error("seller handler failed", String(err?.message || err));
+      console.error(`[SELLER PROCESS ERROR ${session.jobId}]`, String(err?.stack || err?.message || err));
     }
+  }
+
+  agent.on("entry", async (session) => {
+    await processSession(session);
   });
 
   await agent.start();
   console.error("PRIOR seller listening (ACP v2). Credentials are not printed.");
+
+  setInterval(async () => {
+    for (const s of agent.sessions || []) {
+      await processSession(s);
+    }
+  }, 4000);
 }
 
 main().catch((err) => fail(String(err?.stack || err)));

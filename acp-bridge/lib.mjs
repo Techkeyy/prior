@@ -1,9 +1,28 @@
-/**
- * Shared v2 ACP helpers.
- * Official adapter: PrivyAlchemyEvmProviderAdapter
- * Official env: *_WALLET_ADDRESS, *_WALLET_ID, *_SIGNER_PRIVATE_KEY
- * Never log credential values.
- */
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
+const ENV_FILE = resolve(ROOT, ".env");
+if (existsSync(ENV_FILE)) {
+  const lines = readFileSync(ENV_FILE, "utf-8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx !== -1) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (key && !process.env[key]) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
+
 export function fail(message, extra = {}) {
   console.error(message);
   console.log(JSON.stringify({ ok: false, error: message, ...extra }));
@@ -58,7 +77,7 @@ export async function createAgent(mod, role = "buyer") {
     signerPrivateKey: requiredEnv(`${prefix}_SIGNER_PRIVATE_KEY`),
     chains: [chain],
   });
-  const agent = await AcpAgent.create({ provider });
+  const agent = await AcpAgent.create({ evmProvider: provider });
   return { agent, chain };
 }
 

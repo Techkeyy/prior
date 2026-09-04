@@ -43,7 +43,7 @@ class VirtualsAcpProvider:
                     source=VIRTUALS_SOURCE,
                     network="Virtuals ACP",
                     wallet_address=item.get("walletAddress"),
-                    offering_name=item.get("offeringName"),
+                    offering_name=item.get("offeringName") or "research",
                 )
             )
         if not offers:
@@ -57,14 +57,15 @@ class VirtualsAcpProvider:
         self._require_ready()
         if offer.source != VIRTUALS_SOURCE:
             raise ProviderError("VirtualsAcpProvider will not create a non-ACP job.")
-        if not offer.wallet_address or not offer.offering_name:
-            raise ProviderError("ACP offering is missing wallet address or offering name.")
+        if not offer.wallet_address:
+            raise ProviderError("ACP offering is missing wallet address.")
+        offering_name = offer.offering_name or "research"
         requirement = requirement_payload(contract, spec)
         raw = _bridge(
             [
                 "create-job",
                 offer.wallet_address,
-                offer.offering_name,
+                offering_name,
                 json.dumps(requirement),
             ]
         )

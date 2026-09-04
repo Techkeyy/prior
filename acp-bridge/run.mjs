@@ -37,105 +37,126 @@ async function main() {
     const keyword = args[0] || "research";
     const mod = await loadSdk();
     const { agent } = await createAgent(mod, "buyer");
-    await agent.start();
-    try {
-      let agents = [];
-      const preferred = process.env.SELLER_WALLET_ADDRESS;
-      if (preferred) {
-        const mine = await agent.getAgentByWalletAddress(preferred);
-        if (mine) agents = [mine];
-      }
-      if (!agents.length) {
-        agents = (await agent.browseAgents(keyword)) || [];
-      }
-      console.log(JSON.stringify({ ok: true, keyword, agents: flattenOfferings(agents) }));
-    } finally {
-      await agent.stop?.();
+    let agents = [];
+    const preferred = process.env.SELLER_WALLET_ADDRESS;
+    if (preferred) {
+      const mine = await agent.getAgentByWalletAddress(preferred);
+      if (mine) agents = [mine];
     }
-    return;
+    if (!agents.length) {
+      agents = (await agent.browseAgents(keyword)) || [];
+    }
+    console.log(JSON.stringify({ ok: true, keyword, agents: flattenOfferings(agents) }));
+    process.exit(0);
   }
 
   if (cmd === "create-job") {
-    const [providerAddress, offeringName, requirementJson] = args;
-    const requirement = JSON.parse(requirementJson);
+    const providerAddress = args[0];
+    const offeringName = args[1] || "research";
+    const requirementRaw = args.slice(2).join(" ");
+    let requirement = {};
+    try {
+      requirement = JSON.parse(requirementRaw);
+    } catch {
+      try {
+        requirement = JSON.parse(requirementRaw.replace(/(\w+):/g, '"$1":'));
+      } catch {
+        requirement = { raw: requirementRaw };
+      }
+    }
     const mod = await loadSdk();
     const { agent, chain } = await createAgent(mod, "buyer");
-    await agent.start();
+    const myAddress = await agent.getAddress();
+    console.error(`[BUYER] Creating fund-transfer job on Base mainnet for ${providerAddress}...`);
+    const expiredAt = Math.floor(Date.now() / 1000) + 3600;
+    const jobId = await agent.createFundTransferJob(chain.id, {
+      providerAddress,
+      evaluatorAddress: myAddress,
+      expiredAt,
+      description: offeringName,
+    });
+    console.error(`[BUYER] On-chain Job created: ${jobId}`);
+
     try {
-      const jobId = await agent.createJobByOfferingName(
-        chain.id,
-        offeringName,
-        providerAddress,
-        requirement,
-        { evaluatorAddress: await agent.getAddress() }
-      );
-      console.log(
-        JSON.stringify({
-          ok: true,
-          jobId: String(jobId),
-          phase: "job.created",
-          chainId: chain.id,
-        })
-      );
-    } finally {
-      await agent.stop?.();
+      await agent.sendMessage(chain.id, jobId.toString(), JSON.stringify(requirement), "requirement");
+    } catch (err) {
+      console.error("Note: requirement message send:", String(err?.message || err));
     }
-    return;
+
+    console.log(
+      JSON.stringify({
+        ok: true,
+        jobId: String(jobId),
+        phase: "job.created",
+        chainId: chain.id,
+      })
+    );
+    process.exit(0);
   }
 
   if (cmd === "status") {
     const [jobId] = args;
     const mod = await loadSdk();
     const { agent, chain } = await createAgent(mod, "buyer");
-    await agent.start();
-    try {
-      const session = await agent.getSession(chain.id, jobId);
-      if (!session) fail(`No ACP session for job ${jobId}`);
-      console.log(
-        JSON.stringify({
-          ok: true,
-          jobId,
-          phase: session.status,
-          deliverable: deliverableFromSession(session),
-        })
-      );
-    } finally {
-      await agent.stop?.();
+    const session = agent.getOrCreateSession(jobId, chain.id);
+    await session.fetchJob().catch(() => {});
+    const onChainStatus = (session.job?.status || "").toUpperCase();
+    const hasBudgetEvent = (session.entries || []).some(
+      (e) => e.kind === "system" && e.event?.type === "budget.set"
+    );
+    const hasBudget = session.job?.budget !== undefined || hasBudgetEvent || session.status === "budget_set";
+
+    if (onChainStatus === "OPEN" && hasBudget) {
+      try {
+        console.error(`[BUYER] Auto-funding job ${jobId}...`);
+        await session.fund();
+        console.error(`[BUYER] Job ${jobId} auto-funded.`);
+      } catch (err) {
+        console.error("Auto-fund error:", String(err?.message || err));
+      }
     }
-    return;
+    await session.fetchJob().catch(() => {});
+    const deliverable = session.job?.deliverable || deliverableFromSession(session) || null;
+    console.log(
+      JSON.stringify({
+        ok: true,
+        jobId,
+        phase: (session.job?.status || session.status || "open").toLowerCase(),
+        deliverable,
+      })
+    );
+    process.exit(0);
   }
 
   if (cmd === "fund") {
     const [jobId] = args;
     const mod = await loadSdk();
     const { agent, chain } = await createAgent(mod, "buyer");
-    await agent.start();
-    try {
-      const session = await agent.getSession(chain.id, jobId);
-      if (!session) fail(`No ACP session for job ${jobId}`);
-      await session.fund();
-      console.log(JSON.stringify({ ok: true, jobId, action: "fund", phase: session.status }));
-    } finally {
-      await agent.stop?.();
-    }
-    return;
+    const session = agent.getOrCreateSession(jobId, chain.id);
+    await session.fetchJob();
+    await session.fund();
+    console.log(JSON.stringify({ ok: true, jobId, action: "fund", phase: session.status }));
+    process.exit(0);
   }
 
   if (cmd === "complete" || cmd === "reject") {
     const [jobId, reason] = args;
     const mod = await loadSdk();
     const { agent, chain } = await createAgent(mod, "buyer");
-    await agent.start();
-    try {
-      const session = await agent.getSession(chain.id, jobId);
-      if (!session) fail(`No ACP session for job ${jobId}`);
-      if (cmd === "complete") await session.complete(reason || "Accepted by hiring user.");
-      else await session.reject(reason || "Rejected by hiring user.");
-      console.log(JSON.stringify({ ok: true, jobId, action: cmd, phase: session.status }));
-    } finally {
-      await agent.stop?.();
-    }
-    return;
+    const session = agent.getOrCreateSession(jobId, chain.id);
+    await session.fetchJob().catch(() => {});
+    if (cmd === "complete") await session.complete(reason || "Accepted by hiring user.");
+    else await session.reject(reason || "Rejected by hiring user.");
+    await session.fetchJob().catch(() => {});
+    console.log(
+      JSON.stringify({
+        ok: true,
+        jobId,
+        action: cmd,
+        phase: (session.job?.status || session.status || cmd).toLowerCase(),
+      })
+    );
+    process.exit(0);
   }
 
   fail(`Unknown ACP bridge command: ${cmd}`);
