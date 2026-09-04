@@ -46,39 +46,39 @@ def test_user_scoping(tmp_path, monkeypatch):
     assert list_again("ws_alice")[0].status == "disabled"
 
 
-def test_workspace_cookie_stability_across_processes():
-    script = """
-import json, os, sys
-from fastapi.testclient import TestClient
-from prior.app import app
-
-client = TestClient(app)
-workspace = sys.argv[1] if len(sys.argv) > 1 else None
-if workspace:
-    client.cookies.set("prior_workspace", workspace)
-response = client.get("/api/workspace")
-print(json.dumps({"pid": os.getpid(), "workspace_id": response.json()["workspace_id"]}))
-"""
+def test_workspace_cookie_stability_across_processes(tmp_path):
+    runner = tmp_path / "run_ws.py"
+    runner.write_text(
+        "import json, os, sys\n"
+        "from fastapi.testclient import TestClient\n"
+        "from prior.app import app\n"
+        "workspace = sys.argv[1] if len(sys.argv) > 1 else None\n"
+        "with TestClient(app) as client:\n"
+        "    if workspace:\n"
+        "        client.cookies.set('prior_workspace', workspace)\n"
+        "    response = client.get('/api/workspace')\n"
+        "    print(json.dumps({'pid': os.getpid(), 'workspace_id': response.json()['workspace_id']}), flush=True)\n"
+    )
     env = os.environ.copy()
     root = Path(__file__).resolve().parents[1]
-    env["PYTHONPATH"] = str(root / "src")
+    env["PYTHONPATH"] = os.pathsep.join([str(root / "src")] + [p for p in sys.path if p])
+    venv_python = Path(sys.prefix) / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    py_bin = str(venv_python) if venv_python.exists() else sys.executable
     process_a = subprocess.run(
-        [sys.executable, "-c", script],
+        [py_bin, str(runner)],
         cwd=str(root),
         capture_output=True,
         text=True,
         check=True,
-        stdin=subprocess.DEVNULL,
         env=env,
     )
     workspace_id = json.loads(process_a.stdout)["workspace_id"]
     process_b = subprocess.run(
-        [sys.executable, "-c", script, workspace_id],
+        [py_bin, str(runner), workspace_id],
         cwd=str(root),
         capture_output=True,
         text=True,
         check=True,
-        stdin=subprocess.DEVNULL,
         env=env,
     )
     first = json.loads(process_a.stdout)

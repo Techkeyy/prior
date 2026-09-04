@@ -49,11 +49,13 @@ def _workspace(request: Request, response: Response) -> str:
     return workspace_id
 
 
+@app.get("/healthz")
 @app.get("/api/health")
 def health() -> dict:
     from prior.doctor import snapshot
 
     return snapshot()
+
 
 
 @app.post("/api/jobs")
