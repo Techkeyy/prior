@@ -136,38 +136,24 @@ button, a {
 .brand-group {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   color: var(--white);
   text-decoration: none;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 19px;
+  line-height: 1;
+  text-transform: uppercase;
   transition: opacity 0.15s ease;
 }
 .brand:hover {
-  opacity: 0.9;
-}
-
-.brand-mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border: 1.5px solid var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 0 12px var(--accent-glow);
-  border-radius: 6px;
-  color: var(--white);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 800;
+  opacity: 0.85;
 }
 
 .ws-badge {
@@ -1073,11 +1059,13 @@ details.proof summary {
   gap: 20px;
 }
 
-.site-footer strong {
+.site-footer strong, .site-footer .footer-brand {
   color: var(--white);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .site-footer a {
@@ -1086,7 +1074,7 @@ details.proof summary {
   transition: color 0.15s ease;
 }
 
-.site-footer a:hover {
+.site-footer a:hover, .site-footer .footer-brand:hover {
   color: var(--white);
 }
 

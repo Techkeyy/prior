@@ -208,7 +208,7 @@ function render() {
 }
 
 function foot() {
-  return `<footer class="site-footer"><div><strong>PRIOR</strong><span>Contracts that learn from rejected agent work.</span></div><div><a href="/app" data-nav="app">Launch PRIOR</a><a href="/memory" data-nav="memory">Memory</a><a href="/proof" data-nav="proof">Technical proof</a></div></footer>`;
+  return `<footer class="site-footer"><div><a href="/" data-nav="landing" class="footer-brand">PRIOR</a><span>Contracts that learn from rejected agent work.</span></div><div><a href="/app" data-nav="app">Launch PRIOR</a><a href="/memory" data-nav="memory">Memory</a><a href="/proof" data-nav="proof">Technical proof</a></div></footer>`;
 }
 
 function shell(html) {
