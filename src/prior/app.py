@@ -197,6 +197,14 @@ def index() -> FileResponse:
     )
 
 
+@app.get("/app")
+def app_page() -> FileResponse:
+    return FileResponse(
+        STATIC / "index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
 @app.get("/memory")
 def memory_page() -> FileResponse:
     return FileResponse(

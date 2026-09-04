@@ -13,21 +13,33 @@ const state = {
 
 function route() {
   const p = location.pathname;
+  if (p === "/app") return "app";
   if (p === "/memory") return "memory";
   if (p === "/proof") return "proof";
-  return "home";
+  return "landing";
 }
 
-function updateNavActive() {
+function updateNav() {
   const current = route();
-  document.querySelectorAll("nav a").forEach(a => {
-    const target = a.getAttribute("data-nav") || (a.getAttribute("href") === "/memory" ? "memory" : a.getAttribute("href") === "/proof" ? "proof" : "home");
-    if (target === current) {
-      a.classList.add("active");
-    } else {
-      a.classList.remove("active");
-    }
-  });
+  const nav = document.getElementById("site-nav");
+  const wsBadge = document.getElementById("workspace-badge");
+  if (!nav) return;
+
+  if (current === "landing") {
+    if (wsBadge) wsBadge.style.display = "none";
+    nav.innerHTML = `
+      <a href="#how-it-works" data-anchor="how-it-works">How it works</a>
+      <a href="/proof" data-nav="proof" class="proof-link">Technical proof</a>
+      <a href="/app" data-nav="app" class="button button-primary button-small nav-launch-btn">Launch PRIOR</a>
+    `;
+  } else {
+    if (wsBadge) wsBadge.style.display = "";
+    nav.innerHTML = `
+      <a href="/app" data-nav="app" class="${current === "app" ? "active" : ""}">Workspace</a>
+      <a href="/memory" data-nav="memory" class="${current === "memory" ? "active" : ""}">Memory</a>
+      <a href="/proof" data-nav="proof" class="proof-link ${current === "proof" ? "active" : ""}">Technical proof</a>
+    `;
+  }
 }
 
 async function api(path, options) {
@@ -181,21 +193,22 @@ function activityHtml(jobs) {
     const learned = j.proposed_lesson && j.proposed_lesson.status === "active" ? 1 : 0;
     const title = (j.spec && j.spec.raw) || (j.contract && j.contract.title) || j.id;
     const provider = (j.provider && j.provider.name) || "Not hired yet";
-    return `<li><span class="n">${String(i + 1).padStart(2, "0")}</span><span class="t"><a href="/" data-open-job="${escapeAttr(j.id)}">${escapeHtml(title)}</a><br /><span class="s">${escapeHtml(j.status)} · ${escapeHtml(provider)} · ${applied ? "1 remembered clause applied" : "no clause applied"}${learned ? " · 1 lesson learned" : ""} · ${escapeHtml(when)}</span></span></li>`;
+    return `<li><span class="n">${String(i + 1).padStart(2, "0")}</span><span class="t"><a href="/app" data-open-job="${escapeAttr(j.id)}">${escapeHtml(title)}</a><br /><span class="s">${escapeHtml(j.status)} · ${escapeHtml(provider)} · ${applied ? "1 remembered clause applied" : "no clause applied"}${learned ? " · 1 lesson learned" : ""} · ${escapeHtml(when)}</span></span></li>`;
   }).join("");
   return `<ol class="journey">${rows}</ol>`;
 }
 
 function render() {
-  updateNavActive();
+  updateNav();
   const current = route();
+  if (current === "landing") return renderLanding();
   if (current === "memory") return renderMemory();
   if (current === "proof") return renderProof();
   return renderDashboard();
 }
 
 function foot() {
-  return `<footer class="site-footer"><div><strong>PRIOR</strong><span>Contracts that learn from rejected agent work.</span></div><div><a href="/" data-nav="home">New job</a><a href="/memory" data-nav="memory">Memory</a><a href="/proof" data-nav="proof">Technical proof</a></div></footer>`;
+  return `<footer class="site-footer"><div><strong>PRIOR</strong><span>Contracts that learn from rejected agent work.</span></div><div><a href="/app" data-nav="app">Launch PRIOR</a><a href="/memory" data-nav="memory">Memory</a><a href="/proof" data-nav="proof">Technical proof</a></div></footer>`;
 }
 
 function shell(html) {
@@ -209,6 +222,198 @@ function shell(html) {
   }
   app.innerHTML = `${notif}${err}${html}${foot()}`;
   bind();
+}
+
+function renderLanding() {
+  shell(`
+    <section class="landing-hero" aria-label="PRIOR Overview">
+      <div class="landing-hero-content">
+        <p class="eyebrow">MEMORY-NATIVE AGENT CONTRACTING</p>
+        <h1 class="landing-title">Every failed job makes the next contract smarter.</h1>
+        <p class="landing-lede">PRIOR learns from rejected agent work and turns what went wrong into reusable requirements for future jobs.</p>
+        <div class="landing-cta-row">
+          <a href="/app" data-nav="app" class="button button-primary landing-main-cta">Launch PRIOR</a>
+          <a href="#how-it-works" data-anchor="how-it-works" class="button button-secondary">See how PRIOR learns</a>
+        </div>
+        <p class="hero-proof-sub"><a href="/proof" data-nav="proof" class="meta proof-link">Inspect verified technical proof →</a></p>
+      </div>
+    </section>
+
+    <section class="ws-section landing-problem" aria-label="The Breakdown">
+      <p class="eyebrow">THE BREAKDOWN</p>
+      <h2>Why hiring autonomous agents repeatedly fails.</h2>
+      <p class="meta">Repeatedly hiring agents with incomplete instructions causes repeated mistakes. Without institutional memory, context is lost across jobs.</p>
+      <div class="problem-grid">
+        <div class="problem-card problem-without">
+          <p class="panel-label">WITHOUT PRIOR</p>
+          <ul class="clean">
+            <li><strong>Blank-slate hiring:</strong> Every agent starts from zero with no memory of prior failures.</li>
+            <li><strong>Repeated mistakes:</strong> Agents continuously deliver hallucinated or unsourced data.</li>
+            <li><strong>Manual prompt rewrites:</strong> You must manually re-type missing rules into every prompt.</li>
+            <li><strong>Fragile execution:</strong> No contract layer encloses agent work or enforces acceptance criteria.</li>
+          </ul>
+        </div>
+        <div class="problem-card problem-with">
+          <p class="panel-label memory">WITH PRIOR</p>
+          <ul class="clean">
+            <li><strong>Continuous contract learning:</strong> Rejections instantly generate reusable requirements.</li>
+            <li><strong>Automatic clause injection:</strong> Subsequent jobs inherit approved lessons automatically.</li>
+            <li><strong>Cross-agent retention:</strong> Memory persists across different agent providers and runs.</li>
+            <li><strong>Rigorous acceptance:</strong> Every contract includes clear deliverables and verification criteria.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="ws-section landing-signature" aria-label="Signature Transformation">
+      <p class="eyebrow memory">SIGNATURE TRANSFORMATION</p>
+      <h2>From rejected work to unbreakable contract.</h2>
+      <p class="meta">How a single rejection permanently elevates contract quality for every future agent.</p>
+      
+      <div class="signature-flow">
+        <div class="sig-step">
+          <span class="sig-num">01</span>
+          <div class="sig-content">
+            <p class="panel-label">JOB 1 · STANDARD CONTRACT</p>
+            <h3>Initial Request Delivered</h3>
+            <p class="meta">Worker returns market findings, but key claims lack verifiable source citations.</p>
+          </div>
+        </div>
+
+        <div class="sig-step">
+          <span class="sig-num">02</span>
+          <div class="sig-content">
+            <p class="panel-label" style="color:var(--danger);">JOB 1 · REJECTION &amp; FEEDBACK</p>
+            <h3>Operator Rejection</h3>
+            <p class="meta quote">"Material factual claims lacked verifiable source links."</p>
+          </div>
+        </div>
+
+        <div class="sig-step">
+          <span class="sig-num">03</span>
+          <div class="sig-content">
+            <p class="panel-label memory">SIBYL · APPROVED LESSON</p>
+            <h3>PRIOR Extracts Reusable Clause</h3>
+            <p class="clause">"Include primary verifiable source URLs for all key factual claims."</p>
+          </div>
+        </div>
+
+        <div class="sig-step sig-spotlight">
+          <span class="sig-num">04</span>
+          <div class="sig-content">
+            <div class="panel-topline">
+              <p class="panel-label memory">JOB 2 · NEXT CONTRACT</p>
+              <span class="status-pill status-safe">MEMORY APPLIED</span>
+            </div>
+            <h3>Future Agents Inherit Requirement</h3>
+            <p class="meta">Every subsequent research job automatically embeds this requirement before the agent begins work.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how-it-works" class="ws-section landing-steps" aria-label="How It Works">
+      <p class="eyebrow">HOW IT WORKS</p>
+      <h2>The self-improving contracting loop.</h2>
+      <p class="meta">Six distinct stages turn user intent into rigorous, verifiable agent deliverables.</p>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <span class="step-badge">01</span>
+          <h3>Ask</h3>
+          <p class="meta">Describe your task in natural language. PRIOR structures your goal into discrete deliverables.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-badge">02</span>
+          <h3>Remember</h3>
+          <p class="meta">PRIOR queries Sibyl memory to retrieve relevant lessons learned from previous rejected jobs.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-badge">03</span>
+          <h3>Contract</h3>
+          <p class="meta">A formal contract is assembled with acceptance criteria, deliverables, and learned clauses.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-badge">04</span>
+          <h3>Agent</h3>
+          <p class="meta">Dispatches the work to the appropriate execution agent with strict contract instructions.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-badge">05</span>
+          <h3>Review</h3>
+          <p class="meta">Inspect the agent deliverable and findings. Accept the work or reject it with feedback.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-badge">06</span>
+          <h3>Learn</h3>
+          <p class="meta">Rejecting work prompts a new reusable clause that you approve to improve all future contracts.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="ws-section landing-trust" aria-label="Architectural Guarantees">
+      <p class="eyebrow">ARCHITECTURAL GUARANTEES</p>
+      <h2>Built for rigorous agent operations.</h2>
+      <p class="meta">Enterprise-grade isolation, explicit human approval, and cross-provider durability.</p>
+
+      <div class="trust-grid">
+        <div class="trust-card">
+          <h3>Contracts Improve Continuously</h3>
+          <p class="meta">Every rejected job sharpens future requirements. Your institutional playbook gets stronger with each run.</p>
+        </div>
+        <div class="trust-card">
+          <h3>Cross-Agent Persistence</h3>
+          <p class="meta">Memory persists across different agent models and execution providers. You don't lose lessons when switching agents.</p>
+        </div>
+        <div class="trust-card">
+          <h3>Cryptographic Isolation</h3>
+          <p class="meta">Workspaces are isolated per user. Learned clauses, contracts, and deliverables never leak across workspaces.</p>
+        </div>
+        <div class="trust-card">
+          <h3>Human In The Loop</h3>
+          <p class="meta">No silent prompt modifications. You review and approve every learned clause before it becomes an active rule.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="ws-section landing-proof-strip" aria-label="Technical Proof">
+      <div class="proof-strip-card">
+        <div>
+          <p class="eyebrow">VERIFIED REPLAY &amp; PROOF</p>
+          <h3>Technical proof you can inspect.</h3>
+          <p class="meta">Read-only live records from real execution runs. Zero fund spending, zero mock claims.</p>
+        </div>
+        <div class="proof-strip-badges">
+          <div class="proof-badge-item">
+            <span class="badge badge-ok">VERIFIED</span>
+            <span class="mono small">Sibyl Memory</span>
+          </div>
+          <div class="proof-badge-item">
+            <span class="badge badge-ok">VERIFIED READ</span>
+            <span class="mono small">Base B20 RPC</span>
+          </div>
+          <div class="proof-badge-item">
+            <span class="badge badge-neutral">FAIL-CLOSED</span>
+            <span class="mono small">Virtuals ACP</span>
+          </div>
+        </div>
+        <div>
+          <a href="/proof" data-nav="proof" class="button button-secondary">Inspect proof →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-bottom-cta" aria-label="Get Started">
+      <div class="bottom-cta-card">
+        <p class="eyebrow">GET STARTED WITH PRIOR</p>
+        <h2>Make the next job smarter than the last.</h2>
+        <p class="lede">Launch your private workspace and run your first research contract now.</p>
+        <div class="row center">
+          <a href="/app" data-nav="app" class="button button-primary landing-main-cta">Launch PRIOR</a>
+        </div>
+      </div>
+    </section>
+  `);
 }
 
 async function renderDashboard() {
@@ -624,7 +829,7 @@ async function renderProof() {
         </details>
       </section>
 
-      <div class="row"><a class="button button-secondary" href="/" data-nav="home">Back to workspace</a></div>
+      <div class="row"><a class="button button-secondary" href="/app" data-nav="app">Back to workspace</a></div>
     </div>
   `);
 }
@@ -637,8 +842,19 @@ function bind() {
       history.pushState({}, "", href);
       state.error = "";
       state.notification = "";
-      if (route() === "home" && href === "/") state.job = null;
       render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  document.querySelectorAll("[data-anchor]").forEach(a => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const targetId = a.getAttribute("data-anchor");
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth" });
+      }
     });
   });
 
@@ -648,7 +864,9 @@ function bind() {
       const id = a.getAttribute("data-open-job");
       run(async () => {
         state.job = await api(`/api/jobs/${id}`);
-        history.pushState({}, "", "/");
+        history.pushState({}, "", "/app");
+        render();
+        window.scrollTo({ top: 0, behavior: "smooth" });
       });
     });
   });
@@ -690,7 +908,7 @@ function bind() {
     state.job = null;
     state.error = "";
     state.notification = "";
-    history.pushState({}, "", "/");
+    history.pushState({}, "", "/app");
     render();
   });
 

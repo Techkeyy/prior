@@ -14,8 +14,8 @@ def sha256_file(p: Path) -> str:
 
 files = [
     ("index.html", Path("src/prior/static/index.html"), "/"),
-    ("styles.css", Path("src/prior/static/styles.css"), "/static/styles.css?v=e48ab83"),
-    ("app.js", Path("src/prior/static/app.js"), "/static/app.js?v=e48ab83"),
+    ("styles.css", Path("src/prior/static/styles.css"), "/static/styles.css"),
+    ("app.js", Path("src/prior/static/app.js"), "/static/app.js"),
 ]
 
 for name, local_path, prod_url in files:
@@ -35,22 +35,48 @@ health = client.get("/api/health").json()
 print("HEALTH BUILD COMMIT:", health.get("build_commit"))
 print("HEALTH OVERALL:", health.get("overall"))
 
+evidence_dir = Path("evidence/frontend")
+evidence_dir.mkdir(parents=True, exist_ok=True)
+Path("evidence").mkdir(parents=True, exist_ok=True)
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
+
+    # 1. Public Home (/) Desktop
     page = browser.new_page(viewport={"width": 1440, "height": 900})
     page.goto(base + "/", wait_until="networkidle")
-    page.screenshot(path="evidence/prod_verified_1440.png")
-    page.set_viewport_size({"width": 390, "height": 844})
-    page.screenshot(path="evidence/prod_verified_390.png")
+    page.screenshot(path="evidence/frontend/public-home-desktop.png")
+    page.screenshot(path="evidence/public-home-desktop.png")
     
     bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
     color = page.evaluate("getComputedStyle(document.body).color")
     bg_image = page.evaluate("getComputedStyle(document.body).backgroundImage")
-    cta_bg = page.evaluate('getComputedStyle(document.querySelector(".button-primary, button.primary, .btn-primary, .button")).backgroundColor')
+    cta_bg = page.evaluate('getComputedStyle(document.querySelector(".button-primary, .landing-main-cta")).backgroundColor')
     
-    print("COMPUTED BODY BG:", bg)
-    print("COMPUTED BODY COLOR:", color)
-    print("COMPUTED BODY BG IMAGE:", bg_image)
-    print("COMPUTED CTA BG:", cta_bg)
+    print("PUBLIC HOME 1440 COMPUTED BG:", bg)
+    print("PUBLIC HOME 1440 COMPUTED COLOR:", color)
+    print("PUBLIC HOME 1440 COMPUTED CTA BG:", cta_bg)
+
+    # 2. Public Home (/) Mobile
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path="evidence/frontend/public-home-mobile.png")
+    page.screenshot(path="evidence/public-home-mobile.png")
+
+    # 3. App Dashboard (/app) Desktop
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(base + "/app", wait_until="networkidle")
+    page.screenshot(path="evidence/frontend/app-dashboard-desktop.png")
+    page.screenshot(path="evidence/app-dashboard-desktop.png")
+    app_cta_bg = page.evaluate('getComputedStyle(document.querySelector(".button-primary")).backgroundColor')
+    print("APP 1440 COMPUTED CTA BG:", app_cta_bg)
+
+    # 4. App Dashboard (/app) Mobile
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path="evidence/frontend/app-dashboard-mobile.png")
+    page.screenshot(path="evidence/app-dashboard-mobile.png")
+
     browser.close()
-print("SCREENSHOTS CAPTURED OK")
+
+print("ALL 4 SCREENSHOTS CAPTURED & SAVED OK")
+
+
