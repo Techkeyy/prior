@@ -7,22 +7,26 @@
   <meta name="description" content="PRIOR turns rejected agent work into better contracts. Every rejected job can teach a clause the next contract should not forget." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Sans+3:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <a class="mark" href="/">PRIOR</a>
+  <a class="skip-link" href="#app">Skip to content</a>
+  <header class="site-header">
+    <div class="brand-group">
+      <a class="brand" href="/" aria-label="PRIOR home">
+        <span class="brand-mark" aria-hidden="true">P</span>
+        <span>PRIOR</span>
+      </a>
       <span id="workspace-badge" class="ws-badge" aria-live="polite" title="Workspace">WS: loading</span>
     </div>
-    <nav aria-label="Primary">
+    <nav class="site-nav" aria-label="Primary navigation">
       <a href="/" data-nav="home">New job</a>
       <a href="/memory" data-nav="memory">Memory</a>
       <a href="/proof" data-nav="proof" class="proof-link">Technical proof</a>
     </nav>
   </header>
-  <main id="app" aria-live="polite"></main>
+  <main id="app" class="app-shell" aria-live="polite"></main>
   <script src="/static/app.js"></script>
 </body>
 </html>

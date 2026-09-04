@@ -68,6 +68,7 @@ print(json.dumps({"pid": os.getpid(), "workspace_id": response.json()["workspace
         capture_output=True,
         text=True,
         check=True,
+        stdin=subprocess.DEVNULL,
         env=env,
     )
     workspace_id = json.loads(process_a.stdout)["workspace_id"]
@@ -77,6 +78,7 @@ print(json.dumps({"pid": os.getpid(), "workspace_id": response.json()["workspace
         capture_output=True,
         text=True,
         check=True,
+        stdin=subprocess.DEVNULL,
         env=env,
     )
     first = json.loads(process_a.stdout)
