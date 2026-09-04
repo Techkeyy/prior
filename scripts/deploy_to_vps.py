@@ -6,7 +6,7 @@ from dotenv import dotenv_values
 
 SSH_KEY = r"C:\Users\HomePC\.ssh\villa-vps-deploy_ed25519"
 VPS_HOST = "root@103.195.188.198"
-COMMIT_SHA = "6a7d841862fd239350b7b9b0b655bf81c89993e0"
+COMMIT_SHA = "8097efb1d0cf5d0bcdc9c341a50c55f1b9b0fa8e"
 
 def run_remote(cmd, input_data=None):
     ssh_cmd = [
@@ -83,7 +83,7 @@ def main():
         sleep 2
         systemctl status prior.service --no-pager
     """)
-    print(out)
+    print(out.encode("ascii", errors="replace").decode("ascii"))
 
     print("Checking local curl on VPS...")
     health = run_remote("curl -s http://127.0.0.1:8789/healthz")
