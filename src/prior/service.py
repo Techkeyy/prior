@@ -20,8 +20,10 @@ from prior.memory import (
     write_lesson,
 )
 from prior.providers import active_provider, provider_for_record
-from prior.providers.base import ProviderError, ProviderJob
+from prior.providers.base import ProviderError, ProviderJob, requirement_payload
 from prior.providers.local import LOCAL_SOURCE
+
+_OPEN_JOB_STATUSES = {"specified", "hired", "working"}
 
 
 def new_ids() -> str:
@@ -29,6 +31,9 @@ def new_ids() -> str:
 
 
 def specify(workspace_id: str, raw: str) -> JobRecord:
+    existing = _reusable_job(workspace_id, raw)
+    if existing is not None:
+        return existing
     spec = parse_job(raw)
     memory_status = "ok"
     memory_message = None
@@ -71,6 +76,10 @@ def hire(workspace_id: str, job_id: str) -> JobRecord:
     record = _owned(workspace_id, job_id)
     if record.status == "refused":
         raise ValueError(record.error or "This job is outside the research domain.")
+    if record.status in {"hired", "working"}:
+        return refresh(workspace_id, job_id)
+    if record.status in {"delivered", "accepted", "rejected"}:
+        return record
     if record.contract.memory_status == "unavailable":
         raise MemoryUnavailable(MEMORY_UNAVAILABLE)
     provider = active_provider()
@@ -202,7 +211,8 @@ def _apply_provider_job(record: JobRecord, started: ProviderJob) -> JobRecord:
     record.provider = started.offer.to_dict()
     record.acp_job_id = started.acp_job_id
     record.acp_phase = started.phase
-    record.worker_requirement = started.requirement
+    if record.worker_requirement is None:
+        record.worker_requirement = started.requirement
     if started.extra.get("txHash"):
         record.tx_hash = str(started.extra["txHash"])
     if started.deliverable:
@@ -231,11 +241,24 @@ def _record_to_provider_job(record: JobRecord) -> ProviderJob:
         wallet_address=offer_data.get("wallet_address"),
         offering_name=offer_data.get("offering_name"),
     )
+    req = record.worker_requirement or requirement_payload(record.contract, record.spec)
     return ProviderJob(
         source=str(offer_data.get("source") or ""),
         phase=record.acp_phase or record.status,
         offer=offer,
-        requirement=record.contract.to_dict(),
+        requirement=req,
         acp_job_id=record.acp_job_id,
         deliverable=record.deliverable,
     )
+
+
+def _reusable_job(workspace_id: str, raw: str) -> JobRecord | None:
+    needle = (raw or "").strip()
+    if not needle:
+        return None
+    for record in jobs.list_for(workspace_id):
+        if record.status not in _OPEN_JOB_STATUSES:
+            continue
+        if (record.spec.raw or "").strip() == needle:
+            return record
+    return None

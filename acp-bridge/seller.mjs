@@ -22,6 +22,44 @@ function pythonBin() {
   return "python";
 }
 
+function parseRequirementContent(content) {
+  if (!content) return null;
+  if (typeof content === "object") return content;
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function requirementFromEntries(entries) {
+  const requirementEntry = [...(entries || [])]
+    .reverse()
+    .find((item) => item.kind === "message" && (item.contentType === "requirement" || item.contentType === "text"));
+  return parseRequirementContent(requirementEntry?.content);
+}
+
+async function loadRequirement(agent, session) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    let entries = session.entries || [];
+    try {
+      const history = await agent.getTransport().getHistory(session.chainId, session.jobId);
+      if (Array.isArray(history) && history.length) entries = history;
+    } catch {}
+    const parsed = requirementFromEntries(entries);
+    if (parsed && (parsed.raw || parsed.goal || parsed.learned_requirements || parsed.applied_lessons)) {
+      return parsed;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+  }
+  const description = session.job?.description;
+  if (description) {
+    return { raw: description, goal: description, job_description: description };
+  }
+  return {};
+}
+
 function runResearch(requirement) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(pythonBin(), ["-m", "prior.research_cli"], {
@@ -80,25 +118,7 @@ async function main() {
       } else if (onChainStatus === "FUNDED" && !session._submitting) {
         session._submitting = true;
         console.error(`[SELLER] Job ${session.jobId} funded. Running research...`);
-        let entries = session.entries || [];
-        if (!entries.length || !entries.some((e) => e.kind === "message")) {
-          try {
-            entries = await agent.getTransport().getHistory(session.chainId, session.jobId);
-          } catch {}
-        }
-        const requirementEntry = [...(entries || [])]
-          .reverse()
-          .find((item) => item.kind === "message" && (item.contentType === "requirement" || item.contentType === "text"));
-        let requirement = {};
-        if (requirementEntry?.content) {
-          try {
-            requirement = JSON.parse(requirementEntry.content);
-          } catch {
-            requirement = { raw: requirementEntry.content, goal: requirementEntry.content };
-          }
-        } else if (session.job?.description) {
-          requirement = { raw: session.job.description, goal: session.job.description };
-        }
+        const requirement = await loadRequirement(agent, session);
         const report = await runResearch(requirement);
         console.error(`[SELLER] Submitting deliverable for job ${session.jobId}...`);
         await session.submit(report);

@@ -1508,20 +1508,25 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
 
     requires_sources = any("source" in req.lower() for req in contract.acceptance)
     requires_recent = any("recent" in req.lower() or "pricing" in req.lower() for req in contract.acceptance)
+    deliverables = _map_deliverables(spec, contract, findings)
+    comparative_summary = None
+    if _learned_asks_comparison(contract):
+        comparative_summary = _comparative_summary(findings)
+        deliverables["comparison"] = comparative_summary
+        deliverables["comparative_summary"] = comparative_summary
 
     report_value = {
         "title": f"Research {target_count} {spec.subject or 'products'}",
         "goal": spec.goal or spec.raw,
         "retrieved_at": retrieved_at,
         "findings": findings,
-        "deliverables": _map_deliverables(spec, contract, findings),
-        "honored_requirements": [
-            "Cover the requested subject with the named deliverables.",
-            "Separate facts from speculation.",
-        ],
+        "deliverables": deliverables,
+        "honored_requirements": list(contract.acceptance),
         "applied_lesson_ids": [l.id for l in contract.applied_lessons],
         "notes": _notes(spec, findings, requires_sources, requires_recent, target_count),
     }
+    if comparative_summary:
+        report_value["comparative_summary"] = comparative_summary
 
     is_valid, val_reason = validate_deliverable_against_contract(contract, report_value)
     if not is_valid:
@@ -1531,6 +1536,53 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
         "type": "research_report",
         "value": report_value,
     }
+
+
+_COMPARISON_MARKERS = (
+    "side-by-side",
+    "side by side",
+    "comparative summary",
+    "comparative",
+    "comparison table",
+    "explicit comparison",
+)
+
+
+def _learned_asks_comparison(contract: Contract) -> bool:
+    text = " ".join(lesson.requirement for lesson in contract.applied_lessons).lower()
+    return any(marker in text for marker in _COMPARISON_MARKERS)
+
+
+def _comparative_summary(findings: list[dict[str, Any]]) -> str:
+    if not findings:
+        return "No products were available for an explicit side-by-side comparison."
+    names = [str(item.get("name") or "Unknown") for item in findings]
+    lines = [
+        "Side-by-side comparison:",
+        "Products: " + " vs ".join(names),
+    ]
+    field_labels = (
+        ("pricing", "Pricing"),
+        ("supported_platforms", "Supported platforms"),
+        ("supported platforms", "Supported platforms"),
+        ("strengths", "Strengths"),
+        ("weaknesses", "Weaknesses"),
+    )
+    seen_labels: set[str] = set()
+    for key, label in field_labels:
+        if label in seen_labels:
+            continue
+        values = []
+        found = False
+        for item in findings:
+            val = item.get(key)
+            if val:
+                found = True
+            values.append(f"{item.get('name')}: {val or 'n/a'}")
+        if found:
+            seen_labels.add(label)
+            lines.append(f"{label} — " + "; ".join(values))
+    return "\n".join(lines)
 
 
 def _map_deliverables(spec: JobSpec, contract: Contract, findings: list[dict[str, Any]]) -> dict[str, Any]:

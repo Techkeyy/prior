@@ -173,10 +173,16 @@ function memoryBanner(job) {
   return "";
 }
 
+function transmittedLearned(job) {
+  const req = job && job.worker_requirement;
+  if (!req || !Array.isArray(req.learned_requirements)) return [];
+  return req.learned_requirements.filter((item) => String(item || "").trim());
+}
+
 function workerReceived(job) {
   const req = job.worker_requirement;
   if (!req) return "";
-  const learned = req.learned_requirements || [];
+  const learned = transmittedLearned(job);
   return `<div class="panel" aria-label="What the worker received">
     <p class="kicker">Sent to the worker</p>
     ${learned.length ? `<p class="clause">${escapeHtml(learned.join("; "))}</p><p class="meta">This learned clause was included in the worker instructions.</p>` : `<p class="meta">No learned clause was needed for this job.</p>`}
@@ -463,7 +469,7 @@ async function renderDashboard() {
         <label class="left" for="need">Research request</label>
         <textarea id="need" name="text" placeholder="Example: Research the top five AI wallet companies and compare their features" required></textarea>
         <div class="row center">
-          <button type="submit" class="button button-primary"${state.busy ? " disabled" : ""}>${state.busy ? "Checking memory..." : "Find an agent"}</button>
+          <button type="submit" class="button button-primary"${state.busy || (job && !["accepted","rejected","refused"].includes(job.status)) ? " disabled" : ""}>${state.busy ? "Checking memory..." : "Find an agent"}</button>
         </div>
       </form>
       <div class="chips">
@@ -598,12 +604,14 @@ function reviewSection(job) {
   if (!job || job.status !== "delivered") return "";
   const value = (job.deliverable && job.deliverable.value) || {};
   const findings = value.findings || [];
+  const comparison = value.comparative_summary || (value.deliverables && (value.deliverables.comparative_summary || value.deliverables.comparison));
   return `
     <section class="ws-section" aria-label="Review">
       ${head("Review", "Ready", true)}
       <h2>Review the agent work.</h2>
       <p class="meta">Retrieved: ${escapeHtml(value.retrieved_at || "just now")}</p>
       ${workerReceived(job)}
+      ${comparison ? `<div class="panel" aria-label="Comparative summary"><p class="kicker">Comparison</p><p class="clause" style="white-space:pre-wrap;">${escapeHtml(comparison)}</p></div>` : ""}
       <div class="findings">
         ${findings.map((f, i) => {
           const dlKeys = [];
@@ -919,6 +927,10 @@ function bind() {
   const specify = document.getElementById("specify");
   if (specify) specify.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const terminalStatuses = new Set(["accepted", "rejected", "refused"]);
+    if (state.job && !terminalStatuses.has(state.job.status)) {
+      return;
+    }
     await run(async () => {
       const text = new FormData(specify).get("text");
       state.job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ text }) });

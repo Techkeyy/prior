@@ -52,7 +52,7 @@ class ResearchProvider(Protocol):
 
 
 def requirement_payload(contract: Contract, spec: JobSpec) -> dict[str, Any]:
-    return {
+    payload = {
         "goal": contract.goal,
         "title": contract.title,
         "deliverables": contract.deliverables,
@@ -68,3 +68,30 @@ def requirement_payload(contract: Contract, spec: JobSpec) -> dict[str, Any]:
         "keywords": spec.keywords,
         "explicit_requirements": spec.explicit_requirements,
     }
+    payload["job_description"] = acp_job_description(payload)
+    return payload
+
+
+def acp_job_description(payload: dict[str, Any]) -> str:
+    parts: list[str] = []
+    goal = str(payload.get("goal") or payload.get("raw") or "").strip()
+    if goal:
+        parts.append(goal)
+    learned = [str(item).strip() for item in (payload.get("learned_requirements") or []) if str(item).strip()]
+    if learned:
+        parts.append("Learned requirements:")
+        parts.extend(f"- {item}" for item in learned)
+    acceptance = [str(item).strip() for item in (payload.get("acceptance") or []) if str(item).strip()]
+    if acceptance:
+        parts.append("Acceptance criteria:")
+        parts.extend(f"- {item}" for item in acceptance)
+    return "\n".join(parts)
+
+
+def transmitted_learned_requirements(requirement: dict[str, Any] | None) -> list[str]:
+    if not isinstance(requirement, dict):
+        return []
+    learned = requirement.get("learned_requirements")
+    if not isinstance(learned, list):
+        return []
+    return [str(item) for item in learned if str(item).strip()]

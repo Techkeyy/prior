@@ -69,7 +69,9 @@ async function main() {
     const myAddress = await agent.getAddress();
     console.error(`[BUYER] Creating on-chain ACP job on Base mainnet for ${providerAddress}...`);
     const expiredAt = Math.floor(Date.now() / 1000) + 3600;
-    const description = (requirement.goal || requirement.raw || offeringName).slice(0, 500);
+    const description = String(
+      requirement.job_description || requirement.goal || requirement.raw || offeringName
+    ).slice(0, 8000);
     const jobId = await agent.createJob(chain.id, {
       providerAddress,
       evaluatorAddress: myAddress,
@@ -78,11 +80,7 @@ async function main() {
     });
     console.error(`[BUYER] On-chain Job created: ${jobId}`);
 
-    try {
-      await agent.sendMessage(chain.id, jobId.toString(), JSON.stringify(requirement), "requirement");
-    } catch (err) {
-      console.error("Note: requirement message send:", String(err?.message || err));
-    }
+    await agent.sendMessage(chain.id, jobId.toString(), JSON.stringify(requirement), "requirement");
 
     console.log(
       JSON.stringify({
