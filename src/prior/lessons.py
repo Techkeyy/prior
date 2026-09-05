@@ -51,7 +51,7 @@ def propose_lesson(job: JobRecord, rejection_reason: str) -> Lesson:
         reason=f"Learned from rejected job {job.id}: {reason}",
         source_job_id=job.id,
         originating_evaluation="rejected",
-        status="active",
+        status="proposed",
         provenance="prior-proposed",
         created_at=now_iso(),
         domains=[spec.domain] if spec.domain else [],
@@ -118,28 +118,27 @@ def _match_reason(spec: JobSpec, spec_tokens: set[str], lesson: Lesson) -> str |
 
 
 def _requirement_from_reason(reason: str) -> str:
-    text = reason.strip().rstrip(".")
-    lowered = text.lower()
-    if "source" in lowered or "citation" in lowered or "link" in lowered:
-        return "Material factual claims must include identifiable source links."
-    if "recent" in lowered or "current" in lowered or "date" in lowered:
-        return "Time-sensitive research must use recent sources and state retrieval dates."
-    if "pricing" in lowered or "price" in lowered:
-        return "Include current public pricing when it is available."
+    text = (reason or "").strip()
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1].strip()
+    if not text:
+        return "Research jobs must satisfy all verified contract requirements."
     if text[0].islower():
         text = text[0].upper() + text[1:]
-    if not text.endswith("."):
+    if not text.endswith((".", "!", "?")):
         text += "."
-    if len(text) < 12:
-        return f"Research jobs must satisfy: {text}"
     return text
 
 
 def _issue_from_reason(reason: str) -> str:
-    text = reason.strip()
+    text = (reason or "").strip()
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1].strip()
+    if not text:
+        return "Unspecified issue"
     if len(text) > 80:
         text = text[:77] + "..."
-    return text[0].upper() + text[1:] if text else "Unspecified issue"
+    return text[0].upper() + text[1:]
 
 
 def _tokens(text: str) -> list[str]:

@@ -108,3 +108,54 @@ def test_recalled_lesson_changes_contract(tmp_path, monkeypatch):
     contract = build_contract(spec, applied)
     assert any("source" in item.lower() for item in contract.acceptance)
     assert contract.baseline is False
+
+
+def test_rejection_does_not_persist_until_explicit_approval(tmp_path, monkeypatch):
+    from prior import service
+    from prior.providers.local import LocalResearchProvider
+
+    db = tmp_path / "sibyl.db"
+    monkeypatch.setattr(settings, "memory_db_path", lambda: db)
+    monkeypatch.setattr(
+        "prior.providers.local.run_research",
+        lambda spec, contract: {"type": "object", "value": {"findings": [{"name": "A", "summary": "B"}]}},
+    )
+    monkeypatch.setattr(service, "active_provider", lambda: LocalResearchProvider())
+
+    ws = "ws_approval_flow"
+    job = service.specify(ws, "Research three password managers.")
+    service.hire(ws, job.id)
+    
+    # User rejects work with specific feedback
+    feedback = (
+        "When reporting pricing, map every numeric price to the exact plan it belongs to "
+        "and include the billing unit, such as per user per month or per year. "
+        "Do not list unexplained prices."
+    )
+    rejected = service.reject(ws, job.id, feedback)
+    
+    # 1. Proposal is created with status "proposed"
+    assert rejected.proposed_lesson is not None
+    assert rejected.proposed_lesson["status"] == "proposed"
+    assert rejected.proposed_lesson["requirement"] == feedback
+    
+    # 2. Sibyl memory is still EMPTY before explicit approval
+    lessons_before = list_lessons(ws)
+    assert len(lessons_before) == 0
+    mem_view_before = service.memory_view(ws)
+    assert mem_view_before["count"] == 0
+    assert len([l for l in mem_view_before["lessons"] if l["status"] == "active"]) == 0
+    
+    # 3. Explicit user approval writes to Sibyl
+    approved = service.decide_lesson(ws, job.id, "add")
+    assert approved.proposed_lesson["status"] == "active"
+    assert approved.proposed_lesson["provenance"] == "user-approved"
+    
+    # 4. Sibyl memory now has exactly 1 active lesson
+    lessons_after = list_lessons(ws)
+    assert len(lessons_after) == 1
+    assert lessons_after[0].status == "active"
+    assert lessons_after[0].requirement == feedback
+    mem_view_after = service.memory_view(ws)
+    assert mem_view_after["count"] == 1
+

@@ -668,14 +668,12 @@ function learningSection(job, level) {
       <div class="opblock quiet"><p class="meta">PRIOR only learns after you reject work for a real reason and approve the resulting lesson.</p></div>
     </section>`;
   }
-  if (job.status === "rejected" && job.proposed_lesson && job.proposed_lesson.status !== "ignored") {
+  if (job.status === "rejected" && job.proposed_lesson && job.proposed_lesson.status === "proposed") {
     const lesson = job.proposed_lesson;
-    const stored = lesson.status === "active";
     return `
     <section class="ws-section" aria-label="Learning">
-      ${head("Learning", stored ? "Stored" : "Gap found", true)}
+      ${head("Learning", "Gap found", true)}
       <h2>What this job taught PRIOR.</h2>
-      ${stored ? `<p class="meta">Stored with Sibyl Memory. Future matching jobs can now inherit this requirement.</p>` : ""}
       <div class="learned" aria-label="Contract gap">
         <p class="panel-label memory">Contract gap found</p>
         <p class="meta">Your feedback:</p>
@@ -695,13 +693,15 @@ function learningSection(job, level) {
       </form>
     </section>`;
   }
-  const saved = job.proposed_lesson && job.proposed_lesson.status === "active";
+  const lesson = job.proposed_lesson;
+  const saved = lesson && lesson.status === "active";
+  const duplicate = lesson && lesson.status === "duplicate";
   return `
     <section class="ws-section" aria-label="Learning">
-      ${head("Learning", saved ? "Stored" : "No lesson yet", !!saved)}
+      ${head("Learning", saved ? "Stored" : duplicate ? "Already stored" : "No lesson yet", !!saved)}
       <h2>What this job taught PRIOR.</h2>
       <div class="opblock${saved ? " spotlight" : " quiet"}">
-      ${saved ? `<p>Learned clause saved: <strong>${escapeHtml(job.proposed_lesson.requirement)}</strong>. Stored with Sibyl Memory.</p>` : `<p class="meta">No reusable rule came out of this job.</p>`}
+      ${saved ? `<p>Learned clause saved: <strong>${escapeHtml(lesson.requirement)}</strong>. Stored with Sibyl Memory. Future matching jobs can now inherit this requirement.</p>` : duplicate ? `<p class="meta">This requirement is already stored in your memory.</p>` : `<p class="meta">No reusable rule came out of this job.</p>`}
       </div>
       <div class="row"><button class="button button-primary" data-reset>Start a new job</button><a class="button button-secondary" href="/memory" data-nav="memory">Open Memory</a></div>
     </section>`;

@@ -78,5 +78,44 @@ def test_propose_lesson_from_rejection():
     )
     lesson = propose_lesson(job, "Important factual claims should include source links.")
     assert "source" in lesson.requirement.lower()
+    assert lesson.status == "proposed"
     assert lesson.source_job_id == "job_1"
     assert lesson.workspace_id == "ws_a"
+
+
+def test_propose_lesson_preserves_specific_detailed_feedback():
+    job = JobRecord(
+        id="job_uat",
+        workspace_id="ws_uat",
+        spec=_spec("Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.", "password managers"),
+        contract=Contract(title="t", goal="g", deliverables=[], acceptance=[]),
+        status="rejected",
+        created_at="",
+        updated_at="",
+    )
+    feedback = (
+        "When reporting pricing, map every numeric price to the exact plan it belongs to "
+        "and include the billing unit, such as per user per month or per year. "
+        "Do not list unexplained prices."
+    )
+    lesson = propose_lesson(job, feedback)
+    assert lesson.status == "proposed"
+    assert lesson.requirement == feedback
+    assert "Include current public pricing when it is available." not in lesson.requirement
+    assert "billing unit" in lesson.requirement
+    assert "exact plan" in lesson.requirement
+
+
+def test_propose_lesson_normalizes_capitalization_and_punctuation():
+    job = JobRecord(
+        id="job_norm",
+        workspace_id="ws_norm",
+        spec=_spec("Research password managers", "password managers"),
+        contract=Contract(title="t", goal="g", deliverables=[], acceptance=[]),
+        status="rejected",
+        created_at="",
+        updated_at="",
+    )
+    lesson = propose_lesson(job, '  "distinguish official platform support from third-party tools"  ')
+    assert lesson.requirement == "Distinguish official platform support from third-party tools."
+
