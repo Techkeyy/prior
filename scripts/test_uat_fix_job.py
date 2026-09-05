@@ -65,10 +65,12 @@ def main():
         status, updated = client.request("GET", f"/api/jobs/{job_id}")
         current_status = updated.get("status")
         phase = updated.get("provider_metadata", {}).get("phase")
-        print(f"   [{i*4}s] Status: {current_status} | Phase: {phase}")
-        if updated.get("deliverable"):
-            deliverable = updated.get("deliverable")
-            break
+        deliv = updated.get("deliverable")
+        if deliv:
+            val = deliv.get("value", deliv) if isinstance(deliv, dict) else deliv
+            if isinstance(val, dict) and val.get("findings"):
+                deliverable = deliv
+                break
 
     assert deliverable is not None, "Failed to receive deliverable"
     elapsed = time.time() - poll_start

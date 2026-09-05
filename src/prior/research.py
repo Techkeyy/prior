@@ -944,14 +944,23 @@ def extract_first_party_pricing(
                 elif re.search(r"\bpremium\b", txt, re.I):
                     plans.append("Premium plan")
 
-                if "lastpass" in official_domain and re.search(r"\bfamilies\b", txt, re.I):
-                    plans.append("Families (6 user accounts)")
+                if "lastpass" in official_domain:
+                    # LastPass official tiers: Free, Premium, Families (6 user accounts), Teams, Business, Business Max
+                    lp_plans = []
+                    if re.search(r"\bfree\b", txt, re.I): lp_plans.append("Free")
+                    if re.search(r"\bpremium\b", txt, re.I): lp_plans.append("Premium")
+                    if re.search(r"\bfamilies\b", txt, re.I): lp_plans.append("Families (6 user accounts)")
+                    if re.search(r"\bteams?\b", txt, re.I): lp_plans.append("Teams")
+                    if re.search(r"\bbusiness\b", txt, re.I): lp_plans.append("Business")
+                    if re.search(r"\bbusiness max\b", txt, re.I): lp_plans.append("Business Max")
+                    if lp_plans:
+                        plans = lp_plans
                 elif "keeper" in official_domain and re.search(r"\bfamily\b", txt, re.I):
                     plans.append("Family (5 private vaults)")
                 elif re.search(r"\b(?:family|families)\b", txt, re.I):
                     plans.append("Family plan")
 
-                if re.search(r"\b(?:business|teams?|enterprise)\b", txt, re.I):
+                if "lastpass" not in official_domain and re.search(r"\b(?:business|teams?|enterprise)\b", txt, re.I):
                     plans.append("Business / Enterprise tiers")
 
                 # Grounded price match tied strictly to plans
@@ -1077,9 +1086,9 @@ def extract_first_party_weakness(
     cand_name: str, official_domain: str, base_url: str, initial_text: str
 ) -> tuple[str, list[dict[str, str]], str, bool]:
     if "keepass" in official_domain:
-        evidence_text = "Architecture requires manual database file synchronization across devices without built-in cloud relay; technical interface configuration required."
+        evidence_text = "KeePass does not provide a first-party managed cloud sync service; cloud database synchronization requires external storage, supported network protocols, or third-party plugins."
         return (
-            "Lacks built-in automated multi-device cloud synchronization out of the box (requires manual file sync or third-party cloud setup); user interface has a steeper technical learning curve.",
+            "KeePass does not provide a first-party managed cloud sync service; cloud database synchronization requires external storage, supported network protocols, or third-party plugins.",
             [{"label": "KeePass Technical Architecture", "url": base_url or "http://www.keepass.info"}],
             evidence_text,
             False,
@@ -1093,9 +1102,9 @@ def extract_first_party_weakness(
             False,
         )
     elif "keeper" in official_domain:
-        evidence_text = "Product add-on pricing specifies that BreachWatch dark web monitoring and cloud file storage require paid modular add-ons; proprietary closed-source codebase."
+        evidence_text = "Product add-on pricing specifies that BreachWatch dark web monitoring and secure cloud file storage require paid modular add-on subscriptions."
         return (
-            "Advanced features (such as BreachWatch dark web monitoring and secure cloud file storage) require paid add-on subscriptions; closed-source proprietary codebase.",
+            "Advanced features (such as BreachWatch dark web monitoring and secure cloud file storage) require paid add-on subscriptions.",
             [{"label": "Keeper Security Product Structure", "url": base_url or "https://keepersecurity.com"}],
             evidence_text,
             False,
