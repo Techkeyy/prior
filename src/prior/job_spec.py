@@ -53,6 +53,8 @@ WORD_COUNTS = {
 DOMAIN_HINTS = {
     "wallet": "ai wallets",
     "wallets": "ai wallets",
+    "password manager": "password managers",
+    "password managers": "password managers",
     "exchange": "decentralized exchanges",
     "exchanges": "decentralized exchanges",
     "dex": "decentralized exchanges",
@@ -128,7 +130,7 @@ def parse_job(raw: str) -> JobSpec:
     count = _extract_count(lowered)
     subject = _extract_subject(text, count)
     domain = _domain_for(lowered, subject)
-    deliverables = _deliverables(lowered, count)
+    deliverables = _deliverables(text, count, subject)
     requirements = _explicit_requirements(text)
     keywords = _keywords(lowered)
     if domain:
@@ -162,7 +164,7 @@ def _extract_count(lowered: str) -> int | None:
     if match:
         return int(match.group(1))
     match = re.search(
-        r"\b(?:research|compare|find|list|survey|top)?\s*(\d{1,2})\s+(?:[a-z0-9_-]+\s+)*(?:companies|products|exchanges|wallets|suppliers|competitors|protocols|tools|frameworks|projects|dapps|options|services|solutions|platforms|networks)\b",
+        r"\b(?:research|compare|find|list|survey|top)?\s*(\d{1,2})\s+(?:[a-z0-9_-]+\s+)*(?:companies|products|exchanges|wallets|managers|password managers|suppliers|competitors|protocols|tools|frameworks|projects|dapps|options|services|solutions|platforms|networks)\b",
         lowered,
     )
     if match:
@@ -188,7 +190,6 @@ def _extract_subject(text: str, count: int | None) -> str:
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
     if not cleaned:
         return text.strip()
-    # Separate core subject from trailing instruction / comparison clauses
     split_match = re.split(
         r"\s+(?:and\s+(?:compare|summarize|evaluate|analyze|list|provide|show|break down|examine)|by\s+|focusing on\s+|based on\s+|with their\s+)\b",
         cleaned,
@@ -206,13 +207,55 @@ def _domain_for(lowered: str, subject: str) -> str:
     return subject.lower()[:80]
 
 
-def _deliverables(lowered: str, count: int | None) -> list[str]:
+def _extract_comparison_fields(text: str) -> list[str]:
+    # Match comparison clause:
+    # "compare their pricing, supported platforms, strengths, and weaknesses"
+    # "compare deployment options, API support, and pricing for 3 observability platforms"
+    m = re.search(
+        r"\b(?:compare|evaluating|evaluate|examine|examining|focusing on|with their|and their|including)\s+(?:their\s+|the\s+)?(.+?)(?:\.|$)",
+        text,
+        re.I,
+    )
+    if not m:
+        return []
+    raw_clause = m.group(1).strip()
+    raw_clause = re.sub(r"\s+(?:for|across|among|in|of)\s+(?:\d+|the|all|each|leading|top)?\s*[a-z0-9_\-\s]+$", "", raw_clause, flags=re.I).strip()
+    
+    parts = re.split(r",\s*(?:and\s+)?|\s+and\s+|\s+&\s+", raw_clause, flags=re.I)
+    cleaned_fields = []
+    for p in parts:
+        c = p.strip(" .,/()").lower()
+        if not c or len(c) < 2 or c in ("them", "their", "it", "each", "all", "more", "others"):
+            continue
+        if c in ("price", "cost", "costs", "pricing", "pricing plans", "subscription"):
+            cleaned_fields.append("pricing")
+        elif c in ("platform", "platforms", "supported platform", "supported platforms", "os support", "os", "supported os", "operating systems"):
+            cleaned_fields.append("supported platforms")
+        elif c in ("strength", "strengths", "pros", "advantages", "benefits"):
+            cleaned_fields.append("strengths")
+        elif c in ("weakness", "weaknesses", "cons", "disadvantages", "limitations", "drawbacks", "caveats"):
+            cleaned_fields.append("weaknesses")
+        elif c in ("feature", "features", "product", "products", "offerings", "capabilities"):
+            cleaned_fields.append("products")
+        else:
+            cleaned_fields.append(c)
+    return cleaned_fields
+
+
+def _deliverables(text: str, count: int | None, subject: str = "") -> list[str]:
+    explicit_fields = _extract_comparison_fields(text)
+    entity_label = f"{count} {subject}" if count and subject else (f"{count} product names" if count else "names")
+    if explicit_fields:
+        fields = [entity_label]
+        for f in explicit_fields:
+            if f not in fields:
+                fields.append(f)
+        return fields
+
     items = list(DEFAULT_DELIVERABLES)
-    if "supplier" in lowered:
+    if "supplier" in text.lower():
         items = ["supplier names", "what they sell", "pricing signals", "fit notes", "risks"]
-    elif "pricing" in lowered or "price" in lowered:
-        items = ["product names", "products", "current pricing", "strengths", "weaknesses"]
-    elif "landscape" in lowered or "market" in lowered:
+    elif "landscape" in text.lower() or "market" in text.lower():
         items = ["category map", "notable products", "positioning", "pricing if public", "gaps"]
     if count:
         items = [f"{count} {items[0]}" if i == 0 else item for i, item in enumerate(items)]

@@ -605,12 +605,39 @@ function reviewSection(job) {
       <p class="meta">Retrieved: ${escapeHtml(value.retrieved_at || "just now")}</p>
       ${workerReceived(job)}
       <div class="findings">
-        ${findings.map((f, i) => `
-          <article class="finding">
-            <h3>${i + 1}. ${escapeHtml(f.name || "Finding")}</h3>
-            <p>${escapeHtml(f.summary || "")}</p>
+        ${findings.map((f, i) => {
+          const dlKeys = [];
+          if (f.pricing) dlKeys.push({ label: "Pricing", val: f.pricing });
+          if (f.supported_platforms || f["supported platforms"]) dlKeys.push({ label: "Supported platforms", val: f.supported_platforms || f["supported platforms"] });
+          if (f.strengths) dlKeys.push({ label: "Strengths", val: f.strengths });
+          if (f.weaknesses) dlKeys.push({ label: "Weaknesses", val: f.weaknesses });
+          
+          for (const [k, v] of Object.entries(f)) {
+            if (!["name", "company", "type", "summary", "products", "pricing", "supported_platforms", "supported platforms", "strengths", "weaknesses", "sources", "citations", "evidence", "warning", "retrieved_at"].includes(k)) {
+              if (typeof v === "string" && v) dlKeys.push({ label: k.replace(/_/g, " "), val: v });
+            }
+          }
+
+          return `
+          <article class="finding" style="margin-bottom:20px;">
+            <div class="panel-topline">
+              <h3 style="margin:0;">${i + 1}. ${escapeHtml(f.name || "Finding")}</h3>
+              <span class="status-pill status-safe">${escapeHtml(f.type || "Product")}</span>
+            </div>
+            <p style="margin:10px 0 16px;">${escapeHtml(f.summary || "")}</p>
+            ${dlKeys.length ? `
+              <div class="factgrid" style="margin-bottom:14px;">
+                ${dlKeys.map(dk => `
+                  <div class="fact" style="grid-column: span 2;">
+                    <p class="fl">${escapeHtml(dk.label)}</p>
+                    <p class="fv" style="font-size:14px;line-height:1.5;font-weight:400;">${escapeHtml(dk.val)}</p>
+                  </div>
+                `).join("")}
+              </div>
+            ` : ""}
             ${(f.sources || []).map((s) => `<p class="meta">Source: <a href="${escapeAttr(s.url)}" target="_blank" rel="noreferrer">${escapeHtml(s.label || s.url)}</a></p>`).join("")}
-          </article>`).join("") || `<div class="panel"><p>No findings returned from worker.</p></div>`}
+          </article>`;
+        }).join("") || `<div class="panel"><p>No findings returned from worker.</p></div>`}
       </div>
       ${(value.notes || []).length ? `<ul class="meta">${value.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>` : ""}
       <div class="row" id="deliverable-actions">

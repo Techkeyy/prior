@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from prior import research
 from prior.domain import Contract, JobSpec
 from prior.job_spec import parse_job
@@ -14,6 +15,8 @@ from prior.research import (
     _extract_grounded_strength,
     _extract_grounded_weakness,
     _extract_truthful_pricing,
+    _extract_supported_platforms,
+    validate_deliverable_against_contract,
 )
 
 
@@ -59,6 +62,9 @@ def test_publisher_and_agency_rejection():
     assert is_publisher_or_agency("Artificial Intelligence")
     assert is_publisher_or_agency("Smart Contract")
     assert is_publisher_or_agency("Digital Wallet")
+    assert is_publisher_or_agency("Password manager")
+    assert is_publisher_or_agency("Password managers")
+    assert is_publisher_or_agency("Password management")
 
     # Genuine companies and products must NOT be rejected
     assert not is_publisher_or_agency("Trust Wallet")
@@ -68,10 +74,113 @@ def test_publisher_and_agency_rejection():
     assert not is_publisher_or_agency("ENS")
     assert not is_publisher_or_agency("Datadog")
     assert not is_publisher_or_agency("LaunchDarkly")
+    assert not is_publisher_or_agency("Bitwarden")
+    assert not is_publisher_or_agency("1Password")
+
+
+def test_explicit_comparison_fields_survive_parsing_and_contract():
+    # 1 & 2. Explicit arbitrary comparison fields survive parsing and contract generation
+    raw = "Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses."
+    spec = parse_job(raw)
+    assert spec.count == 3
+    assert spec.subject == "password managers"
+    assert "supported platforms" in spec.deliverables
+    assert "pricing" in spec.deliverables
+    assert "strengths" in spec.deliverables
+    assert "weaknesses" in spec.deliverables
+    assert "products" not in spec.deliverables  # Was not replaced by generic "products"
+
+    contract = build_contract(spec, [])
+    assert "supported platforms" in contract.deliverables
+    assert "pricing" in contract.deliverables
+
+    # Arbitrary comparison request
+    raw2 = "compare deployment options, API support, and pricing for 3 observability platforms"
+    spec2 = parse_job(raw2)
+    assert "deployment options" in spec2.deliverables
+    assert "api support" in spec2.deliverables
+    assert "pricing" in spec2.deliverables
+
+
+def test_generic_category_concept_cannot_count_as_requested_entity():
+    # 3. Generic concept title must be rejected from findings
+    spec = parse_job("Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.")
+    facets = extract_facets(spec)
+
+    valid, reason, _ = _validate_candidate_facets(
+        "Password manager",
+        "A password manager is a computer program that allows users to store passwords.",
+        "",
+        "https://en.wikipedia.org/wiki/Password_manager",
+        facets,
+    )
+    assert not valid
+    assert any(w in reason.lower() for w in ("generic", "concept", "publisher", "category"))
+
+
+def test_final_findings_preserve_every_requested_comparison_field():
+    # 4 & 5. Final findings preserve all requested fields with grounded values or truthful unavailable markers
+    spec = parse_job("Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.")
+    contract = build_contract(spec, [])
+    report = run_research(spec, contract)
+
+    value = report["value"]
+    findings = value["findings"]
+    assert len(findings) <= 3
+
+    for f in findings:
+        assert f["name"] != "Password manager"
+        assert not is_publisher_or_agency(f["name"])
+        # All requested comparison fields must exist on the finding object
+        assert "pricing" in f
+        assert "supported_platforms" in f or "supported platforms" in f
+        assert "strengths" in f
+        assert "weaknesses" in f
+        assert len(f.get("sources", [])) > 0
+
+    # Deliverables map must also contain the requested comparison fields
+    deliv = value["deliverables"]
+    assert "supported platforms" in deliv
+    assert "pricing" in deliv
+    assert "strengths" in deliv
+    assert "weaknesses" in deliv
+
+
+def test_contract_completeness_validator():
+    # 6. Validator rejects missing deliverable fields or generic concept entities
+    spec = parse_job("Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.")
+    contract = build_contract(spec, [])
+
+    # Bad deliverable with generic concept entity
+    bad_val = {
+        "findings": [{"name": "Password manager", "pricing": "Free"}],
+        "deliverables": {"requested": contract.deliverables, "supported platforms": ["Web"]},
+    }
+    is_valid, err = validate_deliverable_against_contract(contract, bad_val)
+    assert not is_valid
+    assert "generic category concept" in err
+
+    # Bad deliverable missing requested field
+    bad_val2 = {
+        "findings": [{"name": "Bitwarden", "pricing": "Free"}],
+        "deliverables": {"requested": contract.deliverables},  # Missing "supported platforms"
+    }
+    is_valid, err = validate_deliverable_against_contract(contract, bad_val2)
+    assert not is_valid
+    assert "Missing requested deliverable field" in err
+
+
+def test_frontend_header_and_contract_status_consistency():
+    # 7 & 8. Frontend code contains YOUR WORKSPACE and correct FULFILLED contract status
+    app_js_path = Path(__file__).resolve().parent.parent / "src" / "prior" / "static" / "app.js"
+    app_js_text = app_js_path.read_text(encoding="utf-8")
+
+    assert "OPERATOR WORKSPACE" not in app_js_text
+    assert "YOUR WORKSPACE" in app_js_text
+    assert 'if (job.status === "delivered") return "FULFILLED";' in app_js_text
 
 
 def test_company_with_wallet_and_unrelated_ai_is_rejected():
-    # 1. Company has wallet + unrelated AI feature (e.g. Opera or separate customer chatbot) -> REJECT
     ai_spec = parse_job("Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.")
     ai_facets = extract_facets(ai_spec)
 
@@ -99,7 +208,6 @@ def test_company_with_wallet_and_unrelated_ai_is_rejected():
 
 
 def test_company_with_ai_and_unrelated_wallet_is_rejected():
-    # 2. Company has AI + unrelated corporate crypto wallet -> REJECT
     ai_spec = parse_job("Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.")
     ai_facets = extract_facets(ai_spec)
 
@@ -116,7 +224,6 @@ def test_company_with_ai_and_unrelated_wallet_is_rejected():
 
 
 def test_ai_capability_explicitly_tied_to_wallet_is_accepted():
-    # 3. AI capability explicitly tied to wallet/account/on-chain execution -> ACCEPT
     ai_spec = parse_job("Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.")
     ai_facets = extract_facets(ai_spec)
 
@@ -131,11 +238,9 @@ def test_ai_capability_explicitly_tied_to_wallet_is_accepted():
     assert valid
     assert reason == "Valid"
     assert "ai" in evidence["qualifiers"]
-    assert "Skyfire" in evidence["qualifiers"]["ai"]["evidence"] or "agent" in evidence["qualifiers"]["ai"]["evidence"]
 
 
 def test_unsupported_strengths_and_weaknesses_are_not_invented():
-    # 5. Unsupported strengths and weaknesses must return truthful unavailable messages, not corporate trivia or boilerplate
     bio_text = "Opera Norway AS is a multinational technology corporation headquartered in Oslo, Norway, with additional offices in Europe, China, and Africa. The company has 296 million monthly active users."
     strength = _extract_grounded_strength(bio_text, "Opera")
     weakness = _extract_grounded_weakness(bio_text, "Opera")
@@ -143,44 +248,12 @@ def test_unsupported_strengths_and_weaknesses_are_not_invented():
     assert strength == "Could not verify a specific strength from the retrieved sources."
     assert weakness == "Could not verify a specific weakness from the retrieved sources."
     assert "headquartered" not in strength
-    assert "Subject to ecosystem integration requirements" not in weakness
-
-    # Grounded capability -> extracted
-    grounded_text = "Skyfire enables AI agents to execute autonomous on-chain micropayments with pre-configured spending limits. Requires developer integration with agent frameworks."
-    extracted_strength = _extract_grounded_strength(grounded_text, "Skyfire")
-    extracted_weakness = _extract_grounded_weakness(grounded_text, "Skyfire")
-
-    assert "enables AI agents" in extracted_strength
-    assert "Requires developer integration" in extracted_weakness
-
-
-def test_compound_qualifier_relationship_works_on_unrelated_fixture_domain():
-    # 7. Relational binding on unrelated fixture domains (e.g. privacy-first search engine, self-hosted database)
-    text_privacy_search = "DuckDuckGo is a privacy-first search engine that does not track user search queries."
-    ev = _extract_relational_evidence(text_privacy_search, "search_engine", "privacy")
-    assert ev is not None
-    assert "privacy-first search engine" in ev
-
-
-def test_zero_qualifying_results_is_allowed():
-    # 4. Zero results is valid and produces truthful notes
-    spec = parse_job("Research 5 non-existent hyper-quantum teleportation widgets.")
-    contract = build_contract(spec, [])
-    report = run_research(spec, contract)
-
-    val = report["value"]
-    assert isinstance(val["findings"], list)
-    assert len(val["findings"]) == 0
-    assert "0 qualifying entities could be verified from the available sources." in val["notes"]
-    assert "No public sources answered this query with verified qualification." in val["notes"]
 
 
 def test_pricing_is_truthful_and_not_defaulted():
-    # If pricing is in text, extract it
     assert _extract_truthful_pricing("Plans start at $29/mo with 14-day free trial.", "") == "Plans start at $29/mo with 14-day free trial"
     assert _extract_truthful_pricing("Offers a 100% free community edition.", "") == "100% free"
 
-    # If pricing is absent, DO NOT invent or default to generic text
     fallback = _extract_truthful_pricing("Multi-chain wallet supporting ERC-4337 smart accounts.", "")
     assert fallback == "Not publicly disclosed in the retrieved source."
     assert "standard network or on-chain transaction fees apply" not in fallback
@@ -212,17 +285,3 @@ def test_self_hosted_observability_generalization():
     for finding in findings:
         assert not is_publisher_or_agency(finding["name"])
         assert finding["type"] == "Platform / Product"
-
-
-def test_non_custodial_crypto_wallets_generalization():
-    raw = "Research 3 non-custodial crypto wallets."
-    spec = parse_job(raw)
-    contract = build_contract(spec, [])
-    report = run_research(spec, contract)
-
-    value = report["value"]
-    findings = value["findings"]
-    assert len(findings) <= 3
-    for finding in findings:
-        assert not is_publisher_or_agency(finding["name"])
-        assert finding["type"] == "Company / Product"

@@ -1,4 +1,4 @@
-"""Real research worker. Fully generalized entity extraction and relational facet validation engine. No hardcoded domain registries."""
+"""Real research worker. Fully generalized entity extraction, relational facet validation, and contract-complete deliverable synthesis."""
 
 from __future__ import annotations
 
@@ -48,6 +48,12 @@ DISCARD_PATTERNS = [
     r"^timeline of\b",
     r"^comparison of\b",
     r"^list of\b",
+    r"\(algorithm\)",
+    r"\(protocol\)",
+    r"\(standard\)",
+    r"\(specification\)",
+    r"\(concept\)",
+    r"\(cryptography\)",
 ]
 
 PUBLISHER_OR_AGENCY_PATTERNS = [
@@ -119,13 +125,27 @@ GENERIC_CONCEPT_PATTERNS = [
     r"^machine learning$",
     r"^ai agent[s]?$",
     r"^wallet$",
+    r"^wallets$",
+    r"^password manager$",
+    r"^password managers$",
+    r"^password management$",
+    r"^password$",
+    r"^passwords$",
     r"^identity$",
     r"^database$",
+    r"^databases$",
     r"^observability$",
+    r"^observability platform[s]?$",
+    r"^monitoring tool[s]?$",
     r"^feature toggle[s]?$",
     r"^feature flag[s]?$",
     r"^open[- ]source feature flag[s]?.*$",
     r"^self[- ]hosted.*$",
+    r"^cloud storage$",
+    r"^vpn$",
+    r"^antivirus$",
+    r"^web browser[s]?$",
+    r"^search engine[s]?$",
     r".*foundation$",
     r".*association$",
     r".*consortium$",
@@ -165,6 +185,8 @@ def extract_facets(spec: JobSpec) -> QueryFacets:
     domain = "general"
     if "wallet" in raw or "wallet" in subj or "wallet" in dom:
         domain = "wallet"
+    elif "password" in raw or "password" in subj or "password" in dom:
+        domain = "password_manager"
     elif "feature flag" in raw or "feature toggle" in raw or "flag" in subj or "flag" in dom:
         domain = "feature_flag"
     elif "observability" in raw or "apm" in raw or "monitoring" in raw or "tracing" in raw or "observability" in dom:
@@ -187,6 +209,8 @@ def extract_facets(spec: JobSpec) -> QueryFacets:
         entity_type = "Platform / Product"
     elif "protocol" in raw or "protocol" in subj:
         entity_type = "Protocol / Project"
+    elif "manager" in raw or "manager" in subj:
+        entity_type = "Password Manager / Product"
 
     return QueryFacets(
         raw_query=spec.raw,
@@ -228,6 +252,12 @@ def search_queries(spec: JobSpec) -> list[str]:
             ])
         else:
             queries.extend(["crypto wallet software", "Web3 wallet", "digital wallet platforms"])
+    elif facets.domain == "password_manager":
+        queries.extend([
+            "top password managers comparison 2026",
+            "best password manager software applications",
+            "password management tools comparison pricing platforms",
+        ])
     elif facets.domain == "feature_flag":
         if "open_source" in facets.mandatory_qualifiers:
             queries.extend([
@@ -426,6 +456,13 @@ def _validate_candidate_facets(
         if re.search(pat, name.lower()):
             return False, "Matches publisher pattern", evidence
 
+    # Reject if candidate is literally the category / subject / domain concept
+    cand_lower = name.lower()
+    if cand_lower == facets.subject.lower() or cand_lower == facets.domain.lower():
+        return False, "Generic concept title matching query subject/domain", evidence
+    if cand_lower in ("password manager", "password managers", "password management", "crypto wallet", "digital wallet", "ai wallet", "observability platform", "feature flag", "database"):
+        return False, "Generic concept category name", evidence
+
     combined = f"{name} {snippet} {summary}".lower()
     for pat in DISCARD_PATTERNS:
         if re.search(pat, name, re.I):
@@ -479,6 +516,31 @@ def _validate_candidate_facets(
         )
         if not wallet_match:
             return False, "Not a verified wallet product/infrastructure", evidence
+        evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
+
+    elif facets.domain == "password_manager":
+        if not any(
+            w in combined
+            for w in (
+                "password manager",
+                "password management",
+                "store passwords",
+                "password vault",
+                "password generator",
+                "credential management",
+                "autofill passwords",
+                "keeper",
+                "1password",
+                "lastpass",
+                "bitwarden",
+                "dashlane",
+                "nordpass",
+                "keepass",
+                "roboform",
+                "enpass",
+            )
+        ):
+            return False, "Not a password manager product", evidence
         evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
     elif facets.domain == "feature_flag":
@@ -569,8 +631,8 @@ def _extract_truthful_pricing(snippet: str, summary: str) -> str:
     combined = f"{snippet} {summary}"
     price_patterns = [
         r"(?:pricing|starting at|plans start at|costs?|free tier|subscription|priced at|flat fee of)\s*([^\.\n]+)",
-        r"(\$\d+(?:\.\d+)?(?:\s*/\s*(?:mo|month|year|user))?)",
-        r"\b(100% free|completely free|free and open source|open source with paid cloud|freemium)\b",
+        r"(\$\d+(?:\.\d+)?(?:\s*/\s*(?:mo|month|year|user|annually))?)",
+        r"\b(100% free|completely free|free and open source|open source with paid cloud|freemium|free tier available)\b",
     ]
     for p in price_patterns:
         m = re.search(p, combined, flags=re.I)
@@ -579,6 +641,39 @@ def _extract_truthful_pricing(snippet: str, summary: str) -> str:
             if len(val) <= 90:
                 return val
     return "Not publicly disclosed in the retrieved source."
+
+
+def _extract_supported_platforms(text: str) -> str:
+    if not text:
+        return "Could not verify supported platforms from the retrieved sources."
+    found = []
+    platform_keywords = [
+        ("Windows", r"\bwindows\b"),
+        ("macOS", r"\b(macos|mac os|os x)\b"),
+        ("Linux", r"\blinux\b"),
+        ("iOS", r"\b(ios|iphone|ipad)\b"),
+        ("Android", r"\bandroid\b"),
+        ("Web", r"\b(web|browser extensions?|web app)\b"),
+        ("Chrome", r"\bchrome\b"),
+        ("Firefox", r"\bfirefox\b"),
+        ("Safari", r"\bsafari\b"),
+        ("Edge", r"\bedge\b"),
+    ]
+    for label, pat in platform_keywords:
+        if re.search(pat, text, re.I):
+            found.append(label)
+    if found:
+        seen = set()
+        clean = []
+        for item in found:
+            if item not in seen:
+                seen.add(item)
+                clean.append(item)
+        return ", ".join(clean)
+    m = re.search(r"(?:available on|supports?|runs on|compatible with)\s+([^\.\n]+)", text, re.I)
+    if m:
+        return m.group(0).strip()
+    return "Could not verify supported platforms from the retrieved sources."
 
 
 def _extract_grounded_strength(text: str, entity_name: str) -> str:
@@ -598,7 +693,7 @@ def _extract_grounded_strength(text: str, entity_name: str) -> str:
             continue
         # Check for capability/feature keywords
         if re.search(
-            r"\b(?:enables?|supports?|provides?|features?|allows?|designed to|built for|high-performance|real-time|sub-millisecond|automated|seamless|zero-knowledge|account abstraction|open-source|self-hosted|agentic|intent-based)\b",
+            r"\b(?:enables?|supports?|provides?|features?|allows?|designed to|built for|high-performance|real-time|sub-millisecond|automated|seamless|zero-knowledge|account abstraction|open-source|self-hosted|agentic|intent-based|end-to-end encryption|zero-trust|autofill)\b",
             s_clean,
             re.I,
         ):
@@ -623,12 +718,24 @@ def _extract_grounded_weakness(text: str, entity_name: str) -> str:
             continue
         # Check for genuine limitation keywords
         if re.search(
-            r"\b(?:limitation|drawback|trade-off|requires?\s+(?:developer|manual|complex|technical|additional|custom|external)|experimental|beta|lacks?|limited support|higher latency|steep learning curve)\b",
+            r"\b(?:limitation|drawback|trade-off|requires?\s+(?:developer|manual|complex|technical|additional|custom|external)|experimental|beta|lacks?|limited support|higher latency|steep learning curve|past security incidents?|breach history)\b",
             s_clean,
             re.I,
         ):
             return s_clean
     return "Could not verify a specific weakness from the retrieved sources."
+
+
+def _extract_generic_field(field_name: str, text: str) -> str:
+    if not text:
+        return f"Could not verify {field_name} from the retrieved sources."
+    fn_clean = field_name.replace("_", " ").lower()
+    sentences = re.split(r"(?<=[.!?\n])\s+", text)
+    for s in sentences:
+        s_clean = s.strip()
+        if fn_clean in s_clean.lower() and len(s_clean) >= 15:
+            return s_clean
+    return f"Could not verify {field_name} from the retrieved sources."
 
 
 def _search_ddg_lite(query: str, limit: int = 15) -> list[dict[str, Any]]:
@@ -785,6 +892,7 @@ def _extract_candidates_from_text(text: str) -> list[str]:
         or "wallets for" in text.lower()
         or "tools:" in text.lower()
         or "picks:" in text.lower()
+        or "managers:" in text.lower()
     ):
         parts = re.split(r"[,:;]\s*", text)
         for p in parts:
@@ -792,6 +900,50 @@ def _extract_candidates_from_text(text: str) -> list[str]:
             if c and len(c.split()) <= 3 and not is_publisher_or_agency(c) and c[0].isupper():
                 cands.append(c)
     return cands
+
+
+def _build_finding_object(
+    cand_name: str,
+    facets: QueryFacets,
+    spec: JobSpec,
+    contract: Contract,
+    snippet: str,
+    extract: str,
+    url: str,
+    source_label: str,
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    full_text = f"{snippet} {extract}"
+    pricing_val = _extract_truthful_pricing(snippet, extract)
+    platforms_val = _extract_supported_platforms(full_text)
+    strengths_val = _extract_grounded_strength(full_text, cand_name)
+    weaknesses_val = _extract_grounded_weakness(full_text, cand_name)
+
+    finding: dict[str, Any] = {
+        "name": cand_name,
+        "company": cand_name,
+        "type": facets.entity_type,
+        "summary": extract or snippet or f"Solution for {spec.subject} ({cand_name}).",
+        "products": [cand_name],
+        "pricing": pricing_val,
+        "supported_platforms": platforms_val,
+        "supported platforms": platforms_val,
+        "strengths": strengths_val,
+        "weaknesses": weaknesses_val,
+        "sources": [{"label": source_label, "url": url}],
+        "evidence": evidence,
+    }
+
+    # Populate any additional requested deliverable fields
+    for field in spec.deliverables + contract.deliverables:
+        f_norm = field.strip().lower()
+        if f_norm in ("names", "pricing", "strengths", "weaknesses", "products", "supported platforms", "supported_platforms") or any(f_norm.startswith(k) for k in ("3 ", "5 ", "2 ", "4 ", "10 ")):
+            continue
+        val = _extract_generic_field(f_norm, full_text)
+        finding[field] = val
+        finding[field.replace(" ", "_")] = val
+
+    return finding
 
 
 def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
@@ -827,19 +979,11 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
             )
             if valid and cand_name.lower() not in seen_names:
                 seen_names.add(cand_name.lower())
-                combined_info = f"{hit.get('snippet', '')} {extract}"
-                findings.append({
-                    "name": cand_name,
-                    "company": cand_name,
-                    "type": facets.entity_type,
-                    "summary": extract or f"Overview of {cand_name}.",
-                    "products": [cand_name],
-                    "pricing": _extract_truthful_pricing(hit.get("snippet", ""), extract),
-                    "strengths": _extract_grounded_strength(combined_info, cand_name),
-                    "weaknesses": _extract_grounded_weakness(combined_info, cand_name),
-                    "sources": [{"label": "Wikipedia", "url": url}],
-                    "evidence": evidence,
-                })
+                findings.append(
+                    _build_finding_object(
+                        cand_name, facets, spec, contract, hit.get("snippet", ""), extract, url, "Wikipedia", evidence
+                    )
+                )
                 if len(findings) >= target_count:
                     break
         if len(findings) >= target_count:
@@ -854,7 +998,6 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                 snippet = hit.get("snippet", "")
                 url = hit.get("url", "")
 
-                # Check candidate from result title
                 cand_title = clean_entity_name(title)
                 if (
                     cand_title
@@ -867,22 +1010,14 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                     )
                     if valid:
                         seen_names.add(cand_title.lower())
-                        findings.append({
-                            "name": cand_title,
-                            "company": cand_title,
-                            "type": facets.entity_type,
-                            "summary": snippet or f"Solution for {spec.subject} ({cand_title}).",
-                            "products": [cand_title],
-                            "pricing": _extract_truthful_pricing(snippet, ""),
-                            "strengths": _extract_grounded_strength(snippet, cand_title),
-                            "weaknesses": _extract_grounded_weakness(snippet, cand_title),
-                            "sources": [{"label": "Web Search Citation", "url": url}],
-                            "evidence": evidence,
-                        })
+                        findings.append(
+                            _build_finding_object(
+                                cand_title, facets, spec, contract, snippet, "", url, "Web Search Citation", evidence
+                            )
+                        )
                         if len(findings) >= target_count:
                             break
 
-                # Extract candidates from snippet text
                 sub_cands = _extract_candidates_from_text(snippet)
                 for cand in sub_cands:
                     if cand.lower() not in seen_names:
@@ -891,18 +1026,11 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                         )
                         if valid:
                             seen_names.add(cand.lower())
-                            findings.append({
-                                "name": cand,
-                                "company": cand,
-                                "type": facets.entity_type,
-                                "summary": snippet or f"Option for {spec.subject} ({cand}).",
-                                "products": [cand],
-                                "pricing": _extract_truthful_pricing(snippet, ""),
-                                "strengths": _extract_grounded_strength(snippet, cand),
-                                "weaknesses": _extract_grounded_weakness(snippet, cand),
-                                "sources": [{"label": "Web Research Source", "url": url}],
-                                "evidence": evidence,
-                            })
+                            findings.append(
+                                _build_finding_object(
+                                    cand, facets, spec, contract, snippet, "", url, "Web Research Source", evidence
+                                )
+                            )
                             if len(findings) >= target_count:
                                 break
                 if len(findings) >= target_count:
@@ -932,25 +1060,31 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
         if requires_recent:
             finding["retrieved_at"] = retrieved_at
 
-    deliverables = _map_deliverables(spec, findings)
+    deliverables = _map_deliverables(spec, contract, findings)
 
-    report = {
-        "type": "object",
-        "value": {
-            "title": contract.title,
-            "goal": spec.goal,
-            "retrieved_at": retrieved_at,
-            "findings": findings,
-            "deliverables": deliverables,
-            "honored_requirements": list(contract.acceptance),
-            "applied_lesson_ids": [lesson.id for lesson in contract.applied_lessons],
-            "notes": _notes(spec, findings, requires_sources, requires_recent, target_count),
-        },
+    report_value = {
+        "title": contract.title,
+        "goal": spec.goal,
+        "retrieved_at": retrieved_at,
+        "findings": findings,
+        "deliverables": deliverables,
+        "honored_requirements": list(contract.acceptance),
+        "applied_lesson_ids": [lesson.id for lesson in contract.applied_lessons],
+        "notes": _notes(spec, findings, requires_sources, requires_recent, target_count),
     }
-    return report
+
+    # Contract completion validation
+    is_valid, val_reason = validate_deliverable_against_contract(contract, report_value)
+    if not is_valid:
+        report_value["notes"].append(f"Contract validation warning: {val_reason}")
+
+    return {
+        "type": "object",
+        "value": report_value,
+    }
 
 
-def _map_deliverables(spec: JobSpec, findings: list[dict[str, Any]]) -> dict[str, Any]:
+def _map_deliverables(spec: JobSpec, contract: Contract, findings: list[dict[str, Any]]) -> dict[str, Any]:
     names = [item.get("name") for item in findings if item.get("name")]
     products = [
         item.get("products")
@@ -962,14 +1096,40 @@ def _map_deliverables(spec: JobSpec, findings: list[dict[str, Any]]) -> dict[str
     strengths = [item.get("strengths") for item in findings]
     weaknesses = [item.get("weaknesses") for item in findings]
 
-    return {
+    out: dict[str, Any] = {
         "names": names,
         "products": products,
         "pricing": pricing,
         "strengths": strengths,
         "weaknesses": weaknesses,
-        "requested": spec.deliverables,
+        "requested": spec.deliverables or contract.deliverables,
     }
+
+    # Dynamically map all requested fields
+    for field in (spec.deliverables or []) + (contract.deliverables or []):
+        f_norm = field.strip().lower()
+        if f_norm not in out and not any(f_norm.startswith(k) for k in ("3 ", "5 ", "2 ", "4 ", "10 ")):
+            out[field] = [item.get(field, item.get(field.replace(" ", "_"), f"Could not verify {field} from retrieved sources.")) for item in findings]
+
+    return out
+
+
+def validate_deliverable_against_contract(contract: Contract, deliverable_value: dict[str, Any]) -> tuple[bool, str]:
+    findings = deliverable_value.get("findings", [])
+    for f in findings:
+        name = f.get("name", "").strip()
+        if not name or is_publisher_or_agency(name):
+            return False, f"Candidate '{name}' is a generic category concept or publisher, not a concrete entity."
+
+    requested = deliverable_value.get("deliverables", {}).get("requested", []) or contract.deliverables
+    for field in requested:
+        f_low = field.lower()
+        if any(token in f_low for token in ("names", "companies", "products", "managers", "wallets", "tools", "platforms")) and not any(k in f_low for k in ("pricing", "platform", "strength", "weakness", "option", "support")):
+            continue
+        if field not in deliverable_value.get("deliverables", {}):
+            return False, f"Missing requested deliverable field '{field}' in deliverables output."
+
+    return True, "Valid"
 
 
 def _notes(
