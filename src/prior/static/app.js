@@ -121,7 +121,7 @@ function contractStatus(job) {
   if (job.status === "specified" && job.contract && !job.contract.baseline) return "MEMORY APPLIED";
   if (job.status === "specified") return "READY";
   if (job.status === "working" || job.status === "hired") return "IN PROGRESS";
-  if (job.status === "delivered") return "IN PROGRESS";
+  if (job.status === "delivered") return "FULFILLED";
   return "COMPLETED";
 }
 
@@ -432,7 +432,7 @@ async function renderDashboard() {
     shell(`
       <div class="app-header">
         <div>
-          <p class="eyebrow">OPERATOR WORKSPACE</p>
+          <p class="eyebrow">YOUR WORKSPACE</p>
           <h1>What do you need done?</h1>
           <p class="lede">Every rejected job can teach PRIOR a clause the next contract should not forget.</p>
         </div>
@@ -450,7 +450,7 @@ async function renderDashboard() {
   shell(`
     <div class="app-header">
       <div>
-        <p class="eyebrow">OPERATOR WORKSPACE</p>
+        <p class="eyebrow">YOUR WORKSPACE</p>
         <h1>What do you need done?</h1>
         <p class="lede">Every rejected job can teach PRIOR a clause the next contract should not forget.</p>
       </div>

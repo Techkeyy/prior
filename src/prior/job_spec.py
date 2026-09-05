@@ -182,9 +182,15 @@ def _extract_subject(text: str, count: int | None) -> str:
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
     if not cleaned:
         return text.strip()
-    if count and not re.search(r"\d", cleaned):
-        return cleaned
-    return cleaned
+    # Separate core subject from trailing instruction / comparison clauses
+    split_match = re.split(
+        r"\s+(?:and\s+(?:compare|summarize|evaluate|analyze|list|provide|show|break down|examine)|by\s+|focusing on\s+|based on\s+|with their\s+)\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.I,
+    )
+    core = split_match[0].strip(" .,")
+    return core or cleaned
 
 
 def _domain_for(lowered: str, subject: str) -> str:
@@ -199,7 +205,7 @@ def _deliverables(lowered: str, count: int | None) -> list[str]:
     if "supplier" in lowered:
         items = ["supplier names", "what they sell", "pricing signals", "fit notes", "risks"]
     elif "pricing" in lowered or "price" in lowered:
-        items = ["product names", "current pricing", "what is included", "notable caveats"]
+        items = ["product names", "products", "current pricing", "strengths", "weaknesses"]
     elif "landscape" in lowered or "market" in lowered:
         items = ["category map", "notable products", "positioning", "pricing if public", "gaps"]
     if count:
