@@ -114,6 +114,8 @@ def search_queries(spec: JobSpec) -> list[str]:
         queries.append(subject)
         queries.append(f"top {subject}")
         queries.append(f"best {subject} 2026")
+    if domain and domain not in queries:
+        queries.append(domain)
     if "wallet" in subject.lower() or "wallet" in domain.lower():
         queries.extend(["AI crypto wallet", "smart contract wallet", "Web3 wallet", "crypto wallet software"])
     elif "identity" in subject.lower() or "identity" in domain.lower():
@@ -182,18 +184,45 @@ def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
     dom = (spec.domain or "").lower()
 
     if "wallet" in subj or "wallet" in dom:
-        # Candidate name or summary MUST explicitly mention wallet, custody, or account abstraction
-        if not any(
+        # Candidate MUST describe an actual wallet product, digital wallet platform, or custody infrastructure
+        is_wallet_entity = any(
             w in combined
             for w in (
-                "wallet",
-                "wallets",
-                "custody",
+                "cryptocurrency wallet",
+                "digital wallet",
+                "crypto wallet",
+                "smart wallet",
+                "web3 wallet",
+                "self-custody",
+                "non-custodial",
                 "account abstraction",
+                "smart contract wallet",
                 "smart account",
                 "erc-4337",
+                "custody wallet",
+                "multi-chain",
+                "agentic wallet",
+                "defi wallet",
             )
-        ):
+        ) or (
+            "wallet" in title.lower()
+            and any(
+                w in combined
+                for w in (
+                    "crypto",
+                    "blockchain",
+                    "tokens",
+                    "payments",
+                    "defi",
+                    "digital asset",
+                    "nfts",
+                    "ethereum",
+                    "bitcoin",
+                    "smart contract",
+                )
+            )
+        )
+        if not is_wallet_entity:
             return False
     elif "identity" in subj or "identity" in dom or "did" in subj:
         if not any(
