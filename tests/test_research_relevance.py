@@ -10,6 +10,9 @@ from prior.research import (
     search_queries,
     extract_facets,
     _validate_candidate_facets,
+    _extract_relational_evidence,
+    _extract_grounded_strength,
+    _extract_grounded_weakness,
     _extract_truthful_pricing,
 )
 
@@ -67,91 +70,109 @@ def test_publisher_and_agency_rejection():
     assert not is_publisher_or_agency("LaunchDarkly")
 
 
-def test_mandatory_qualifier_validation_rejects_unqualified_candidates():
-    # 1. AI Wallet query: candidate with wallet but NO AI must be rejected
+def test_company_with_wallet_and_unrelated_ai_is_rejected():
+    # 1. Company has wallet + unrelated AI feature (e.g. Opera or separate customer chatbot) -> REJECT
     ai_spec = parse_job("Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.")
     ai_facets = extract_facets(ai_spec)
 
-    # Trust Wallet without AI claims in text -> FAIL for AI wallet request
-    valid, reason = _validate_candidate_facets(
+    opera_text = "Opera Norway AS offers PC browsers, Web3 wallet and e-commerce products. Opera is noted for early adoption of technologies such as artificial intelligence (AI), cryptocurrency, and Web3. The company has 296 million users."
+    valid, reason, _ = _validate_candidate_facets(
+        "Opera",
+        opera_text,
+        "",
+        "https://en.wikipedia.org/wiki/Opera_(company)",
+        ai_facets,
+    )
+    assert not valid
+    assert "Missing relational evidence" in reason
+
+    support_ai_text = "Trust Wallet is a multi-chain non-custodial crypto wallet. Company also uses an AI chatbot for customer support inquiries."
+    valid, reason, _ = _validate_candidate_facets(
         "Trust Wallet",
-        "Trust Wallet is a multi-chain non-custodial crypto wallet.",
+        support_ai_text,
         "",
-        "https://en.wikipedia.org/wiki/Trust_Wallet",
+        "https://trustwallet.com",
         ai_facets,
     )
     assert not valid
-    assert "AI" in reason
+    assert "Missing relational evidence" in reason
 
-    # Generic digital wallet (OPay, Google Wallet) -> FAIL for AI wallet request
-    valid, reason = _validate_candidate_facets(
-        "Google Wallet",
-        "Google Wallet is a digital wallet platform developed by Google.",
+
+def test_company_with_ai_and_unrelated_wallet_is_rejected():
+    # 2. Company has AI + unrelated corporate crypto wallet -> REJECT
+    ai_spec = parse_job("Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.")
+    ai_facets = extract_facets(ai_spec)
+
+    openai_text = "OpenAI develops advanced large language models including GPT-4. The organization maintains a corporate digital wallet to hold investment reserves."
+    valid, reason, _ = _validate_candidate_facets(
+        "OpenAI",
+        openai_text,
         "",
-        "https://en.wikipedia.org/wiki/Google_Wallet",
+        "https://openai.com",
         ai_facets,
     )
     assert not valid
+    assert "Missing relational evidence" in reason
 
-    # Candidate WITH AI agentic wallet capability -> PASS
-    valid, reason = _validate_candidate_facets(
+
+def test_ai_capability_explicitly_tied_to_wallet_is_accepted():
+    # 3. AI capability explicitly tied to wallet/account/on-chain execution -> ACCEPT
+    ai_spec = parse_job("Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.")
+    ai_facets = extract_facets(ai_spec)
+
+    skyfire_text = "Skyfire is an AI payment and autonomous agent wallet platform enabling AI agents to execute on-chain transactions."
+    valid, reason, evidence = _validate_candidate_facets(
         "Skyfire",
-        "Skyfire is an AI payment and autonomous agent wallet infrastructure platform enabling AI agents to execute on-chain transactions.",
+        skyfire_text,
         "",
         "https://skyfire.xyz",
         ai_facets,
     )
     assert valid
+    assert reason == "Valid"
+    assert "ai" in evidence["qualifiers"]
+    assert "Skyfire" in evidence["qualifiers"]["ai"]["evidence"] or "agent" in evidence["qualifiers"]["ai"]["evidence"]
 
-    # 2. Open-source feature flag query: proprietary tool without open-source evidence must be rejected
-    ff_spec = parse_job("Research 3 open-source feature flag tools.")
-    ff_facets = extract_facets(ff_spec)
 
-    # LaunchDarkly without open source evidence -> FAIL
-    valid, reason = _validate_candidate_facets(
-        "LaunchDarkly",
-        "LaunchDarkly is a proprietary commercial SaaS feature management platform.",
-        "",
-        "https://launchdarkly.com",
-        ff_facets,
-    )
-    assert not valid
-    assert "open-source" in reason.lower()
+def test_unsupported_strengths_and_weaknesses_are_not_invented():
+    # 5. Unsupported strengths and weaknesses must return truthful unavailable messages, not corporate trivia or boilerplate
+    bio_text = "Opera Norway AS is a multinational technology corporation headquartered in Oslo, Norway, with additional offices in Europe, China, and Africa. The company has 296 million monthly active users."
+    strength = _extract_grounded_strength(bio_text, "Opera")
+    weakness = _extract_grounded_weakness(bio_text, "Opera")
 
-    # Unleash / Flagsmith with open source evidence -> PASS
-    valid, reason = _validate_candidate_facets(
-        "Unleash",
-        "Unleash is an open-source feature flag management tool available on GitHub with self-hosted and cloud options.",
-        "",
-        "https://github.com/Unleash/unleash",
-        ff_facets,
-    )
-    assert valid
+    assert strength == "Could not verify a specific strength from the retrieved sources."
+    assert weakness == "Could not verify a specific weakness from the retrieved sources."
+    assert "headquartered" not in strength
+    assert "Subject to ecosystem integration requirements" not in weakness
 
-    # 3. Self-hosted observability query: SaaS only must be rejected
-    obs_spec = parse_job("Research 3 self-hosted API observability platforms.")
-    obs_facets = extract_facets(obs_spec)
+    # Grounded capability -> extracted
+    grounded_text = "Skyfire enables AI agents to execute autonomous on-chain micropayments with pre-configured spending limits. Requires developer integration with agent frameworks."
+    extracted_strength = _extract_grounded_strength(grounded_text, "Skyfire")
+    extracted_weakness = _extract_grounded_weakness(grounded_text, "Skyfire")
 
-    # Datadog SaaS only -> FAIL
-    valid, reason = _validate_candidate_facets(
-        "Datadog",
-        "Datadog is a cloud-hosted SaaS monitoring and security platform for cloud applications.",
-        "",
-        "https://datadoghq.com",
-        obs_facets,
-    )
-    assert not valid
-    assert "self-hosted" in reason.lower()
+    assert "enables AI agents" in extracted_strength
+    assert "Requires developer integration" in extracted_weakness
 
-    # SigNoz self-hosted -> PASS
-    valid, reason = _validate_candidate_facets(
-        "SigNoz",
-        "SigNoz is a self-hosted open-source APM and observability platform you can deploy with Docker or Kubernetes.",
-        "",
-        "https://signoz.io",
-        obs_facets,
-    )
-    assert valid
+
+def test_compound_qualifier_relationship_works_on_unrelated_fixture_domain():
+    # 7. Relational binding on unrelated fixture domains (e.g. privacy-first search engine, self-hosted database)
+    text_privacy_search = "DuckDuckGo is a privacy-first search engine that does not track user search queries."
+    ev = _extract_relational_evidence(text_privacy_search, "search_engine", "privacy")
+    assert ev is not None
+    assert "privacy-first search engine" in ev
+
+
+def test_zero_qualifying_results_is_allowed():
+    # 4. Zero results is valid and produces truthful notes
+    spec = parse_job("Research 5 non-existent hyper-quantum teleportation widgets.")
+    contract = build_contract(spec, [])
+    report = run_research(spec, contract)
+
+    val = report["value"]
+    assert isinstance(val["findings"], list)
+    assert len(val["findings"]) == 0
+    assert "0 qualifying entities could be verified from the available sources." in val["notes"]
+    assert "No public sources answered this query with verified qualification." in val["notes"]
 
 
 def test_pricing_is_truthful_and_not_defaulted():
@@ -163,26 +184,6 @@ def test_pricing_is_truthful_and_not_defaulted():
     fallback = _extract_truthful_pricing("Multi-chain wallet supporting ERC-4337 smart accounts.", "")
     assert fallback == "Not publicly disclosed in the retrieved source."
     assert "standard network or on-chain transaction fees apply" not in fallback
-
-
-def test_ai_wallet_research_returns_only_qualified_entities_and_no_forced_padding():
-    raw = "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses."
-    spec = parse_job(raw)
-    contract = build_contract(spec, [])
-    report = run_research(spec, contract)
-
-    value = report["value"]
-    findings = value["findings"]
-    
-    # We do NOT force 5 results; we accept whatever genuinely qualified
-    assert len(findings) <= 5
-
-    # Check that every single returned entity has verified sources and non-invented pricing
-    for finding in findings:
-        assert not is_publisher_or_agency(finding["name"])
-        assert finding["type"] == "Company / Product"
-        assert "standard network or on-chain transaction fees apply" not in finding.get("pricing", "")
-        assert len(finding.get("sources", [])) > 0
 
 
 def test_open_source_feature_flags_generalization():

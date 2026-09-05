@@ -1,4 +1,4 @@
-"""Real research worker. Fully generalized entity extraction and facet validation engine. No hardcoded domain registries."""
+"""Real research worker. Fully generalized entity extraction and relational facet validation engine. No hardcoded domain registries."""
 
 from __future__ import annotations
 
@@ -159,6 +159,8 @@ def extract_facets(spec: JobSpec) -> QueryFacets:
         qualifiers.add("non_custodial")
     if re.search(r"\b(decentralized|p2p)\b", raw) or re.search(r"\b(decentralized)\b", subj):
         qualifiers.add("decentralized")
+    if re.search(r"\b(privacy-first|privacy focused|zero-knowledge|zk)\b", raw) or re.search(r"\b(privacy-first|privacy)\b", subj):
+        qualifiers.add("privacy")
 
     domain = "general"
     if "wallet" in raw or "wallet" in subj or "wallet" in dom:
@@ -171,6 +173,10 @@ def extract_facets(spec: JobSpec) -> QueryFacets:
         domain = "identity"
     elif "exchange" in raw or "dex" in raw or "exchange" in dom:
         domain = "exchange"
+    elif "database" in raw or "db" in raw or "database" in dom:
+        domain = "database"
+    elif "search engine" in raw or "search" in subj or "search" in dom:
+        domain = "search_engine"
     else:
         domain = dom or subj or "general"
 
@@ -212,6 +218,7 @@ def search_queries(spec: JobSpec) -> list[str]:
                 "top agentic wallet Web3 2026",
                 "autonomous AI agent wallet cryptocurrency",
                 "AI-powered Web3 smart wallet software",
+                "intent-based AI crypto wallet platform",
             ])
         elif "non_custodial" in facets.mandatory_qualifiers:
             queries.extend([
@@ -291,26 +298,138 @@ def is_publisher_or_agency(name: str) -> bool:
     return False
 
 
-def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
-    facets = extract_facets(spec)
-    valid, _ = _validate_candidate_facets(title, snippet, "", "", facets)
-    return valid
+def _extract_relational_evidence(text: str, domain: str, qualifier: str) -> str | None:
+    if not text:
+        return None
+
+    sentences = re.split(r"(?<=[.!?\n])\s+", text)
+
+    if qualifier == "ai" and domain == "wallet":
+        compound_pats = [
+            r"\b(?:ai|agentic|autonomous)\s+(?:crypto\s+|web3\s+|smart\s+|on-chain\s+)?(?:wallet|wallets|account|accounts|vault|vaults)\b",
+            r"\b(?:wallet|wallets|account|accounts)\s+for\s+(?:ai|agentic|autonomous)\s+(?:agents?|transactions?)\b",
+            r"\b(?:ai|agentic|autonomous)\s+(?:agent|agents)\s+(?:to\s+execute\s+|executing\s+|holding\s+|managing\s+)?(?:on-chain|crypto|wallet|transactions?)\b",
+            r"\b(?:intent-based|ai-powered|ai-driven|ai-assisted|agent-driven)\s+(?:crypto\s+|web3\s+)?(?:wallet|wallets|account|accounts)\b",
+            r"\b(?:agentkit|smart\s+account\s+ai|agent\s+wallet)\b",
+        ]
+        for s in sentences:
+            s_clean = s.strip()
+            for pat in compound_pats:
+                if re.search(pat, s_clean, re.I):
+                    return s_clean
+
+            # Proximity check within the SAME sentence
+            has_ai_term = re.search(
+                r"\b(?:ai|agentic|autonomous\s+agent|artificial\s+intelligence)\b",
+                s_clean,
+                re.I,
+            )
+            has_wallet_term = re.search(
+                r"\b(?:wallet|smart\s+account|custody|key\s+management|on-chain\s+transactions?)\b",
+                s_clean,
+                re.I,
+            )
+            if has_ai_term and has_wallet_term:
+                # Disqualify if it's merely a disjoint list of independent technologies
+                if re.search(
+                    r"\b(?:such as|including|offers?|adoption of)\s+[^.]*?(?:ai|artificial intelligence)[^.]*?(?:,|and)\s+[^.]*?(?:wallet|crypto|web3)",
+                    s_clean,
+                    re.I,
+                ):
+                    if not re.search(
+                        r"\b(?:operates?|controls?|assists?|secures?|automates?|analyzes?|powers?|executes?|enables?)\b",
+                        s_clean,
+                        re.I,
+                    ):
+                        continue
+                # Disqualify if AI is for an unrelated non-wallet feature (e.g. chatbot, news, search)
+                if re.search(
+                    r"\b(?:support|customer|chatbot|marketing|news|search)\b",
+                    s_clean,
+                    re.I,
+                ) and not re.search(
+                    r"\b(?:transaction|key|fund|asset|signature|signer|on-chain|account)\b",
+                    s_clean,
+                    re.I,
+                ):
+                    continue
+                # Must have operational/relational link
+                if re.search(
+                    r"\b(?:operates?|controls?|assists?|secures?|automates?|analyzes?|powers?|executes?|enables?|uses\s+ai\s+to|leverages\s+ai\s+for|ai-driven|ai-powered)\b",
+                    s_clean,
+                    re.I,
+                ):
+                    return s_clean
+        return None
+
+    elif qualifier == "open_source" and domain == "feature_flag":
+        for s in sentences:
+            s_clean = s.strip()
+            if re.search(
+                r"\b(?:open[- ]source|foss|github|apache|mit\s+license)\b",
+                s_clean,
+                re.I,
+            ) and re.search(
+                r"\b(?:feature\s+flag|feature\s+toggle|feature\s+management)\b",
+                s_clean,
+                re.I,
+            ):
+                return s_clean
+        return None
+
+    elif qualifier == "self_hosted" and domain == "observability":
+        for s in sentences:
+            s_clean = s.strip()
+            if re.search(
+                r"\b(?:self[- ]hosted|on[- ]premise|docker|deploy\s+on\s+your\s+own|kubernetes)\b",
+                s_clean,
+                re.I,
+            ) and re.search(
+                r"\b(?:observability|apm|tracing|monitoring|telemetry)\b",
+                s_clean,
+                re.I,
+            ):
+                return s_clean
+        return None
+
+    elif qualifier == "non_custodial" and domain == "wallet":
+        for s in sentences:
+            s_clean = s.strip()
+            if re.search(
+                r"\b(?:non[- ]custodial|self[- ]custody|private\s+keys?|users?\s+own\s+keys?)\b",
+                s_clean,
+                re.I,
+            ) and re.search(r"\b(?:wallet|crypto)\b", s_clean, re.I):
+                return s_clean
+        return None
+
+    # Generic relational fallback
+    for s in sentences:
+        s_clean = s.strip()
+        q_clean = qualifier.replace("_", " ")
+        d_clean = domain.replace("_", " ")
+        if q_clean in s_clean.lower() and d_clean in s_clean.lower():
+            return s_clean
+
+    return None
 
 
 def _validate_candidate_facets(
     name: str, snippet: str, summary: str, url: str, facets: QueryFacets
-) -> tuple[bool, str]:
+) -> tuple[bool, str, dict[str, Any]]:
+    evidence: dict[str, Any] = {"product_domain": None, "qualifiers": {}}
+
     if not name or is_publisher_or_agency(name):
-        return False, "Publisher, agency, or generic category title"
+        return False, "Publisher, agency, or generic category title", evidence
 
     for pat in PUBLISHER_OR_AGENCY_PATTERNS:
         if re.search(pat, name.lower()):
-            return False, "Matches publisher pattern"
+            return False, "Matches publisher pattern", evidence
 
     combined = f"{name} {snippet} {summary}".lower()
     for pat in DISCARD_PATTERNS:
         if re.search(pat, name, re.I):
-            return False, "Discard pattern match"
+            return False, "Discard pattern match", evidence
 
     # 1. Domain Match
     if facets.domain == "wallet":
@@ -359,7 +478,8 @@ def _validate_candidate_facets(
             )
         )
         if not wallet_match:
-            return False, "Not a verified wallet product/infrastructure"
+            return False, "Not a verified wallet product/infrastructure", evidence
+        evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
     elif facets.domain == "feature_flag":
         if not any(
@@ -379,7 +499,8 @@ def _validate_candidate_facets(
                 "openfeature",
             )
         ):
-            return False, "Not a feature flag tool"
+            return False, "Not a feature flag tool", evidence
+        evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
     elif facets.domain == "observability":
         if not any(
@@ -403,7 +524,8 @@ def _validate_candidate_facets(
                 "cilium",
             )
         ):
-            return False, "Not an observability platform"
+            return False, "Not an observability platform", evidence
+        evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
     elif facets.domain == "identity":
         if not any(
@@ -419,111 +541,28 @@ def _validate_candidate_facets(
                 "decentralized identifier",
             )
         ):
-            return False, "Not an identity protocol/platform"
+            return False, "Not an identity protocol/platform", evidence
+        evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
-    # 2. Mandatory Qualifier Validation
+    # 2. Mandatory Relational Qualifier Validation
+    full_text = f"{snippet}\n{summary}"
     for q in facets.mandatory_qualifiers:
-        if q == "ai":
-            # Must have explicit AI / agentic / autonomous capability evidence connected to the product/wallet
-            has_ai = any(
-                w in combined
-                for w in (
-                    "ai agent",
-                    "agentic",
-                    "ai-powered",
-                    "autonomous agent",
-                    "ai assistant",
-                    "intent-based",
-                    "llm",
-                    "ai wallet",
-                    "ai crypto",
-                    "smart account ai",
-                    "agentic transactions",
-                    "ai transactions",
-                    "ai execution",
-                    "autonomous wallet",
-                    "ai-native wallet",
-                    "agentkit",
-                    "autonomous on-chain",
-                    "agent wallet",
-                    "ai-integrated",
-                )
-            ) or (
-                "artificial intelligence" in combined
-                and any(
-                    w in combined
-                    for w in (
-                        "wallet",
-                        "crypto",
-                        "agent",
-                        "autonomous",
-                        "transaction",
-                        "on-chain",
-                    )
-                )
+        rel_evidence = _extract_relational_evidence(full_text, facets.domain, q)
+        if not rel_evidence:
+            return (
+                False,
+                f"Missing relational evidence connecting qualifier '{q}' to domain '{facets.domain}'",
+                evidence,
             )
-            if not has_ai:
-                return False, "Missing AI / agentic capability evidence"
+        evidence["qualifiers"][q] = {"evidence": rel_evidence, "source": url}
 
-        elif q == "open_source":
-            has_os = any(
-                w in combined
-                for w in (
-                    "open source",
-                    "open-source",
-                    "github.com",
-                    "github",
-                    "foss",
-                    "apache 2",
-                    "apache-2.0",
-                    "mit license",
-                    "gpl",
-                    "open-core",
-                    "source-available",
-                )
-            )
-            if not has_os:
-                return False, "Missing open-source evidence"
+    return True, "Valid", evidence
 
-        elif q == "self_hosted":
-            has_sh = any(
-                w in combined
-                for w in (
-                    "self-hosted",
-                    "self hosted",
-                    "on-premise",
-                    "on premise",
-                    "on-prem",
-                    "docker",
-                    "self host",
-                    "deploy on your own",
-                    "helm chart",
-                    "kubernetes",
-                    "binary download",
-                )
-            )
-            if not has_sh:
-                return False, "Missing self-hosted evidence"
 
-        elif q == "non_custodial":
-            has_nc = any(
-                w in combined
-                for w in (
-                    "non-custodial",
-                    "non custodial",
-                    "self-custody",
-                    "self custody",
-                    "retains control of keys",
-                    "private keys",
-                    "users own their keys",
-                    "user retains private keys",
-                    "hardware wallet",
-                )
-            )
-            if not has_nc:
-                return False, "Missing non-custodial evidence"
-
-    return True, "Valid"
+def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
+    facets = extract_facets(spec)
+    valid, _, _ = _validate_candidate_facets(title, snippet, "", "", facets)
+    return valid
 
 
 def _extract_truthful_pricing(snippet: str, summary: str) -> str:
@@ -540,6 +579,56 @@ def _extract_truthful_pricing(snippet: str, summary: str) -> str:
             if len(val) <= 90:
                 return val
     return "Not publicly disclosed in the retrieved source."
+
+
+def _extract_grounded_strength(text: str, entity_name: str) -> str:
+    if not text:
+        return "Could not verify a specific strength from the retrieved sources."
+    sentences = re.split(r"(?<=[.!?\n])\s+", text)
+    for s in sentences:
+        s_clean = s.strip()
+        if len(s_clean) < 20 or len(s_clean) > 220:
+            continue
+        # Exclude corporate trivia, headquarters, employee counts, founding info
+        if re.search(
+            r"\b(?:headquartered|offices in|founded in|incorporated in|subsidiary of|parent company|revenue of|employees|monthly active users)\b",
+            s_clean,
+            re.I,
+        ):
+            continue
+        # Check for capability/feature keywords
+        if re.search(
+            r"\b(?:enables?|supports?|provides?|features?|allows?|designed to|built for|high-performance|real-time|sub-millisecond|automated|seamless|zero-knowledge|account abstraction|open-source|self-hosted|agentic|intent-based)\b",
+            s_clean,
+            re.I,
+        ):
+            return s_clean
+    return "Could not verify a specific strength from the retrieved sources."
+
+
+def _extract_grounded_weakness(text: str, entity_name: str) -> str:
+    if not text:
+        return "Could not verify a specific weakness from the retrieved sources."
+    sentences = re.split(r"(?<=[.!?\n])\s+", text)
+    for s in sentences:
+        s_clean = s.strip()
+        if len(s_clean) < 20 or len(s_clean) > 220:
+            continue
+        # Exclude corporate trivia
+        if re.search(
+            r"\b(?:headquartered|offices in|founded in|employees)\b",
+            s_clean,
+            re.I,
+        ):
+            continue
+        # Check for genuine limitation keywords
+        if re.search(
+            r"\b(?:limitation|drawback|trade-off|requires?\s+(?:developer|manual|complex|technical|additional|custom|external)|experimental|beta|lacks?|limited support|higher latency|steep learning curve)\b",
+            s_clean,
+            re.I,
+        ):
+            return s_clean
+    return "Could not verify a specific weakness from the retrieved sources."
 
 
 def _search_ddg_lite(query: str, limit: int = 15) -> list[dict[str, Any]]:
@@ -733,10 +822,12 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
             extract = sum_info["extract"] if sum_info else hit.get("snippet", "")
             url = sum_info["url"] if sum_info else f"https://en.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"
 
-            valid, _ = _validate_candidate_facets(cand_name, hit.get("snippet", ""), extract, url, facets)
+            valid, _, evidence = _validate_candidate_facets(
+                cand_name, hit.get("snippet", ""), extract, url, facets
+            )
             if valid and cand_name.lower() not in seen_names:
                 seen_names.add(cand_name.lower())
-                first_sent = _first_sentence(extract) or f"Established {facets.entity_type} for {cand_name}."
+                combined_info = f"{hit.get('snippet', '')} {extract}"
                 findings.append({
                     "name": cand_name,
                     "company": cand_name,
@@ -744,9 +835,10 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                     "summary": extract or f"Overview of {cand_name}.",
                     "products": [cand_name],
                     "pricing": _extract_truthful_pricing(hit.get("snippet", ""), extract),
-                    "strengths": first_sent,
-                    "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
+                    "strengths": _extract_grounded_strength(combined_info, cand_name),
+                    "weaknesses": _extract_grounded_weakness(combined_info, cand_name),
                     "sources": [{"label": "Wikipedia", "url": url}],
+                    "evidence": evidence,
                 })
                 if len(findings) >= target_count:
                     break
@@ -770,7 +862,9 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                     and len(cand_title.split()) <= 4
                     and cand_title.lower() not in seen_names
                 ):
-                    valid, _ = _validate_candidate_facets(cand_title, snippet, "", url, facets)
+                    valid, _, evidence = _validate_candidate_facets(
+                        cand_title, snippet, "", url, facets
+                    )
                     if valid:
                         seen_names.add(cand_title.lower())
                         findings.append({
@@ -780,9 +874,10 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                             "summary": snippet or f"Solution for {spec.subject} ({cand_title}).",
                             "products": [cand_title],
                             "pricing": _extract_truthful_pricing(snippet, ""),
-                            "strengths": _first_sentence(snippet) or f"Verified capability for {cand_title}.",
-                            "weaknesses": "Operational constraints dependent on supported networks and host environment.",
+                            "strengths": _extract_grounded_strength(snippet, cand_title),
+                            "weaknesses": _extract_grounded_weakness(snippet, cand_title),
                             "sources": [{"label": "Web Search Citation", "url": url}],
+                            "evidence": evidence,
                         })
                         if len(findings) >= target_count:
                             break
@@ -791,7 +886,9 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                 sub_cands = _extract_candidates_from_text(snippet)
                 for cand in sub_cands:
                     if cand.lower() not in seen_names:
-                        valid, _ = _validate_candidate_facets(cand, snippet, "", url, facets)
+                        valid, _, evidence = _validate_candidate_facets(
+                            cand, snippet, "", url, facets
+                        )
                         if valid:
                             seen_names.add(cand.lower())
                             findings.append({
@@ -801,9 +898,10 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
                                 "summary": snippet or f"Option for {spec.subject} ({cand}).",
                                 "products": [cand],
                                 "pricing": _extract_truthful_pricing(snippet, ""),
-                                "strengths": _first_sentence(snippet) or f"Recognized option for {spec.subject}.",
-                                "weaknesses": "Requires compatible host environment and network integration.",
+                                "strengths": _extract_grounded_strength(snippet, cand),
+                                "weaknesses": _extract_grounded_weakness(snippet, cand),
                                 "sources": [{"label": "Web Research Source", "url": url}],
+                                "evidence": evidence,
                             })
                             if len(findings) >= target_count:
                                 break
