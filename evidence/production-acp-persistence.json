@@ -1,0 +1,9 @@
+{
+  "production_prior_job_id": "job_b1c7fb2be67b",
+  "on_chain_acp_job_id": "76308",
+  "provider": null,
+  "final_status": "delivered",
+  "deliverable_received": true,
+  "deliverable_snippet": "{'type': 'object', 'value': {'title': 'Research 3 decentralized identity protocols on Base and summarize key capabilities', 'goal': 'Research 3 decentralized identity protocols on Base and summarize k",
+  "verified_at": "2026-09-05T01:13:10Z"
+}
