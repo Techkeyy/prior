@@ -114,7 +114,15 @@ def search_queries(spec: JobSpec) -> list[str]:
         queries.append(subject)
         queries.append(f"top {subject}")
         queries.append(f"best {subject} 2026")
-    if domain and domain.lower() not in {q.lower() for q in queries}:
+    if "wallet" in subject.lower() or "wallet" in domain.lower():
+        queries.extend(["AI crypto wallet", "smart contract wallet", "Web3 wallet", "crypto wallet software"])
+    elif "identity" in subject.lower() or "identity" in domain.lower():
+        queries.extend(["decentralized identity protocol", "W3C DID", "verifiable credentials"])
+    elif "observability" in subject.lower() or "monitoring" in subject.lower():
+        queries.extend(["application performance monitoring software", "API observability tools", "distributed tracing"])
+    elif "flag" in subject.lower():
+        queries.extend(["feature toggle software", "feature flag management", "open source feature flags"])
+    elif domain and domain.lower() not in {q.lower() for q in queries}:
         queries.append(domain)
         queries.append(f"{domain} software")
     if spec.goal and spec.goal.lower() not in {q.lower() for q in queries}:
@@ -174,38 +182,19 @@ def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
     dom = (spec.domain or "").lower()
 
     if "wallet" in subj or "wallet" in dom:
+        # Candidate name or summary MUST explicitly mention wallet, custody, or account abstraction
         if not any(
             w in combined
             for w in (
                 "wallet",
                 "wallets",
                 "custody",
-                "safe",
-                "erc-4337",
                 "account abstraction",
-                "web3",
-                "crypto",
+                "smart account",
+                "erc-4337",
             )
         ):
             return False
-        if "ai" in subj or "ai" in dom:
-            if not any(
-                w in combined
-                for w in (
-                    "ai",
-                    "agent",
-                    "agentic",
-                    "smart",
-                    "intelligent",
-                    "automation",
-                    "security",
-                    "assistant",
-                    "risk",
-                    "scan",
-                    "autonomous",
-                )
-            ):
-                return False
     elif "identity" in subj or "identity" in dom or "did" in subj:
         if not any(
             w in combined
@@ -218,7 +207,8 @@ def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
                 "attestation",
                 "polygon",
                 "passport",
-                "proof",
+                "proof of humanity",
+                "sovereign identity",
             )
         ):
             return False
@@ -233,7 +223,7 @@ def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
                 "launchdarkly",
                 "flipt",
                 "flagsmith",
-                "feature",
+                "feature toggle",
             )
         ):
             return False

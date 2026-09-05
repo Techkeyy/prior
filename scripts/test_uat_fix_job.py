@@ -4,6 +4,10 @@ import ssl
 import time
 import subprocess
 import sys
+import io
+
+# Ensure stdout handles unicode safely
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 BASE_URL = "https://prior.103-195-188-198.sslip.io"
 SSH_KEY = r"C:\Users\HomePC\.ssh\villa-vps-deploy_ed25519"
@@ -86,7 +90,7 @@ def main():
         print(f"  Weaknesses: {str(f.get('weaknesses'))[:100]}...")
         print(f"  Sources: {f.get('sources')}")
 
-    with open("evidence/production-uat-fix-job.json", "w") as f:
+    with open("evidence/production-uat-fix-job.json", "w", encoding="utf-8") as f:
         json.dump({
             "job_id": job_id,
             "acp_job_id": acp_job_id,
