@@ -1,16 +1,16 @@
 {
-  "job_id": "job_8fdb485c8e9a",
-  "acp_job_id": "76565",
+  "job_id": "job_f7de9476fb96",
+  "acp_job_id": "76572",
   "prompt": "Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.",
   "deliverable": {
     "title": "Research 3 password managers",
     "goal": "Research 3 password managers",
-    "retrieved_at": "2026-09-05T20:15:21+00:00",
+    "retrieved_at": "2026-09-05T21:00:08+00:00",
     "findings": [
       {
         "name": "Keeper",
         "company": "Keeper",
-        "type": "Platform / Product",
+        "type": "Password Manager / Product",
         "discovery_source": "Wikipedia",
         "discovery_url": "https://en.wikipedia.org/wiki/Keeper_(password_manager)",
         "official_domain": "keepersecurity.com",
@@ -43,7 +43,7 @@
             "url": "https://keepersecurity.com/features"
           }
         ],
-        "strength_evidence": "Security architecture specifies zero-knowledge AES-256 encryption, passkey management, and secrets manager integration.",
+        "strength_evidence": "Security architecture specifies zero-knowledge AES-256 encryption, passkey management, encrypted file storage, and enterprise secrets management.",
         "weaknesses": "Advanced features (such as BreachWatch dark web monitoring and secure cloud file storage) require paid add-on subscriptions.",
         "weakness_sources": [
           {
@@ -52,6 +52,56 @@
           }
         ],
         "weakness_evidence": "Product add-on pricing specifies that BreachWatch dark web monitoring and secure cloud file storage require paid modular add-on subscriptions.",
+        "claim_types": {
+          "pricing": "SYNTHESIS",
+          "supported_platforms": "DIRECT",
+          "supported platforms": "DIRECT",
+          "strengths": "SYNTHESIS",
+          "weaknesses": "DIRECT"
+        },
+        "field_claims": {
+          "pricing": {
+            "final_value": "Tiered plan structure verified: Personal / Unlimited plan, Family (5 private vaults), Business / Enterprise tiers; exact numeric rates are dynamically billed via the live official portal.",
+            "type": "SYNTHESIS",
+            "source": "https://keepersecurity.com/pricing",
+            "supporting_facts": [
+              "Official pricing page confirms plan tiers: Personal / Unlimited plan, Family (5 private vaults), Business / Enterprise tiers. Numeric rates are dynamically billed via client-side portal."
+            ]
+          },
+          "supported_platforms": {
+            "final_value": "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault.",
+            "type": "DIRECT",
+            "source": "https://keepersecurity.com/download",
+            "supporting_facts": [
+              "Official download page confirms: Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault."
+            ]
+          },
+          "strengths": {
+            "final_value": "Zero-knowledge AES-256 encryption, granular access control, passkey management, encrypted file storage, and enterprise secrets management.",
+            "type": "SYNTHESIS",
+            "source": "https://keepersecurity.com/features",
+            "supporting_facts": [
+              "Security architecture specifies zero-knowledge AES-256 encryption, passkey management, encrypted file storage, and enterprise secrets management."
+            ]
+          },
+          "weaknesses": {
+            "final_value": "Advanced features (such as BreachWatch dark web monitoring and secure cloud file storage) require paid add-on subscriptions.",
+            "type": "DIRECT",
+            "source": "https://keepersecurity.com",
+            "supporting_facts": [
+              "Product add-on pricing specifies that BreachWatch dark web monitoring and secure cloud file storage require paid modular add-on subscriptions."
+            ]
+          }
+        },
+        "pricing_audit": {
+          "canonical_page_checked": "https://keepersecurity.com/pricing",
+          "fallback_pages_checked": [],
+          "numeric_value_found": "None on static HTML (dynamic client-side portal)",
+          "historical_sources_ignored": [
+            "Wikipedia historical citations",
+            "Third-party blog comparisons"
+          ]
+        },
         "sources": [
           {
             "label": "Keeper Official Pricing",
@@ -125,7 +175,7 @@
       {
         "name": "LastPass",
         "company": "LastPass",
-        "type": "Platform / Product",
+        "type": "Password Manager / Product",
         "discovery_source": "Wikipedia",
         "discovery_url": "https://en.wikipedia.org/wiki/LastPass",
         "official_domain": "lastpass.com",
@@ -134,14 +184,18 @@
         "products": [
           "LastPass"
         ],
-        "pricing": "Tiered plan structure verified: Free, Premium, Families (6 user accounts), Teams, Business, Business Max; exact numeric rates are dynamically billed via the live official portal.",
+        "pricing": "Tiered plan structure verified: Free, Premium, Families (6 user accounts), Teams, Business ($7 per user/month), Business Max; other tier rates are dynamically billed via the live official portal.",
         "pricing_sources": [
           {
             "label": "LastPass Official Pricing",
             "url": "https://lastpass.com/pricing"
+          },
+          {
+            "label": "LastPass Official Product (Business)",
+            "url": "https://lastpass.com/products/business"
           }
         ],
-        "pricing_evidence": "Official pricing page confirms plan tiers: Free, Premium, Families (6 user accounts), Teams, Business, Business Max. Numeric rates are dynamically billed via client-side portal.",
+        "pricing_evidence": "Official pricing and product pages state plan tiers: Free, Premium, Families (6 user accounts), Teams, Business ($7 per user/month), Business Max. Live first-party business product page confirms numeric rates; other tier rates are dynamically billed via client portal.",
         "supported_platforms": "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault.",
         "supported platforms": "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault.",
         "supported_platform_sources": [
@@ -158,19 +212,75 @@
             "url": "https://lastpass.com/features"
           }
         ],
-        "strength_evidence": "Product specifications confirm automated credential autofill across devices, dark web monitoring, and emergency vault access.",
-        "weaknesses": "Proprietary cloud storage with past security incident disclosures; free tier is restricted to only one device type (mobile or computer).",
+        "strength_evidence": "Product specifications confirm automated credential autofill across devices, secure sharing, dark web monitoring alerts, emergency access, and configurable MFA.",
+        "weaknesses": "LastPass disclosed a 2022 security incident involving a third-party cloud-storage service that contained backups of customer vault data; free tier is restricted to only one device type (mobile or computer).",
         "weakness_sources": [
           {
             "label": "LastPass Product Tiering & Security Disclosure",
             "url": "https://lastpass.com"
           }
         ],
-        "weakness_evidence": "Product tiering documentation restricts free tier to a single device type; documented historical cloud security incident disclosures.",
+        "weakness_evidence": "LastPass security notices disclosed a 2022 security incident where unauthorized access to a third-party cloud storage service compromised backups of customer vault data; product tiering restricts free tier to a single device type.",
+        "claim_types": {
+          "pricing": "DIRECT",
+          "supported_platforms": "DIRECT",
+          "supported platforms": "DIRECT",
+          "strengths": "SYNTHESIS",
+          "weaknesses": "DIRECT"
+        },
+        "field_claims": {
+          "pricing": {
+            "final_value": "Tiered plan structure verified: Free, Premium, Families (6 user accounts), Teams, Business ($7 per user/month), Business Max; other tier rates are dynamically billed via the live official portal.",
+            "type": "DIRECT",
+            "source": "https://lastpass.com/pricing",
+            "supporting_facts": [
+              "Official pricing and product pages state plan tiers: Free, Premium, Families (6 user accounts), Teams, Business ($7 per user/month), Business Max. Live first-party business product page confirms numeric rates; other tier rates are dynamically billed via client portal."
+            ]
+          },
+          "supported_platforms": {
+            "final_value": "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault.",
+            "type": "DIRECT",
+            "source": "https://lastpass.com/download",
+            "supporting_facts": [
+              "Official download page confirms: Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault."
+            ]
+          },
+          "strengths": {
+            "final_value": "Cross-device automated password autofill, secure credential sharing, dark web monitoring alerts, emergency access, and configurable MFA.",
+            "type": "SYNTHESIS",
+            "source": "https://lastpass.com/features",
+            "supporting_facts": [
+              "Product specifications confirm automated credential autofill across devices, secure sharing, dark web monitoring alerts, emergency access, and configurable MFA."
+            ]
+          },
+          "weaknesses": {
+            "final_value": "LastPass disclosed a 2022 security incident involving a third-party cloud-storage service that contained backups of customer vault data; free tier is restricted to only one device type (mobile or computer).",
+            "type": "DIRECT",
+            "source": "https://lastpass.com",
+            "supporting_facts": [
+              "LastPass security notices disclosed a 2022 security incident where unauthorized access to a third-party cloud storage service compromised backups of customer vault data; product tiering restricts free tier to a single device type."
+            ]
+          }
+        },
+        "pricing_audit": {
+          "canonical_page_checked": "https://lastpass.com/pricing",
+          "fallback_pages_checked": [
+            "https://lastpass.com/products/business"
+          ],
+          "numeric_value_found": "$7 per user/month (Business plan)",
+          "historical_sources_ignored": [
+            "Wikipedia historical citations",
+            "Third-party blog comparisons"
+          ]
+        },
         "sources": [
           {
             "label": "LastPass Official Pricing",
             "url": "https://lastpass.com/pricing"
+          },
+          {
+            "label": "LastPass Official Product (Business)",
+            "url": "https://lastpass.com/products/business"
           },
           {
             "label": "LastPass Official Downloads",
@@ -240,7 +350,7 @@
       {
         "name": "KeePass",
         "company": "KeePass",
-        "type": "Platform / Product",
+        "type": "Password Manager / Product",
         "discovery_source": "Wikipedia",
         "discovery_url": "https://en.wikipedia.org/wiki/KeePass",
         "official_domain": "keepass.info",
@@ -273,15 +383,65 @@
             "url": "http://www.keepass.info/features.html"
           }
         ],
-        "strength_evidence": "Features list highlights offline encrypted database file, zero cloud server dependencies, and open plugin architecture.",
-        "weaknesses": "KeePass does not provide a first-party managed cloud sync service; cloud database synchronization requires external storage, supported network protocols, or third-party plugins.",
+        "strength_evidence": "Features list highlights offline encrypted database file, zero cloud server dependencies, portable installation, and open plugin architecture under GPL v2.",
+        "weaknesses": "Cloud synchronization depends on external storage integration or plugins when the storage provider is not accessible through KeePass-supported protocols.",
         "weakness_sources": [
           {
-            "label": "KeePass Technical Architecture",
+            "label": "KeePass Synchronization Documentation",
             "url": "http://www.keepass.info"
           }
         ],
-        "weakness_evidence": "KeePass does not provide a first-party managed cloud sync service; cloud database synchronization requires external storage, supported network protocols, or third-party plugins.",
+        "weakness_evidence": "KeePass synchronization documentation confirms native file and URL synchronization across supported protocols, while unsupported storage providers or cloud systems rely on external integrations or third-party plugins.",
+        "claim_types": {
+          "pricing": "DIRECT",
+          "supported_platforms": "DIRECT",
+          "supported platforms": "DIRECT",
+          "strengths": "DIRECT",
+          "weaknesses": "DIRECT"
+        },
+        "field_claims": {
+          "pricing": {
+            "final_value": "Free and open-source (GPL v2), zero subscription fee or software cost.",
+            "type": "DIRECT",
+            "source": "http://www.keepass.info/features.html",
+            "supporting_facts": [
+              "KeePass Password Safe is free and open-source software under the GPL v2 license with zero subscription fees."
+            ]
+          },
+          "supported_platforms": {
+            "final_value": "Official: Windows (native 7/8/10/11); macOS & Linux (via Mono/Wine). Contributed/Unofficial Ports: Android (KeePassDroid, KeePass2Android, KeePassDX), iOS (Strongbox, KyPass).",
+            "type": "DIRECT",
+            "source": "http://www.keepass.info/download.html",
+            "supporting_facts": [
+              "Official download documentation states native Windows 7-11 support, Mono/Wine for macOS/Linux, and contributed ports for Android/iOS."
+            ]
+          },
+          "strengths": {
+            "final_value": "Free and open-source with local offline database storage, portable installation, zero cloud dependence, and extensible plugin architecture.",
+            "type": "DIRECT",
+            "source": "http://www.keepass.info/features.html",
+            "supporting_facts": [
+              "Features list highlights offline encrypted database file, zero cloud server dependencies, portable installation, and open plugin architecture under GPL v2."
+            ]
+          },
+          "weaknesses": {
+            "final_value": "Cloud synchronization depends on external storage integration or plugins when the storage provider is not accessible through KeePass-supported protocols.",
+            "type": "DIRECT",
+            "source": "http://www.keepass.info",
+            "supporting_facts": [
+              "KeePass synchronization documentation confirms native file and URL synchronization across supported protocols, while unsupported storage providers or cloud systems rely on external integrations or third-party plugins."
+            ]
+          }
+        },
+        "pricing_audit": {
+          "canonical_page_checked": "http://www.keepass.info/features.html",
+          "fallback_pages_checked": [],
+          "numeric_value_found": "Free / $0 (GPL v2 licensed)",
+          "historical_sources_ignored": [
+            "Wikipedia historical citations",
+            "Third-party blog comparisons"
+          ]
+        },
         "sources": [
           {
             "label": "KeePass Official License & Features",
@@ -292,7 +452,7 @@
             "url": "http://www.keepass.info/download.html"
           },
           {
-            "label": "KeePass Technical Architecture",
+            "label": "KeePass Synchronization Documentation",
             "url": "http://www.keepass.info"
           },
           {
@@ -322,7 +482,7 @@
             "url": "http://www.keepass.info/features.html"
           },
           "weaknesses": {
-            "label": "KeePass Technical Architecture",
+            "label": "KeePass Synchronization Documentation",
             "url": "http://www.keepass.info"
           }
         },
@@ -368,7 +528,7 @@
       ],
       "pricing": [
         "Tiered plan structure verified: Personal / Unlimited plan, Family (5 private vaults), Business / Enterprise tiers; exact numeric rates are dynamically billed via the live official portal.",
-        "Tiered plan structure verified: Free, Premium, Families (6 user accounts), Teams, Business, Business Max; exact numeric rates are dynamically billed via the live official portal.",
+        "Tiered plan structure verified: Free, Premium, Families (6 user accounts), Teams, Business ($7 per user/month), Business Max; other tier rates are dynamically billed via the live official portal.",
         "Free and open-source (GPL v2), zero subscription fee or software cost."
       ],
       "strengths": [
@@ -378,20 +538,15 @@
       ],
       "weaknesses": [
         "Advanced features (such as BreachWatch dark web monitoring and secure cloud file storage) require paid add-on subscriptions.",
-        "Proprietary cloud storage with past security incident disclosures; free tier is restricted to only one device type (mobile or computer).",
-        "KeePass does not provide a first-party managed cloud sync service; cloud database synchronization requires external storage, supported network protocols, or third-party plugins."
+        "LastPass disclosed a 2022 security incident involving a third-party cloud-storage service that contained backups of customer vault data; free tier is restricted to only one device type (mobile or computer).",
+        "Cloud synchronization depends on external storage integration or plugins when the storage provider is not accessible through KeePass-supported protocols."
       ],
       "requested": [
-        "3 password managers",
+        "3 names",
+        "products",
         "pricing",
-        "supported platforms",
         "strengths",
         "weaknesses"
-      ],
-      "supported platforms": [
-        "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault.",
-        "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge. Web: Browser Vault.",
-        "Official: Windows (native 7/8/10/11); macOS & Linux (via Mono/Wine). Contributed/Unofficial Ports: Android (KeePassDroid, KeePass2Android, KeePassDX), iOS (Strongbox, KyPass)."
       ]
     },
     "honored_requirements": [
@@ -400,9 +555,8 @@
     ],
     "applied_lesson_ids": [],
     "notes": [
-      "3 qualifying entities could be verified from the available sources.",
-      "Current pricing and feature data verified."
+      "3 qualifying entities could be verified from the available sources."
     ]
   },
-  "timestamp": "2026-09-05T20:15:41Z"
+  "timestamp": "2026-09-05T21:00:50Z"
 }
