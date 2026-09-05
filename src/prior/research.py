@@ -334,14 +334,20 @@ def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
 
 def _clean_entity_name(title: str) -> str:
     cleaned = re.sub(
-        r"^(?:Best|Top\s+\d+|The\s+Best|Review:|10\s+Best|5\s+Best|8\s+Best|7\s+Best)\s*",
+        r"^(?:Best|Top\s+\d+|The\s+Best|Review:|10\s+Best|5\s+Best|8\s+Best|7\s+Best|11\s+Best)\s*",
         "",
         title,
         flags=re.I,
     )
     cleaned = re.sub(r"\s*\(.*?\)$", "", cleaned)
-    cleaned = re.sub(r"\s*[-–|:].*$", "", cleaned)
-    return cleaned.strip() or title.strip()
+    parts = re.split(r"\s*[-–|:]\s*", cleaned)
+    if (
+        len(parts) > 1
+        and 2 < len(parts[-1].strip()) < 30
+        and not re.search(r"\b(?:review|guide|2025|2026|blog|overview|data|picks|reviewed)\b", parts[-1], re.I)
+    ):
+        return parts[-1].strip()
+    return parts[0].strip() or title.strip()
 
 
 def _finding_from_web_hit(hit: dict[str, Any], spec: JobSpec) -> dict[str, Any]:

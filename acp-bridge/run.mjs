@@ -69,11 +69,12 @@ async function main() {
     const myAddress = await agent.getAddress();
     console.error(`[BUYER] Creating on-chain ACP job on Base mainnet for ${providerAddress}...`);
     const expiredAt = Math.floor(Date.now() / 1000) + 3600;
+    const description = (requirement.goal || requirement.raw || offeringName).slice(0, 500);
     const jobId = await agent.createJob(chain.id, {
       providerAddress,
       evaluatorAddress: myAddress,
       expiredAt,
-      description: offeringName,
+      description,
     });
     console.error(`[BUYER] On-chain Job created: ${jobId}`);
 

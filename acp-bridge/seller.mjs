@@ -80,18 +80,21 @@ async function main() {
       } else if (onChainStatus === "FUNDED" && !session._submitting) {
         session._submitting = true;
         console.error(`[SELLER] Job ${session.jobId} funded. Running research...`);
-        const entries = session.entries?.length
-          ? session.entries
-          : await agent.getTransport().getHistory(session.chainId, session.jobId).catch(() => []);
-        const requirementEntry = [...entries]
+        let entries = session.entries || [];
+        if (!entries.length || !entries.some((e) => e.kind === "message")) {
+          try {
+            entries = await agent.getTransport().getHistory(session.chainId, session.jobId);
+          } catch {}
+        }
+        const requirementEntry = [...(entries || [])]
           .reverse()
-          .find((item) => item.kind === "message" && item.contentType === "requirement");
+          .find((item) => item.kind === "message" && (item.contentType === "requirement" || item.contentType === "text"));
         let requirement = {};
         if (requirementEntry?.content) {
           try {
             requirement = JSON.parse(requirementEntry.content);
           } catch {
-            requirement = { raw: requirementEntry.content };
+            requirement = { raw: requirementEntry.content, goal: requirementEntry.content };
           }
         } else if (session.job?.description) {
           requirement = { raw: session.job.description, goal: session.job.description };
