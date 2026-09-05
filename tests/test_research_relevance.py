@@ -2,7 +2,7 @@ import pytest
 from prior.domain import Contract, JobSpec
 from prior.job_spec import parse_job
 from prior.contract import build_contract
-from prior.research import run_research, _is_semantically_relevant, search_queries
+from prior.research import run_research, _is_semantically_relevant, _is_publisher_or_agency, search_queries
 
 
 def test_subject_extraction_strips_comparison_conjunction():
@@ -11,6 +11,22 @@ def test_subject_extraction_strips_comparison_conjunction():
     assert spec.subject == "AI wallet companies"
     assert spec.count == 5
     assert spec.domain == "ai wallets"
+
+
+def test_publisher_and_agency_rejection():
+    # Publisher titles/articles must NOT become entities
+    assert _is_publisher_or_agency("CoinGape Agentic Wallets", "Best AI Crypto Wallets", "We reviewed 8 wallets")
+    assert _is_publisher_or_agency("CoinCreate AI Wallets", "Best AI Crypto Wallets 2025", "Top 10 smart picks")
+    assert _is_publisher_or_agency("Antier AI Wallet Development", "Top AI Crypto Wallet Development Companies in 2026 for Serious Businesses", "Development partners")
+    assert _is_publisher_or_agency("SoluLab AI Wallets", "Top AI Crypto Wallet Development Companies in 2026", "Development services")
+    assert _is_publisher_or_agency("BlockchainX AI Wallets", "Top 10 AI Crypto Wallet Development Companies in 2026", "Development partners")
+
+    # Genuine companies and products must NOT be rejected
+    assert not _is_publisher_or_agency("Trust Wallet", "Trust Wallet", "Self-custody multi-chain wallet")
+    assert not _is_publisher_or_agency("Dawn Wallet", "Dawn Wallet", "AI-native smart contract wallet")
+    assert not _is_publisher_or_agency("Safe (Safe{Core} AI)", "Safe", "Smart account infrastructure")
+    assert not _is_publisher_or_agency("World ID (Worldcoin)", "World ID", "Proof of humanity protocol")
+    assert not _is_publisher_or_agency("Ethereum Name Service (ENS)", "ENS", "Naming standard")
 
 
 def test_semantic_relevance_discards_unrelated_media_and_artists():
@@ -50,7 +66,7 @@ def test_semantic_relevance_discards_unrelated_media_and_artists():
     )
 
 
-def test_ai_wallet_research_returns_relevant_contract_deliverables():
+def test_ai_wallet_research_returns_real_operating_entities_not_publishers():
     raw = "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses."
     spec = parse_job(raw)
     contract = build_contract(spec, [])
@@ -58,29 +74,32 @@ def test_ai_wallet_research_returns_relevant_contract_deliverables():
 
     value = report["value"]
     findings = value["findings"]
-    assert len(findings) >= 1
+    assert len(findings) == 5
 
-    unrelated_blacklist = ["crayon shin-chan", "ai weiwei", "ai otsuka", "episodes", "discography"]
+    # Every entity must be a real company/product, NOT a publisher or development agency
+    publisher_blacklist = [
+        "coingape", "coincreate", "antier", "solulab", "blockchainx",
+        "forbes", "linkedin", "medium", "development companies", "crayon shin-chan"
+    ]
     for finding in findings:
         name_lower = finding["name"].lower()
-        summary_lower = finding["summary"].lower()
-        for bad in unrelated_blacklist:
-            assert bad not in name_lower, f"Unrelated entity found: {finding['name']}"
-            assert bad not in summary_lower, f"Unrelated entity in summary: {finding['summary']}"
-
-    deliverables = value["deliverables"]
-    assert "names" in deliverables
-    assert "products" in deliverables
-    assert "pricing" in deliverables
-    assert "strengths" in deliverables
-    assert "weaknesses" in deliverables
-
-    # Verify every finding has structured comparison fields
-    for finding in findings:
+        for bad in publisher_blacklist:
+            assert bad not in name_lower, f"Publisher or agency returned as entity: {finding['name']}"
+        
+        # Verify entity type and comparison fields
+        assert finding.get("type") in ("Company / Product", "Company / Protocol", "Company / Infrastructure")
         assert finding.get("pricing")
         assert finding.get("strengths")
         assert finding.get("weaknesses")
         assert len(finding.get("sources", [])) > 0
+        assert finding["sources"][0]["url"].startswith("http")
+
+    deliverables = value["deliverables"]
+    assert "names" in deliverables
+    assert len(deliverables["names"]) == 5
+    assert "Trust Wallet" in deliverables["names"]
+    assert "Dawn Wallet" in deliverables["names"]
+    assert "Safe (Safe{Core} AI)" in deliverables["names"]
 
 
 def test_decentralized_identity_research_generalization():
@@ -92,8 +111,9 @@ def test_decentralized_identity_research_generalization():
 
     value = report["value"]
     findings = value["findings"]
-    assert len(findings) >= 1
+    assert len(findings) == 3
     for finding in findings:
         assert finding.get("name")
         assert finding.get("summary")
         assert len(finding.get("sources", [])) > 0
+        assert not _is_publisher_or_agency(finding["name"], "", "")

@@ -161,12 +161,18 @@ def _extract_count(lowered: str) -> int | None:
     match = re.search(r"\btop\s+(\d{1,2})\b", lowered)
     if match:
         return int(match.group(1))
-    match = re.search(r"\b(\d{1,2})\s+(companies|products|exchanges|wallets|suppliers|competitors)\b", lowered)
+    match = re.search(
+        r"\b(?:research|compare|find|list|survey|top)?\s*(\d{1,2})\s+(?:[a-z0-9_-]+\s+)*(?:companies|products|exchanges|wallets|suppliers|competitors|protocols|tools|frameworks|projects|dapps|options|services|solutions|platforms|networks)\b",
+        lowered,
+    )
     if match:
         return int(match.group(1))
     for word, value in WORD_COUNTS.items():
         if re.search(rf"\b{word}\b", lowered):
             return value
+    match_num = re.search(r"\b(\d{1,2})\s+[a-z0-9_-]+\b", lowered)
+    if match_num and int(match_num.group(1)) <= 50:
+        return int(match_num.group(1))
     return None
 
 
