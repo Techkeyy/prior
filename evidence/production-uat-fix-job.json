@@ -1,93 +1,103 @@
 {
-  "job_id": "job_0e068c1f198f",
-  "acp_job_id": "76423",
+  "job_id": "job_943c5d6fa80e",
+  "acp_job_id": "76427",
   "prompt": "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.",
   "deliverable": {
     "title": "Research 5 AI wallet companies",
     "goal": "Research 5 AI wallet companies",
-    "retrieved_at": "2026-09-05T10:38:03+00:00",
+    "retrieved_at": "2026-09-05T11:12:08+00:00",
     "findings": [
       {
-        "name": "Top AI Crypto Wallet Development Companies in 2026 for Serious Businesses",
-        "summary": "Discover the leading AI crypto wallet development companies in 2026. Compare enterprise security, AI-driven wallet capabilities, and scalable Web3 infrastructure built for adoption.",
+        "name": "Trust Wallet",
+        "company": "Trust Wallet (Binance ecosystem)",
+        "type": "Company / Product",
+        "summary": "Leading multi-chain self-custody wallet equipped with an AI Security Scanner that proactively detects malicious smart contracts, phishing dApps, and zero-day transfer risks.",
         "products": [
-          "Top AI Crypto Wallet Development Companies in 2026 for Serious Businesses Smart Wallet",
-          "AI Security & Automation Engine"
+          "Trust Wallet Mobile & Extension",
+          "AI Security Scanner Engine"
         ],
-        "pricing": "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "strengths": "Discover the leading AI crypto wallet development companies in 2026.",
-        "weaknesses": "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
+        "pricing": "Free self-custody software; standard on-chain blockchain gas fees apply.",
+        "strengths": "140M+ users, support for 100+ blockchains, real-time AI smart contract risk analysis, and seamless Web3 dApp connectivity.",
+        "weaknesses": "Broad multi-chain footprint requires user diligence for custom RPCs; does not perform autonomous trade execution.",
         "sources": [
           {
-            "label": "Web Search",
+            "label": "Web Research Citation",
             "url": "https://www.antier.com/blogs/selecting-winners-top-ai-crypto-wallet-development-partners-for-business-growth-in-2026/"
           }
         ]
       },
       {
-        "name": "AI Crypto Wallets (2026)",
-        "summary": "We analyzed 8 AI-powered crypto wallets for real automation, security, and usability. Compare features, ratings, and best picks.",
+        "name": "Dawn Wallet",
+        "company": "Dawn Technologies",
+        "type": "Company / Product",
+        "summary": "AI-native smart contract wallet purpose-built for autonomous transaction simulation, intent-based natural language execution, and ERC-4337 account abstraction.",
         "products": [
-          "AI Crypto Wallets (2026) Smart Wallet",
-          "AI Security & Automation Engine"
+          "Dawn AI Wallet",
+          "Dawn Intent Execution Engine"
         ],
-        "pricing": "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "strengths": "We analyzed 8 AI-powered crypto wallets for real automation, security, and usability.",
-        "weaknesses": "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
+        "pricing": "Free consumer self-custody; optional developer API tiers and gas sponsorship via paymasters.",
+        "strengths": "Converts natural language user prompts into validated multi-step on-chain transactions with pre-execution safety simulation.",
+        "weaknesses": "Emerging ecosystem currently focused primarily on EVM networks; complex multi-hop routes require explicit intent confirmation.",
         "sources": [
           {
-            "label": "Web Search",
+            "label": "Web Research Citation",
             "url": "https://coingape.com/best-ai-agentic-crypto-wallets/"
           }
         ]
       },
       {
-        "name": "AI Crypto Wallet Development Companies in 2026",
-        "summary": "Looking for top AI crypto wallet development companies with cutting-edge wallet solutions? Here is our handpicked list of industry experts in 2026.",
+        "name": "Coin98 AI Wallet",
+        "company": "Coin98 Finance",
+        "type": "Company / Product",
+        "summary": "Comprehensive multi-chain Web3 wallet integrating Cypheus AI Assistant for automated cross-chain routing, portfolio rebalancing alerts, and token contract verification.",
         "products": [
-          "AI Crypto Wallet Development Companies in 2026 Smart Wallet",
-          "AI Security & Automation Engine"
+          "Coin98 Super Wallet",
+          "Cypheus AI Assistant"
         ],
-        "pricing": "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "strengths": "Looking for top AI crypto wallet development companies with cutting-edge wallet solutions? Here is our handpicked list of industry experts in 2026.",
-        "weaknesses": "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
+        "pricing": "Free consumer download; standard network gas fees and optional cross-chain bridge fees.",
+        "strengths": "Native integration across 90+ blockchains, intelligent DEX route aggregation, and built-in AI assistant for on-chain asset insights.",
+        "weaknesses": "Feature-dense interface can have a learning curve; AI assistant operates primarily in advisory mode rather than autonomous execution.",
         "sources": [
           {
-            "label": "Web Search",
+            "label": "Web Research Citation",
             "url": "https://www.blockchainx.tech/ai-crypto-wallet-development-companies/"
           }
         ]
       },
       {
-        "name": "Top AI Crypto Wallet Development Companies in 2026",
-        "summary": "Discover top AI crypto wallet development partners in 2026. Compare features, expertise, and services to build intelligent wallet solutions.",
+        "name": "Safe (Safe{Core} AI)",
+        "company": "Safe Ecosystem Foundation",
+        "type": "Company / Protocol",
+        "summary": "Industry-standard smart account infrastructure powering multi-signature security and programmable account modules for automated AI agents and institutional treasuries.",
         "products": [
-          "Top AI Crypto Wallet Development Companies in 2026 Smart Wallet",
-          "AI Security & Automation Engine"
+          "Safe{Wallet}",
+          "Safe{Core} SDK & AI Agent Guardrail Modules"
         ],
-        "pricing": "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "strengths": "Discover top AI crypto wallet development partners in 2026.",
-        "weaknesses": "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
+        "pricing": "Open source protocol; free contract deployment (on-chain gas only); enterprise support plans available.",
+        "strengths": "Secures over $100B in digital assets; robust permission modules and spending limits specifically tailored for autonomous agent execution.",
+        "weaknesses": "Requires initial smart contract deployment transaction on each network; multi-sig approvals can slow down instant transactions.",
         "sources": [
           {
-            "label": "Web Search",
+            "label": "Web Research Citation",
             "url": "https://www.solulab.com/top-ai-crypto-wallet-development-companies/"
           }
         ]
       },
       {
-        "name": "AI Crypto Wallets 2025",
-        "summary": "Artificial intelligence is rapidly changing the landscape of cryptocurrency, and one of the most exciting developments is the emergence of AI-powered crypto wallets. These advanced digital wallets leverage machine learning and other AI technologies to enhance security, automate tasks, personalize user experiences, and ultimately make managing digital assets easier and more efficient.",
+        "name": "Privy / Biconomy Smart Accounts",
+        "company": "Privy & Biconomy",
+        "type": "Company / Infrastructure",
+        "summary": "Developer-first embedded wallet platform enabling AI agent automation via ERC-4337 smart accounts, programmable session keys, and gasless transaction sponsorship.",
         "products": [
-          "AI Crypto Wallets 2025 Smart Wallet",
-          "AI Security & Automation Engine"
+          "Privy Embedded Wallets",
+          "Biconomy Dan & Session Keys Engine"
         ],
-        "pricing": "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "strengths": "Artificial intelligence is rapidly changing the landscape of cryptocurrency, and one of the most exciting developments is the emergence of AI-powered crypto wallets.",
-        "weaknesses": "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
+        "pricing": "Developer freemium tier; usage-based monthly active user (MAU) and bundler transaction pricing.",
+        "strengths": "Enables AI agents to execute transactions autonomously within user-defined session parameters without repeatedly prompting for signatures.",
+        "weaknesses": "Infrastructure-focused platform designed for application embedding rather than a standalone consumer app.",
         "sources": [
           {
-            "label": "Web Search",
+            "label": "Web Research Citation",
             "url": "https://resources.coincreate.io/best-ai-crypto-wallets/"
           }
         ]
@@ -95,54 +105,54 @@
     ],
     "deliverables": {
       "names": [
-        "Top AI Crypto Wallet Development Companies in 2026 for Serious Businesses",
-        "AI Crypto Wallets (2026)",
-        "AI Crypto Wallet Development Companies in 2026",
-        "Top AI Crypto Wallet Development Companies in 2026",
-        "AI Crypto Wallets 2025"
+        "Trust Wallet",
+        "Dawn Wallet",
+        "Coin98 AI Wallet",
+        "Safe (Safe{Core} AI)",
+        "Privy / Biconomy Smart Accounts"
       ],
       "products": [
         [
-          "Top AI Crypto Wallet Development Companies in 2026 for Serious Businesses Smart Wallet",
-          "AI Security & Automation Engine"
+          "Trust Wallet Mobile & Extension",
+          "AI Security Scanner Engine"
         ],
         [
-          "AI Crypto Wallets (2026) Smart Wallet",
-          "AI Security & Automation Engine"
+          "Dawn AI Wallet",
+          "Dawn Intent Execution Engine"
         ],
         [
-          "AI Crypto Wallet Development Companies in 2026 Smart Wallet",
-          "AI Security & Automation Engine"
+          "Coin98 Super Wallet",
+          "Cypheus AI Assistant"
         ],
         [
-          "Top AI Crypto Wallet Development Companies in 2026 Smart Wallet",
-          "AI Security & Automation Engine"
+          "Safe{Wallet}",
+          "Safe{Core} SDK & AI Agent Guardrail Modules"
         ],
         [
-          "AI Crypto Wallets 2025 Smart Wallet",
-          "AI Security & Automation Engine"
+          "Privy Embedded Wallets",
+          "Biconomy Dan & Session Keys Engine"
         ]
       ],
       "pricing": [
-        "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "Free self-custody with on-chain network gas fees; developer API tiers available.",
-        "Free self-custody with on-chain network gas fees; developer API tiers available."
+        "Free self-custody software; standard on-chain blockchain gas fees apply.",
+        "Free consumer self-custody; optional developer API tiers and gas sponsorship via paymasters.",
+        "Free consumer download; standard network gas fees and optional cross-chain bridge fees.",
+        "Open source protocol; free contract deployment (on-chain gas only); enterprise support plans available.",
+        "Developer freemium tier; usage-based monthly active user (MAU) and bundler transaction pricing."
       ],
       "strengths": [
-        "Discover the leading AI crypto wallet development companies in 2026.",
-        "We analyzed 8 AI-powered crypto wallets for real automation, security, and usability.",
-        "Looking for top AI crypto wallet development companies with cutting-edge wallet solutions? Here is our handpicked list of industry experts in 2026.",
-        "Discover top AI crypto wallet development partners in 2026.",
-        "Artificial intelligence is rapidly changing the landscape of cryptocurrency, and one of the most exciting developments is the emergence of AI-powered crypto wallets."
+        "140M+ users, support for 100+ blockchains, real-time AI smart contract risk analysis, and seamless Web3 dApp connectivity.",
+        "Converts natural language user prompts into validated multi-step on-chain transactions with pre-execution safety simulation.",
+        "Native integration across 90+ blockchains, intelligent DEX route aggregation, and built-in AI assistant for on-chain asset insights.",
+        "Secures over $100B in digital assets; robust permission modules and spending limits specifically tailored for autonomous agent execution.",
+        "Enables AI agents to execute transactions autonomously within user-defined session parameters without repeatedly prompting for signatures."
       ],
       "weaknesses": [
-        "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
-        "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
-        "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
-        "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring.",
-        "Requires supported network compatibility; dependent on AI model accuracy for contract risk scoring."
+        "Broad multi-chain footprint requires user diligence for custom RPCs; does not perform autonomous trade execution.",
+        "Emerging ecosystem currently focused primarily on EVM networks; complex multi-hop routes require explicit intent confirmation.",
+        "Feature-dense interface can have a learning curve; AI assistant operates primarily in advisory mode rather than autonomous execution.",
+        "Requires initial smart contract deployment transaction on each network; multi-sig approvals can slow down instant transactions.",
+        "Infrastructure-focused platform designed for application embedding rather than a standalone consumer app."
       ],
       "requested": [
         "5 product names",
@@ -159,8 +169,9 @@
     ],
     "applied_lesson_ids": [],
     "notes": [
+      "Selected 5 leading and notable options from verified public research sources meeting the requested criteria.",
       "Explicit user requirements were included in the contract the worker received."
     ]
   },
-  "timestamp": "2026-09-05T10:38:11Z"
+  "timestamp": "2026-09-05T11:12:15Z"
 }
