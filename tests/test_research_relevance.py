@@ -285,3 +285,55 @@ def test_self_hosted_observability_generalization():
     for finding in findings:
         assert not is_publisher_or_agency(finding["name"])
         assert finding["type"] == "Platform / Product"
+
+
+def test_authoritative_resolution_and_field_citations():
+    # 1. Discovery from Wikipedia, pricing and platforms from official site
+    # 2. Official platform page beats incomplete summary
+    # 3. Multiple fields use distinct source pages
+    # 4. Unofficial/community ports distinguished from official support
+    from prior.research import (
+        resolve_official_domain,
+        extract_first_party_pricing,
+        extract_first_party_platforms,
+        extract_first_party_strength,
+        extract_first_party_weakness,
+    )
+
+    # Test official-domain resolver
+    keeper_dom = resolve_official_domain("Keeper", "Keeper_(password_manager)")
+    assert keeper_dom is not None
+    assert "keepersecurity.com" in keeper_dom["domain"]
+
+    lastpass_dom = resolve_official_domain("LastPass", "LastPass")
+    assert lastpass_dom is not None
+    assert "lastpass.com" in lastpass_dom["domain"]
+
+    keepass_dom = resolve_official_domain("KeePass", "KeePass")
+    assert keepass_dom is not None
+    assert "keepass.info" in keepass_dom["domain"]
+
+    # 4. Unofficial/community platform distinguished
+    kp_plat, kp_plat_src = extract_first_party_platforms("KeePass", "keepass.info", "https://keepass.info", "KeePass on Mono and Wine. Contributed ports for Android and iOS.")
+    assert "Official: Windows" in kp_plat
+    assert "Mono/Wine" in kp_plat
+    assert "Contributed/Unofficial" in kp_plat or "Ports" in kp_plat
+
+    # 5. Pricing quality: Free & open source vs tiered structure
+    kp_price, kp_p_src = extract_first_party_pricing("KeePass", "keepass.info", "https://keepass.info", "free and open source")
+    assert "Free and open-source" in kp_price
+    assert len(kp_p_src) > 0
+
+    # 6. Irrelevant acquisition/history is not accepted as weakness
+    acq_text = "In October 2015 when GoTo acquired LastPass, founder blog was filled with user comments. Keeper was bundled with Windows 10."
+    assert _extract_grounded_weakness(acq_text, "LastPass") == "Could not verify a specific weakness from the retrieved sources."
+
+    # 7. Official-domain resolver rejects review/listicle/article domains
+    from prior.research import NON_OFFICIAL_DOMAINS
+    for d in ["pcmag.com", "techradar.com", "g2.com", "capterra.com", "tomsguide.com", "wikipedia.org"]:
+        assert d in NON_OFFICIAL_DOMAINS
+
+    # 8 & 9. Truly unavailable data remains truthful
+    unavail_p, unavail_src = extract_first_party_pricing("UnknownTool", "", "", "")
+    assert unavail_p == "Not publicly disclosed in the retrieved source."
+    assert unavail_src == []
