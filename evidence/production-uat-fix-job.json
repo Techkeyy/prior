@@ -1,36 +1,149 @@
 {
-  "job_id": "job_28b93225cb49",
-  "acp_job_id": "76511",
-  "prompt": "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.",
+  "job_id": "job_10f083221892",
+  "acp_job_id": "76533",
+  "prompt": "Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.",
   "deliverable": {
-    "title": "Research 5 AI wallet companies",
-    "goal": "Research 5 AI wallet companies",
-    "retrieved_at": "2026-09-05T16:39:25+00:00",
-    "findings": [],
+    "title": "Research 3 password managers",
+    "goal": "Research 3 password managers",
+    "retrieved_at": "2026-09-05T17:46:35+00:00",
+    "findings": [
+      {
+        "name": "Keeper",
+        "company": "Keeper",
+        "type": "Platform / Product",
+        "summary": "Keeper Security, Inc. (Keeper) is a global cybersecurity company providing zero-knowledge security and encryption software covering functions such as password and passkey management, secrets management,\u00a0privileged access management, secure remote access and encrypted messaging. It was founded in 2009 and is headquartered in Chicago, Illinois.",
+        "products": [
+          "Keeper"
+        ],
+        "pricing": "Not publicly disclosed in the retrieved source.",
+        "supported_platforms": "Could not verify supported platforms from the retrieved sources.",
+        "supported platforms": "Could not verify supported platforms from the retrieved sources.",
+        "strengths": "Could not verify a specific strength from the retrieved sources.",
+        "weaknesses": "Could not verify a specific weakness from the retrieved sources.",
+        "sources": [
+          {
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/Keeper_(password_manager)"
+          }
+        ],
+        "evidence": {
+          "product_domain": {
+            "snippet": "Keeper one of the best password managers of 2022. U.S. News &amp; World Report&#039;s 360 Reviews team named Keeper Best Overall Password Manager of 2021. In December",
+            "source": "https://en.wikipedia.org/wiki/Keeper_(password_manager)"
+          },
+          "qualifiers": {}
+        }
+      },
+      {
+        "name": "LastPass",
+        "company": "LastPass",
+        "type": "Platform / Product",
+        "summary": "LastPass is a password manager application. The standard version of LastPass comes with a web interface, but also includes a browser extension, an app and support for bookmarklets.",
+        "products": [
+          "LastPass"
+        ],
+        "pricing": "Not publicly disclosed in the retrieved source.",
+        "supported_platforms": "Web",
+        "supported platforms": "Web",
+        "strengths": "The standard version of LastPass comes with a web interface, but also includes a browser extension, an app and support for bookmarklets.",
+        "weaknesses": "Could not verify a specific weakness from the retrieved sources.",
+        "sources": [
+          {
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/LastPass"
+          }
+        ],
+        "evidence": {
+          "product_domain": {
+            "snippet": "users to change all their passwords and switch to other password managers. A user&#039;s content in LastPass, including passwords and secure notes, is protected",
+            "source": "https://en.wikipedia.org/wiki/LastPass"
+          },
+          "qualifiers": {}
+        }
+      },
+      {
+        "name": "Master Password",
+        "company": "Master Password",
+        "type": "Platform / Product",
+        "summary": "Master Password is a type of algorithm first implemented by Maarten Billemont for creating unique passwords in a reproducible manner. It differs from traditional password managers in that the passwords are not stored on disk or in the cloud, but are regenerated every time from information entered by the user: Their name, a master password, and a unique identifier for the service the password is intended for.",
+        "products": [
+          "Master Password"
+        ],
+        "pricing": "Not publicly disclosed in the retrieved source.",
+        "supported_platforms": "Could not verify supported platforms from the retrieved sources.",
+        "supported platforms": "Could not verify supported platforms from the retrieved sources.",
+        "strengths": "Could not verify a specific strength from the retrieved sources.",
+        "weaknesses": "Could not verify a specific weakness from the retrieved sources.",
+        "sources": [
+          {
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/Master_Password_(algorithm)"
+          }
+        ],
+        "evidence": {
+          "product_domain": {
+            "snippet": "in a reproducible manner. It differs from traditional password managers in that the passwords are not stored on disk or in the cloud, but are regenerated",
+            "source": "https://en.wikipedia.org/wiki/Master_Password_(algorithm)"
+          },
+          "qualifiers": {}
+        }
+      }
+    ],
     "deliverables": {
-      "names": [],
-      "products": [],
-      "pricing": [],
-      "strengths": [],
-      "weaknesses": [],
+      "names": [
+        "Keeper",
+        "LastPass",
+        "Master Password"
+      ],
+      "products": [
+        [
+          "Keeper"
+        ],
+        [
+          "LastPass"
+        ],
+        [
+          "Master Password"
+        ]
+      ],
+      "pricing": [
+        "Not publicly disclosed in the retrieved source.",
+        "Not publicly disclosed in the retrieved source.",
+        "Not publicly disclosed in the retrieved source."
+      ],
+      "strengths": [
+        "Could not verify a specific strength from the retrieved sources.",
+        "The standard version of LastPass comes with a web interface, but also includes a browser extension, an app and support for bookmarklets.",
+        "Could not verify a specific strength from the retrieved sources."
+      ],
+      "weaknesses": [
+        "Could not verify a specific weakness from the retrieved sources.",
+        "Could not verify a specific weakness from the retrieved sources.",
+        "Could not verify a specific weakness from the retrieved sources."
+      ],
       "requested": [
-        "5 names",
-        "products",
+        "3 password managers",
         "pricing",
+        "supported platforms",
         "strengths",
         "weaknesses"
+      ],
+      "supported platforms": [
+        "Could not verify supported platforms from the retrieved sources.",
+        "Web",
+        "Could not verify supported platforms from the retrieved sources."
       ]
     },
     "honored_requirements": [
       "Cover the requested subject with the named deliverables.",
-      "Separate facts from speculation."
+      "Separate facts from speculation.",
+      "Include current public pricing when available."
     ],
     "applied_lesson_ids": [],
     "notes": [
-      "0 qualifying entities could be verified from the available sources.",
-      "Identified 0 verified options; additional candidates could not be verified with high confidence from public sources without risk of false matches.",
-      "No public sources answered this query with verified qualification."
+      "3 qualifying entities could be verified from the available sources.",
+      "Explicit user requirements were included in the contract the worker received."
     ]
   },
-  "timestamp": "2026-09-05T16:39:39Z"
+  "timestamp": "2026-09-05T17:46:43Z"
 }

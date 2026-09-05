@@ -6,12 +6,9 @@ import subprocess
 import sys
 import io
 
-# Ensure stdout handles unicode safely
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 BASE_URL = "https://prior.103-195-188-198.sslip.io"
-SSH_KEY = r"C:\Users\HomePC\.ssh\villa-vps-deploy_ed25519"
-VPS_HOST = "root@103.195.188.198"
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
@@ -44,11 +41,12 @@ def main():
     print(f"1. Workspace: {ws['workspace_id']} | Hire mode: {ws['hire_mode']}")
 
     # 2. Specify job with exact UAT prompt
-    spec_text = "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses."
+    spec_text = "Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses."
     print(f"2. Specifying job: '{spec_text}'")
     status, job = client.request("POST", "/api/jobs", {"text": spec_text})
     job_id = job["id"]
     print(f"   Created Job ID: {job_id} | Status: {job['status']}")
+    print(f"   Contract deliverables: {job['contract']['deliverables']}")
 
     # 3. Hire agent via Virtuals ACP on Base mainnet
     print("3. Hiring agent via Virtuals ACP on Base mainnet...")
@@ -83,12 +81,13 @@ def main():
     findings = val.get("findings", [])
     print(f"\nTotal findings returned: {len(findings)}")
     for f in findings:
-        print(f"- Name: {f.get('name')}")
-        print(f"  Summary: {str(f.get('summary'))[:120]}...")
-        print(f"  Pricing: {f.get('pricing')}")
-        print(f"  Strengths: {str(f.get('strengths'))[:100]}...")
-        print(f"  Weaknesses: {str(f.get('weaknesses'))[:100]}...")
-        print(f"  Sources: {f.get('sources')}")
+        print(f"\nName: {f.get('name')}")
+        print(f"Why it is a password manager: {f.get('summary')}")
+        print(f"Pricing: {f.get('pricing')}")
+        print(f"Supported platforms: {f.get('supported_platforms') or f.get('supported platforms')}")
+        print(f"Strengths: {f.get('strengths')}")
+        print(f"Weaknesses: {f.get('weaknesses')}")
+        print(f"Sources: {f.get('sources')}")
 
     with open("evidence/production-uat-fix-job.json", "w", encoding="utf-8") as f:
         json.dump({
