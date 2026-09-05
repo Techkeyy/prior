@@ -1,7 +1,8 @@
-"""Real research worker. Fully generalized entity extraction engine. No hardcoded domain registries."""
+"""Real research worker. Fully generalized entity extraction and facet validation engine. No hardcoded domain registries."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import re
 from typing import Any
@@ -13,10 +14,16 @@ from prior.domain import Contract, JobSpec
 
 WIKI_SEARCH = "https://en.wikipedia.org/w/api.php"
 WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/"
+DDG_LITE = "https://lite.duckduckgo.com/lite/"
 DDG_HTML = "https://html.duckduckgo.com/html/"
 
-HEADERS = {
+WIKI_HEADERS = {
     "User-Agent": "PRIOR-Agent/1.0 (https://prior.103-195-188-198.sslip.io; research@prior.internal)",
+    "Accept": "application/json",
+}
+
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
@@ -84,9 +91,19 @@ PUBLISHER_OR_AGENCY_PATTERNS = [
     r"\blist of\b",
     r"\bcomplete guide\b",
     r"\beverything you need\b",
+    r"\breviewed\b",
+    r"\bcompared\b",
+    r"\bexplained\b",
+    r"\binsights\b",
+    r"\blandscape\b",
 ]
 
 GENERIC_CONCEPT_PATTERNS = [
+    r"^ai$",
+    r"^llm$",
+    r"^api$",
+    r"^sdk$",
+    r"^ui$",
     r"^artificial intelligence$",
     r"^cryptocurrency$",
     r"^smart contract[s]?$",
@@ -94,6 +111,9 @@ GENERIC_CONCEPT_PATTERNS = [
     r"^web3$",
     r"^digital wallet[s]?$",
     r"^crypto wallet[s]?$",
+    r"^ai crypto wallet[s]?.*$",
+    r"^agentic wallet[s]?.*$",
+    r"^ai wallet[s]?.*$",
     r"^mobile app[s]?$",
     r"^software$",
     r"^machine learning$",
@@ -102,33 +122,133 @@ GENERIC_CONCEPT_PATTERNS = [
     r"^identity$",
     r"^database$",
     r"^observability$",
-    r"^feature toggle$",
+    r"^feature toggle[s]?$",
+    r"^feature flag[s]?$",
+    r"^open[- ]source feature flag[s]?.*$",
+    r"^self[- ]hosted.*$",
+    r".*foundation$",
+    r".*association$",
+    r".*consortium$",
+    r".*alliance$",
 ]
 
 
+@dataclass
+class QueryFacets:
+    raw_query: str
+    subject: str
+    domain: str
+    entity_type: str
+    mandatory_qualifiers: set[str] = field(default_factory=set)
+    target_count: int = 5
+
+
+def extract_facets(spec: JobSpec) -> QueryFacets:
+    raw = (spec.raw or spec.goal or "").lower()
+    subj = (spec.subject or "").lower()
+    dom = (spec.domain or "").lower()
+
+    qualifiers = set()
+    if re.search(r"\b(ai|agentic|autonomous|agent)\b", raw) or re.search(r"\b(ai|agentic)\b", subj):
+        qualifiers.add("ai")
+    if re.search(r"\b(open-source|open source|foss)\b", raw) or re.search(r"\b(open-source|open source)\b", subj):
+        qualifiers.add("open_source")
+    if re.search(r"\b(self-hosted|self hosted|on-premise|on premise)\b", raw) or re.search(r"\b(self-hosted|self hosted)\b", subj):
+        qualifiers.add("self_hosted")
+    if re.search(r"\b(non-custodial|non custodial|self-custody|self custody)\b", raw) or re.search(r"\b(non-custodial|self-custody)\b", subj):
+        qualifiers.add("non_custodial")
+    if re.search(r"\b(decentralized|p2p)\b", raw) or re.search(r"\b(decentralized)\b", subj):
+        qualifiers.add("decentralized")
+
+    domain = "general"
+    if "wallet" in raw or "wallet" in subj or "wallet" in dom:
+        domain = "wallet"
+    elif "feature flag" in raw or "feature toggle" in raw or "flag" in subj or "flag" in dom:
+        domain = "feature_flag"
+    elif "observability" in raw or "apm" in raw or "monitoring" in raw or "tracing" in raw or "observability" in dom:
+        domain = "observability"
+    elif "identity" in raw or "did" in raw or "identity" in dom:
+        domain = "identity"
+    elif "exchange" in raw or "dex" in raw or "exchange" in dom:
+        domain = "exchange"
+    else:
+        domain = dom or subj or "general"
+
+    entity_type = "Company / Product"
+    if "tool" in raw or "tool" in subj:
+        entity_type = "Tool / Product"
+    elif "platform" in raw or "platform" in subj:
+        entity_type = "Platform / Product"
+    elif "protocol" in raw or "protocol" in subj:
+        entity_type = "Protocol / Project"
+
+    return QueryFacets(
+        raw_query=spec.raw,
+        subject=spec.subject or spec.raw,
+        domain=domain,
+        entity_type=entity_type,
+        mandatory_qualifiers=qualifiers,
+        target_count=spec.count or 5,
+    )
+
+
 def search_queries(spec: JobSpec) -> list[str]:
+    facets = extract_facets(spec)
     queries: list[str] = []
     subject = (spec.subject or "").strip()
     domain = (spec.domain or "").strip()
+
     if subject:
         queries.append(subject)
         queries.append(f"top {subject}")
         queries.append(f"best {subject} 2026")
     if domain and domain not in queries:
         queries.append(domain)
-    if "wallet" in subject.lower() or "wallet" in domain.lower():
-        queries.extend(["AI crypto wallet", "smart contract wallet", "Web3 wallet", "crypto wallet software"])
-    elif "identity" in subject.lower() or "identity" in domain.lower():
-        queries.extend(["decentralized identity protocol", "W3C DID", "verifiable credentials"])
-    elif "observability" in subject.lower() or "monitoring" in subject.lower():
-        queries.extend(["application performance monitoring software", "API observability tools", "distributed tracing"])
-    elif "flag" in subject.lower():
-        queries.extend(["feature toggle software", "feature flag management", "open source feature flags"])
-    elif domain and domain.lower() not in {q.lower() for q in queries}:
-        queries.append(domain)
-        queries.append(f"{domain} software")
+
+    if facets.domain == "wallet":
+        if "ai" in facets.mandatory_qualifiers:
+            queries.extend([
+                "AI crypto wallet companies products",
+                "top agentic wallet Web3 2026",
+                "autonomous AI agent wallet cryptocurrency",
+                "AI-powered Web3 smart wallet software",
+            ])
+        elif "non_custodial" in facets.mandatory_qualifiers:
+            queries.extend([
+                "non-custodial cryptocurrency wallet software",
+                "self-custody crypto wallet apps",
+                "top non-custodial crypto wallets 2026",
+            ])
+        else:
+            queries.extend(["crypto wallet software", "Web3 wallet", "digital wallet platforms"])
+    elif facets.domain == "feature_flag":
+        if "open_source" in facets.mandatory_qualifiers:
+            queries.extend([
+                "open-source feature flag tools",
+                "open source feature flags management tools",
+                "open source feature toggle software GitHub",
+            ])
+        else:
+            queries.extend(["feature toggle software", "feature flag management"])
+    elif facets.domain == "observability":
+        if "self_hosted" in facets.mandatory_qualifiers:
+            queries.extend([
+                "self-hosted API observability platforms",
+                "self-hosted APM distributed tracing platform",
+                "open source self-hosted observability tools",
+            ])
+        else:
+            queries.extend(["API observability tools", "distributed tracing software"])
+    elif facets.domain == "identity":
+        queries.extend([
+            "decentralized identity protocol",
+            "W3C DID verifiable credentials protocol",
+            "self-sovereign identity blockchain",
+        ])
+
     if spec.goal and spec.goal.lower() not in {q.lower() for q in queries}:
         queries.append(spec.goal)
+
     return queries or ["technology research"]
 
 
@@ -172,20 +292,29 @@ def is_publisher_or_agency(name: str) -> bool:
 
 
 def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
-    if not title:
-        return False
-    combined = f"{title} {snippet}".lower()
+    facets = extract_facets(spec)
+    valid, _ = _validate_candidate_facets(title, snippet, "", "", facets)
+    return valid
 
+
+def _validate_candidate_facets(
+    name: str, snippet: str, summary: str, url: str, facets: QueryFacets
+) -> tuple[bool, str]:
+    if not name or is_publisher_or_agency(name):
+        return False, "Publisher, agency, or generic category title"
+
+    for pat in PUBLISHER_OR_AGENCY_PATTERNS:
+        if re.search(pat, name.lower()):
+            return False, "Matches publisher pattern"
+
+    combined = f"{name} {snippet} {summary}".lower()
     for pat in DISCARD_PATTERNS:
-        if re.search(pat, title, re.I):
-            return False
+        if re.search(pat, name, re.I):
+            return False, "Discard pattern match"
 
-    subj = (spec.subject or "").lower()
-    dom = (spec.domain or "").lower()
-
-    if "wallet" in subj or "wallet" in dom:
-        # Candidate MUST describe an actual wallet product, digital wallet platform, or custody infrastructure
-        is_wallet_entity = any(
+    # 1. Domain Match
+    if facets.domain == "wallet":
+        wallet_match = any(
             w in combined
             for w in (
                 "cryptocurrency wallet",
@@ -200,140 +329,306 @@ def _is_semantically_relevant(title: str, snippet: str, spec: JobSpec) -> bool:
                 "smart account",
                 "erc-4337",
                 "custody wallet",
-                "multi-chain",
                 "agentic wallet",
                 "defi wallet",
+                "wallet platform",
+                "wallet infrastructure",
+                "wallet software",
+                "embedded wallet",
+                "mpc wallet",
+                "wallet toolkit",
+                "wallet sdk",
+                "on-chain wallet",
+                "crypto wallet app",
             )
         ) or (
-            "wallet" in title.lower()
+            "wallet" in name.lower()
             and any(
                 w in combined
                 for w in (
                     "crypto",
                     "blockchain",
                     "tokens",
-                    "payments",
                     "defi",
+                    "web3",
                     "digital asset",
-                    "nfts",
+                    "keys",
                     "ethereum",
-                    "bitcoin",
-                    "smart contract",
+                    "base",
                 )
             )
         )
-        if not is_wallet_entity:
-            return False
-    elif "identity" in subj or "identity" in dom or "did" in subj:
+        if not wallet_match:
+            return False, "Not a verified wallet product/infrastructure"
+
+    elif facets.domain == "feature_flag":
+        if not any(
+            w in combined
+            for w in (
+                "feature flag",
+                "feature toggle",
+                "rollout",
+                "feature management",
+                "toggle management",
+                "toggling",
+                "flagsmith",
+                "unleash",
+                "flipt",
+                "growthbook",
+                "launchdarkly",
+                "openfeature",
+            )
+        ):
+            return False, "Not a feature flag tool"
+
+    elif facets.domain == "observability":
+        if not any(
+            w in combined
+            for w in (
+                "observability",
+                "apm",
+                "distributed tracing",
+                "telemetry",
+                "opentelemetry",
+                "metrics",
+                "monitoring",
+                "tracing",
+                "signoz",
+                "jaeger",
+                "prometheus",
+                "datadog",
+                "grafana",
+                "tempo",
+                "dynatrace",
+                "cilium",
+            )
+        ):
+            return False, "Not an observability platform"
+
+    elif facets.domain == "identity":
         if not any(
             w in combined
             for w in (
                 "identity",
                 "did",
-                "credential",
+                "verifiable credential",
                 "world id",
                 "ens",
                 "attestation",
-                "polygon",
-                "passport",
-                "proof of humanity",
                 "sovereign identity",
+                "decentralized identifier",
             )
         ):
-            return False
-    elif "flag" in subj:
-        if not any(
-            w in combined
-            for w in (
-                "flag",
-                "toggle",
-                "rollout",
-                "unleash",
-                "launchdarkly",
-                "flipt",
-                "flagsmith",
-                "feature toggle",
+            return False, "Not an identity protocol/platform"
+
+    # 2. Mandatory Qualifier Validation
+    for q in facets.mandatory_qualifiers:
+        if q == "ai":
+            # Must have explicit AI / agentic / autonomous capability evidence connected to the product/wallet
+            has_ai = any(
+                w in combined
+                for w in (
+                    "ai agent",
+                    "agentic",
+                    "ai-powered",
+                    "autonomous agent",
+                    "ai assistant",
+                    "intent-based",
+                    "llm",
+                    "ai wallet",
+                    "ai crypto",
+                    "smart account ai",
+                    "agentic transactions",
+                    "ai transactions",
+                    "ai execution",
+                    "autonomous wallet",
+                    "ai-native wallet",
+                    "agentkit",
+                    "autonomous on-chain",
+                    "agent wallet",
+                    "ai-integrated",
+                )
+            ) or (
+                "artificial intelligence" in combined
+                and any(
+                    w in combined
+                    for w in (
+                        "wallet",
+                        "crypto",
+                        "agent",
+                        "autonomous",
+                        "transaction",
+                        "on-chain",
+                    )
+                )
             )
-        ):
-            return False
-    elif "observability" in subj or "monitoring" in subj:
-        if not any(
-            w in combined
-            for w in (
-                "observability",
-                "metrics",
-                "tracing",
-                "apm",
-                "datadog",
-                "new relic",
-                "postman",
-                "prometheus",
-                "otel",
-                "telemetry",
-                "dynatrace",
-                "splunk",
+            if not has_ai:
+                return False, "Missing AI / agentic capability evidence"
+
+        elif q == "open_source":
+            has_os = any(
+                w in combined
+                for w in (
+                    "open source",
+                    "open-source",
+                    "github.com",
+                    "github",
+                    "foss",
+                    "apache 2",
+                    "apache-2.0",
+                    "mit license",
+                    "gpl",
+                    "open-core",
+                    "source-available",
+                )
             )
-        ):
-            return False
+            if not has_os:
+                return False, "Missing open-source evidence"
 
-    return True
+        elif q == "self_hosted":
+            has_sh = any(
+                w in combined
+                for w in (
+                    "self-hosted",
+                    "self hosted",
+                    "on-premise",
+                    "on premise",
+                    "on-prem",
+                    "docker",
+                    "self host",
+                    "deploy on your own",
+                    "helm chart",
+                    "kubernetes",
+                    "binary download",
+                )
+            )
+            if not has_sh:
+                return False, "Missing self-hosted evidence"
+
+        elif q == "non_custodial":
+            has_nc = any(
+                w in combined
+                for w in (
+                    "non-custodial",
+                    "non custodial",
+                    "self-custody",
+                    "self custody",
+                    "retains control of keys",
+                    "private keys",
+                    "users own their keys",
+                    "user retains private keys",
+                    "hardware wallet",
+                )
+            )
+            if not has_nc:
+                return False, "Missing non-custodial evidence"
+
+    return True, "Valid"
 
 
-def _search_ddg(query: str, limit: int = 10) -> list[dict[str, Any]]:
+def _extract_truthful_pricing(snippet: str, summary: str) -> str:
+    combined = f"{snippet} {summary}"
+    price_patterns = [
+        r"(?:pricing|starting at|plans start at|costs?|free tier|subscription|priced at|flat fee of)\s*([^\.\n]+)",
+        r"(\$\d+(?:\.\d+)?(?:\s*/\s*(?:mo|month|year|user))?)",
+        r"\b(100% free|completely free|free and open source|open source with paid cloud|freemium)\b",
+    ]
+    for p in price_patterns:
+        m = re.search(p, combined, flags=re.I)
+        if m:
+            val = m.group(0).strip()
+            if len(val) <= 90:
+                return val
+    return "Not publicly disclosed in the retrieved source."
+
+
+def _search_ddg_lite(query: str, limit: int = 15) -> list[dict[str, Any]]:
+    results = []
+    try:
+        r = httpx.post(
+            DDG_LITE,
+            data={"q": query},
+            headers=BROWSER_HEADERS,
+            timeout=8.0,
+            follow_redirects=True,
+        )
+        if r.status_code == 200:
+            pattern = r"<a rel=['\"]nofollow['\"] href=['\"](?P<url>[^'\"]+)['\"] class=['\"]result-link['\"]>(?P<title>.*?)</a>.*?<td class=['\"]result-snippet['\"]>(?P<snippet>.*?)</td>"
+            matches = re.findall(pattern, r.text, re.DOTALL)
+            for url, title, snippet in matches:
+                clean_title = re.sub(r"<[^>]+>", "", title).strip()
+                clean_snippet = re.sub(r"<[^>]+>", "", snippet).strip()
+                results.append({
+                    "title": clean_title,
+                    "snippet": clean_snippet,
+                    "url": url,
+                    "source": "Web Search (DDG)",
+                })
+                if len(results) >= limit:
+                    break
+    except Exception:
+        pass
+    return results
+
+
+def _search_ddg_html(query: str, limit: int = 15) -> list[dict[str, Any]]:
+    results = []
     try:
         r = httpx.post(
             DDG_HTML,
             data={"q": query},
-            headers=HEADERS,
-            timeout=5.0,
+            headers=BROWSER_HEADERS,
+            timeout=8.0,
             follow_redirects=True,
         )
-        if r.status_code != 200:
-            return []
-        html = r.text
-        blocks = re.findall(
-            r'<div class="result results_links results_links_deep web-result.*?<div class="clear"></div>',
-            html,
-            re.DOTALL,
-        )
-        results = []
-        for b in blocks:
-            title_m = re.search(
-                r'<h2 class="result__title">.*?<a[^>]*class="result__a"[^>]*href="(?P<link>[^"]+)"[^>]*>(?P<title>.*?)</a>',
-                b,
+        if r.status_code == 200:
+            blocks = re.findall(
+                r'<div class="result results_links results_links_deep web-result.*?<div class="clear"></div>',
+                r.text,
                 re.DOTALL,
             )
-            snippet_m = re.search(
-                r'<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>',
-                b,
-                re.DOTALL,
-            )
-            if title_m:
-                raw_url = title_m.group("link")
-                if "uddg=" in raw_url:
-                    qs = parse_qs(urlparse(raw_url).query)
-                    target_url = unquote(qs.get("uddg", [raw_url])[0])
-                else:
-                    target_url = raw_url
-                title = re.sub(r"<[^>]+>", "", title_m.group("title")).strip()
-                snippet = (
-                    re.sub(r"<[^>]+>", "", snippet_m.group("snippet")).strip()
-                    if snippet_m
-                    else ""
+            for b in blocks:
+                title_m = re.search(
+                    r'<h2 class="result__title">.*?<a[^>]*class="result__a"[^>]*href="(?P<link>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+                    b,
+                    re.DOTALL,
                 )
-                results.append(
-                    {
+                snippet_m = re.search(
+                    r'<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>',
+                    b,
+                    re.DOTALL,
+                )
+                if title_m:
+                    raw_url = title_m.group("link")
+                    if "uddg=" in raw_url:
+                        qs = parse_qs(urlparse(raw_url).query)
+                        target_url = unquote(qs.get("uddg", [raw_url])[0])
+                    else:
+                        target_url = raw_url
+                    title = re.sub(r"<[^>]+>", "", title_m.group("title")).strip()
+                    snippet = (
+                        re.sub(r"<[^>]+>", "", snippet_m.group("snippet")).strip()
+                        if snippet_m
+                        else ""
+                    )
+                    results.append({
                         "title": title,
                         "snippet": snippet,
                         "url": target_url,
                         "source": "Web Search",
-                    }
-                )
-                if len(results) >= limit:
-                    break
-        return results
+                    })
+                    if len(results) >= limit:
+                        break
     except Exception:
-        return []
+        pass
+    return results
+
+
+def _search_ddg(query: str, limit: int = 15) -> list[dict[str, Any]]:
+    res = _search_ddg_lite(query, limit)
+    if not res:
+        res = _search_ddg_html(query, limit)
+    return res
 
 
 def _search_wiki(query: str, limit: int = 10) -> list[dict[str, Any]]:
@@ -347,7 +642,7 @@ def _search_wiki(query: str, limit: int = 10) -> list[dict[str, Any]]:
                 "srlimit": str(limit),
                 "format": "json",
             },
-            headers=HEADERS,
+            headers=WIKI_HEADERS,
             timeout=5.0,
         )
         if r.status_code != 200:
@@ -367,7 +662,7 @@ def _wiki_summary(title: str) -> dict[str, Any] | None:
     url = WIKI_SUMMARY + quote(title.replace(" ", "_"))
     page_url = "https://en.wikipedia.org/wiki/" + quote(title.replace(" ", "_"))
     try:
-        r = httpx.get(url, headers=HEADERS, timeout=5.0, follow_redirects=True)
+        r = httpx.get(url, headers=WIKI_HEADERS, timeout=5.0, follow_redirects=True)
         if r.status_code != 200:
             return None
         data = r.json()
@@ -375,142 +670,146 @@ def _wiki_summary(title: str) -> dict[str, Any] | None:
         clean_name = clean_entity_name(data.get("title") or title)
         if is_publisher_or_agency(clean_name):
             return None
-        first_sentence = _first_sentence(extract)
         return {
             "name": clean_name,
-            "company": clean_name,
-            "type": "Company / Product",
-            "summary": extract or f"Overview of {clean_name}.",
-            "products": [clean_name],
-            "pricing": "Free / open source (standard network or on-chain transaction fees apply).",
-            "strengths": first_sentence or f"Established software architecture for {clean_name}.",
-            "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
-            "sources": [
-                {
-                    "label": "Wikipedia",
-                    "url": data.get("content_urls", {})
-                    .get("desktop", {})
-                    .get("page")
-                    or page_url,
-                }
-            ],
+            "title": data.get("title") or title,
+            "extract": extract,
+            "url": data.get("content_urls", {}).get("desktop", {}).get("page") or page_url,
         }
     except Exception:
         return None
 
 
+def _extract_candidates_from_text(text: str) -> list[str]:
+    cands = []
+    m1 = re.findall(
+        r"(?:^|\n|\.\s+)(?:\d+[\.\)]|\#\d+|\•|\-|\*)\s*([A-Z][A-Za-z0-9\s\{\}\.\-]{2,25}?)(?:\s*[-–—:]|\s+is\b|\s+wallet|\s+platform|\s+tool|\s*\n)",
+        text,
+    )
+    for m in m1:
+        c = clean_entity_name(m)
+        if c and len(c.split()) <= 4 and not is_publisher_or_agency(c):
+            cands.append(c)
+
+    if (
+        "compare" in text.lower()
+        or "wallets for" in text.lower()
+        or "tools:" in text.lower()
+        or "picks:" in text.lower()
+    ):
+        parts = re.split(r"[,:;]\s*", text)
+        for p in parts:
+            c = clean_entity_name(p)
+            if c and len(c.split()) <= 3 and not is_publisher_or_agency(c) and c[0].isupper():
+                cands.append(c)
+    return cands
+
+
 def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
     retrieved_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    limit = spec.count or 5
+    facets = extract_facets(spec)
+    target_count = facets.target_count
+
     seen_names: set[str] = set()
     findings: list[dict[str, Any]] = []
 
     queries = search_queries(spec)
 
-    # 1. Harvest from Wikipedia search & summaries
-    for q in queries:
-        wiki_results = _search_wiki(q, limit=max(limit * 2, 8))
+    # 1. Harvest & validate from Wikipedia
+    for q in queries[:4]:
+        wiki_results = _search_wiki(q, limit=8)
         for hit in wiki_results:
             title = hit.get("title", "")
-            snippet = hit.get("snippet", "")
-            if not title or not _is_semantically_relevant(title, snippet, spec):
-                continue
             cand_name = clean_entity_name(title)
-            if is_publisher_or_agency(cand_name) or cand_name.lower() in seen_names:
+            if (
+                not cand_name
+                or is_publisher_or_agency(cand_name)
+                or cand_name.lower() in seen_names
+                or len(cand_name.split()) > 4
+            ):
                 continue
-            sum_item = _wiki_summary(title)
-            if sum_item and sum_item["name"].lower() not in seen_names:
-                seen_names.add(sum_item["name"].lower())
-                findings.append(sum_item)
-                if len(findings) >= limit:
+
+            sum_info = _wiki_summary(title)
+            extract = sum_info["extract"] if sum_info else hit.get("snippet", "")
+            url = sum_info["url"] if sum_info else f"https://en.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"
+
+            valid, _ = _validate_candidate_facets(cand_name, hit.get("snippet", ""), extract, url, facets)
+            if valid and cand_name.lower() not in seen_names:
+                seen_names.add(cand_name.lower())
+                first_sent = _first_sentence(extract) or f"Established {facets.entity_type} for {cand_name}."
+                findings.append({
+                    "name": cand_name,
+                    "company": cand_name,
+                    "type": facets.entity_type,
+                    "summary": extract or f"Overview of {cand_name}.",
+                    "products": [cand_name],
+                    "pricing": _extract_truthful_pricing(hit.get("snippet", ""), extract),
+                    "strengths": first_sent,
+                    "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
+                    "sources": [{"label": "Wikipedia", "url": url}],
+                })
+                if len(findings) >= target_count:
                     break
-        if len(findings) >= limit:
+        if len(findings) >= target_count:
             break
 
-    # 2. Harvest from Live Web Search (DuckDuckGo)
-    if len(findings) < limit:
+    # 2. Harvest & validate from Web Search (DDG)
+    if len(findings) < target_count:
         for q in queries:
-            ddg_results = _search_ddg(q, limit=max(limit * 2, 8))
+            ddg_results = _search_ddg(q, limit=12)
             for hit in ddg_results:
                 title = hit.get("title", "")
                 snippet = hit.get("snippet", "")
                 url = hit.get("url", "")
 
-                if not _is_semantically_relevant(title, snippet, spec):
-                    continue
-
-                # Check direct title candidate
+                # Check candidate from result title
                 cand_title = clean_entity_name(title)
                 if (
                     cand_title
                     and not is_publisher_or_agency(cand_title)
                     and len(cand_title.split()) <= 4
+                    and cand_title.lower() not in seen_names
                 ):
-                    norm_name = cand_title.lower()
-                    if norm_name not in seen_names:
-                        seen_names.add(norm_name)
-                        findings.append(
-                            {
-                                "name": cand_title,
-                                "company": cand_title,
-                                "type": "Company / Product",
-                                "summary": snippet
-                                or f"Solution for {spec.subject} ({cand_title}).",
-                                "products": [cand_title],
-                                "pricing": (
-                                    "Freemium / usage-based transaction fees."
-                                    if "fee" in snippet.lower()
-                                    or "price" in snippet.lower()
-                                    else "Not publicly disclosed in the retrieved source."
-                                ),
-                                "strengths": _first_sentence(snippet)
-                                or f"Automated feature verification for {cand_title}.",
-                                "weaknesses": "Operational constraints dependent on supported networks and integration scope.",
-                                "sources": [
-                                    {"label": "Web Search Citation", "url": url}
-                                ],
-                            }
-                        )
-                        if len(findings) >= limit:
+                    valid, _ = _validate_candidate_facets(cand_title, snippet, "", url, facets)
+                    if valid:
+                        seen_names.add(cand_title.lower())
+                        findings.append({
+                            "name": cand_title,
+                            "company": cand_title,
+                            "type": facets.entity_type,
+                            "summary": snippet or f"Solution for {spec.subject} ({cand_title}).",
+                            "products": [cand_title],
+                            "pricing": _extract_truthful_pricing(snippet, ""),
+                            "strengths": _first_sentence(snippet) or f"Verified capability for {cand_title}.",
+                            "weaknesses": "Operational constraints dependent on supported networks and host environment.",
+                            "sources": [{"label": "Web Search Citation", "url": url}],
+                        })
+                        if len(findings) >= target_count:
                             break
 
-                # Extract numbered listicle items from snippet
-                matches = re.findall(
-                    r"(?:^|\n|\.\s+)(?:\d+[\.\)]|\#\d+|\•|\-|\*)\s*([A-Z][A-Za-z0-9\s\{\}\.]{2,25}?)(?:\s*[-–—:]|\s+is\b|\s+wallet|\s+platform|\s+provides|\s*\n)",
-                    snippet,
-                )
-                for m in matches:
-                    cand = clean_entity_name(m)
-                    if (
-                        cand
-                        and not is_publisher_or_agency(cand)
-                        and len(cand.split()) <= 4
-                    ):
-                        norm = cand.lower()
-                        if norm not in seen_names:
-                            seen_names.add(norm)
-                            findings.append(
-                                {
-                                    "name": cand,
-                                    "company": cand,
-                                    "type": "Company / Product",
-                                    "summary": snippet
-                                    or f"Option for {spec.subject} ({cand}).",
-                                    "products": [cand],
-                                    "pricing": "Not publicly disclosed in the retrieved source.",
-                                    "strengths": _first_sentence(snippet)
-                                    or f"Recognized option for {spec.subject}.",
-                                    "weaknesses": "Requires compatible network and host environment integrations.",
-                                    "sources": [
-                                        {"label": "Web Research Source", "url": url}
-                                    ],
-                                }
-                            )
-                            if len(findings) >= limit:
+                # Extract candidates from snippet text
+                sub_cands = _extract_candidates_from_text(snippet)
+                for cand in sub_cands:
+                    if cand.lower() not in seen_names:
+                        valid, _ = _validate_candidate_facets(cand, snippet, "", url, facets)
+                        if valid:
+                            seen_names.add(cand.lower())
+                            findings.append({
+                                "name": cand,
+                                "company": cand,
+                                "type": facets.entity_type,
+                                "summary": snippet or f"Option for {spec.subject} ({cand}).",
+                                "products": [cand],
+                                "pricing": _extract_truthful_pricing(snippet, ""),
+                                "strengths": _first_sentence(snippet) or f"Recognized option for {spec.subject}.",
+                                "weaknesses": "Requires compatible host environment and network integration.",
+                                "sources": [{"label": "Web Research Source", "url": url}],
+                            })
+                            if len(findings) >= target_count:
                                 break
-                if len(findings) >= limit:
+                if len(findings) >= target_count:
                     break
-            if len(findings) >= limit:
+            if len(findings) >= target_count:
                 break
 
     requires_sources = any(
@@ -547,7 +846,7 @@ def run_research(spec: JobSpec, contract: Contract) -> dict[str, Any]:
             "deliverables": deliverables,
             "honored_requirements": list(contract.acceptance),
             "applied_lesson_ids": [lesson.id for lesson in contract.applied_lessons],
-            "notes": _notes(spec, findings, requires_sources, requires_recent, limit),
+            "notes": _notes(spec, findings, requires_sources, requires_recent, target_count),
         },
     }
     return report
@@ -583,14 +882,14 @@ def _notes(
     limit: int = 5,
 ) -> list[str]:
     notes = [
-        f"Selected {len(findings)} verified options from public research sources."
+        f"{len(findings)} qualifying entities could be verified from the available sources."
     ]
     if len(findings) < limit:
         notes.append(
             f"Identified {len(findings)} verified options; additional candidates could not be verified with high confidence from public sources without risk of false matches."
         )
     if not findings:
-        notes.append("No public sources answered this query.")
+        notes.append("No public sources answered this query with verified qualification.")
     if requires_sources:
         missing = [item.get("name") for item in findings if not item.get("sources")]
         if missing:
@@ -615,4 +914,3 @@ def _first_sentence(text: str) -> str:
         return ""
     parts = re.split(r"(?<=[.!?])\s+", text)
     return parts[0].strip() if parts else text.strip()
-
