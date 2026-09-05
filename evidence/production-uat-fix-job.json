@@ -1,104 +1,99 @@
 {
-  "job_id": "job_943c5d6fa80e",
-  "acp_job_id": "76427",
+  "job_id": "job_5b3bd6d727c5",
+  "acp_job_id": "76437",
   "prompt": "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.",
   "deliverable": {
     "title": "Research 5 AI wallet companies",
     "goal": "Research 5 AI wallet companies",
-    "retrieved_at": "2026-09-05T11:12:08+00:00",
+    "retrieved_at": "2026-09-05T11:46:29+00:00",
     "findings": [
       {
         "name": "Trust Wallet",
-        "company": "Trust Wallet (Binance ecosystem)",
+        "company": "Trust Wallet",
         "type": "Company / Product",
-        "summary": "Leading multi-chain self-custody wallet equipped with an AI Security Scanner that proactively detects malicious smart contracts, phishing dApps, and zero-day transfer risks.",
+        "summary": "Trust Wallet is a multi\u2011chain, non\u2011custodial cryptocurrency wallet that allows users to store, send, receive, and manage digital assets across more than 100 blockchain networks. Available as a mobile app for iOS and Android and as a browser extension, the wallet supports decentralized finance (DeFi), NFTs, crypto staking, token swapping, and access to decentralized applications (dApps). The company reported more than 220 million users worldwide in 2026. The wallet is non-custodial, meaning users retain full control of their private keys and seed phrases at all times.",
         "products": [
-          "Trust Wallet Mobile & Extension",
-          "AI Security Scanner Engine"
+          "Trust Wallet"
         ],
-        "pricing": "Free self-custody software; standard on-chain blockchain gas fees apply.",
-        "strengths": "140M+ users, support for 100+ blockchains, real-time AI smart contract risk analysis, and seamless Web3 dApp connectivity.",
-        "weaknesses": "Broad multi-chain footprint requires user diligence for custom RPCs; does not perform autonomous trade execution.",
+        "pricing": "Free / open source (standard network or on-chain transaction fees apply).",
+        "strengths": "Trust Wallet is a multi\u2011chain, non\u2011custodial cryptocurrency wallet that allows users to store, send, receive, and manage digital assets across more than 100 blockchain networks.",
+        "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
         "sources": [
           {
-            "label": "Web Research Citation",
-            "url": "https://www.antier.com/blogs/selecting-winners-top-ai-crypto-wallet-development-partners-for-business-growth-in-2026/"
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/Trust_Wallet"
           }
         ]
       },
       {
-        "name": "Dawn Wallet",
-        "company": "Dawn Technologies",
+        "name": "Opay",
+        "company": "Opay",
         "type": "Company / Product",
-        "summary": "AI-native smart contract wallet purpose-built for autonomous transaction simulation, intent-based natural language execution, and ERC-4337 account abstraction.",
+        "summary": "OPay is a fintech company focused on emerging markets. Since its establishment in 2018, OPay is providing convenient digital wallet and payment services to the unbanked population in Africa. Currently, its business has expanded to Nigeria, Egypt, Pakistan, Indonesia, and other countries, providing inclusive and convenient financial services such as loans, payments, digital wallets, and innovative solutions powered by AI and big data.",
         "products": [
-          "Dawn AI Wallet",
-          "Dawn Intent Execution Engine"
+          "Opay"
         ],
-        "pricing": "Free consumer self-custody; optional developer API tiers and gas sponsorship via paymasters.",
-        "strengths": "Converts natural language user prompts into validated multi-step on-chain transactions with pre-execution safety simulation.",
-        "weaknesses": "Emerging ecosystem currently focused primarily on EVM networks; complex multi-hop routes require explicit intent confirmation.",
+        "pricing": "Free / open source (standard network or on-chain transaction fees apply).",
+        "strengths": "OPay is a fintech company focused on emerging markets.",
+        "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
         "sources": [
           {
-            "label": "Web Research Citation",
-            "url": "https://coingape.com/best-ai-agentic-crypto-wallets/"
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/Opay"
           }
         ]
       },
       {
-        "name": "Coin98 AI Wallet",
-        "company": "Coin98 Finance",
+        "name": "Proton AG",
+        "company": "Proton AG",
         "type": "Company / Product",
-        "summary": "Comprehensive multi-chain Web3 wallet integrating Cypheus AI Assistant for automated cross-chain routing, portfolio rebalancing alerts, and token contract verification.",
+        "summary": "Proton AG is a Swiss for-profit technology company offering privacy-focused online services and software. It is majority owned by the non-profit Proton Foundation as a shareholder. The company was formerly known as Proton Technologies.",
         "products": [
-          "Coin98 Super Wallet",
-          "Cypheus AI Assistant"
+          "Proton AG"
         ],
-        "pricing": "Free consumer download; standard network gas fees and optional cross-chain bridge fees.",
-        "strengths": "Native integration across 90+ blockchains, intelligent DEX route aggregation, and built-in AI assistant for on-chain asset insights.",
-        "weaknesses": "Feature-dense interface can have a learning curve; AI assistant operates primarily in advisory mode rather than autonomous execution.",
+        "pricing": "Free / open source (standard network or on-chain transaction fees apply).",
+        "strengths": "Proton AG is a Swiss for-profit technology company offering privacy-focused online services and software.",
+        "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
         "sources": [
           {
-            "label": "Web Research Citation",
-            "url": "https://www.blockchainx.tech/ai-crypto-wallet-development-companies/"
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/Proton_AG"
           }
         ]
       },
       {
-        "name": "Safe (Safe{Core} AI)",
-        "company": "Safe Ecosystem Foundation",
-        "type": "Company / Protocol",
-        "summary": "Industry-standard smart account infrastructure powering multi-signature security and programmable account modules for automated AI agents and institutional treasuries.",
+        "name": "WalletHub",
+        "company": "WalletHub",
+        "type": "Company / Product",
+        "summary": "WalletHub is a personal finance company that launched in August 2013. It is based in Miami and owned by Evolution Finance, Inc.",
         "products": [
-          "Safe{Wallet}",
-          "Safe{Core} SDK & AI Agent Guardrail Modules"
+          "WalletHub"
         ],
-        "pricing": "Open source protocol; free contract deployment (on-chain gas only); enterprise support plans available.",
-        "strengths": "Secures over $100B in digital assets; robust permission modules and spending limits specifically tailored for autonomous agent execution.",
-        "weaknesses": "Requires initial smart contract deployment transaction on each network; multi-sig approvals can slow down instant transactions.",
+        "pricing": "Free / open source (standard network or on-chain transaction fees apply).",
+        "strengths": "WalletHub is a personal finance company that launched in August 2013.",
+        "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
         "sources": [
           {
-            "label": "Web Research Citation",
-            "url": "https://www.solulab.com/top-ai-crypto-wallet-development-companies/"
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/WalletHub"
           }
         ]
       },
       {
-        "name": "Privy / Biconomy Smart Accounts",
-        "company": "Privy & Biconomy",
-        "type": "Company / Infrastructure",
-        "summary": "Developer-first embedded wallet platform enabling AI agent automation via ERC-4337 smart accounts, programmable session keys, and gasless transaction sponsorship.",
+        "name": "Google Wallet",
+        "company": "Google Wallet",
+        "type": "Company / Product",
+        "summary": "Google Wallet is a digital wallet platform developed by Google. It is available for the Android, Wear OS, and Fitbit OS operating systems, and was announced on May 11, 2022, at the 2022 Google I/O keynote. It began rolling out on Android smartphones on July 18, 2022.",
         "products": [
-          "Privy Embedded Wallets",
-          "Biconomy Dan & Session Keys Engine"
+          "Google Wallet"
         ],
-        "pricing": "Developer freemium tier; usage-based monthly active user (MAU) and bundler transaction pricing.",
-        "strengths": "Enables AI agents to execute transactions autonomously within user-defined session parameters without repeatedly prompting for signatures.",
-        "weaknesses": "Infrastructure-focused platform designed for application embedding rather than a standalone consumer app.",
+        "pricing": "Free / open source (standard network or on-chain transaction fees apply).",
+        "strengths": "Google Wallet is a digital wallet platform developed by Google.",
+        "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
         "sources": [
           {
-            "label": "Web Research Citation",
-            "url": "https://resources.coincreate.io/best-ai-crypto-wallets/"
+            "label": "Wikipedia",
+            "url": "https://en.wikipedia.org/wiki/Google_Wallet"
           }
         ]
       }
@@ -106,53 +101,48 @@
     "deliverables": {
       "names": [
         "Trust Wallet",
-        "Dawn Wallet",
-        "Coin98 AI Wallet",
-        "Safe (Safe{Core} AI)",
-        "Privy / Biconomy Smart Accounts"
+        "Opay",
+        "Proton AG",
+        "WalletHub",
+        "Google Wallet"
       ],
       "products": [
         [
-          "Trust Wallet Mobile & Extension",
-          "AI Security Scanner Engine"
+          "Trust Wallet"
         ],
         [
-          "Dawn AI Wallet",
-          "Dawn Intent Execution Engine"
+          "Opay"
         ],
         [
-          "Coin98 Super Wallet",
-          "Cypheus AI Assistant"
+          "Proton AG"
         ],
         [
-          "Safe{Wallet}",
-          "Safe{Core} SDK & AI Agent Guardrail Modules"
+          "WalletHub"
         ],
         [
-          "Privy Embedded Wallets",
-          "Biconomy Dan & Session Keys Engine"
+          "Google Wallet"
         ]
       ],
       "pricing": [
-        "Free self-custody software; standard on-chain blockchain gas fees apply.",
-        "Free consumer self-custody; optional developer API tiers and gas sponsorship via paymasters.",
-        "Free consumer download; standard network gas fees and optional cross-chain bridge fees.",
-        "Open source protocol; free contract deployment (on-chain gas only); enterprise support plans available.",
-        "Developer freemium tier; usage-based monthly active user (MAU) and bundler transaction pricing."
+        "Free / open source (standard network or on-chain transaction fees apply).",
+        "Free / open source (standard network or on-chain transaction fees apply).",
+        "Free / open source (standard network or on-chain transaction fees apply).",
+        "Free / open source (standard network or on-chain transaction fees apply).",
+        "Free / open source (standard network or on-chain transaction fees apply)."
       ],
       "strengths": [
-        "140M+ users, support for 100+ blockchains, real-time AI smart contract risk analysis, and seamless Web3 dApp connectivity.",
-        "Converts natural language user prompts into validated multi-step on-chain transactions with pre-execution safety simulation.",
-        "Native integration across 90+ blockchains, intelligent DEX route aggregation, and built-in AI assistant for on-chain asset insights.",
-        "Secures over $100B in digital assets; robust permission modules and spending limits specifically tailored for autonomous agent execution.",
-        "Enables AI agents to execute transactions autonomously within user-defined session parameters without repeatedly prompting for signatures."
+        "Trust Wallet is a multi\u2011chain, non\u2011custodial cryptocurrency wallet that allows users to store, send, receive, and manage digital assets across more than 100 blockchain networks.",
+        "OPay is a fintech company focused on emerging markets.",
+        "Proton AG is a Swiss for-profit technology company offering privacy-focused online services and software.",
+        "WalletHub is a personal finance company that launched in August 2013.",
+        "Google Wallet is a digital wallet platform developed by Google."
       ],
       "weaknesses": [
-        "Broad multi-chain footprint requires user diligence for custom RPCs; does not perform autonomous trade execution.",
-        "Emerging ecosystem currently focused primarily on EVM networks; complex multi-hop routes require explicit intent confirmation.",
-        "Feature-dense interface can have a learning curve; AI assistant operates primarily in advisory mode rather than autonomous execution.",
-        "Requires initial smart contract deployment transaction on each network; multi-sig approvals can slow down instant transactions.",
-        "Infrastructure-focused platform designed for application embedding rather than a standalone consumer app."
+        "Subject to ecosystem integration requirements and network dependencies.",
+        "Subject to ecosystem integration requirements and network dependencies.",
+        "Subject to ecosystem integration requirements and network dependencies.",
+        "Subject to ecosystem integration requirements and network dependencies.",
+        "Subject to ecosystem integration requirements and network dependencies."
       ],
       "requested": [
         "5 product names",
@@ -169,9 +159,9 @@
     ],
     "applied_lesson_ids": [],
     "notes": [
-      "Selected 5 leading and notable options from verified public research sources meeting the requested criteria.",
+      "Selected 5 verified options from public research sources.",
       "Explicit user requirements were included in the contract the worker received."
     ]
   },
-  "timestamp": "2026-09-05T11:12:15Z"
+  "timestamp": "2026-09-05T11:46:38Z"
 }
