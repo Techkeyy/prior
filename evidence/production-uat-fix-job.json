@@ -1,49 +1,18 @@
 {
-  "job_id": "job_0f8c91f2b404",
-  "acp_job_id": "76498",
+  "job_id": "job_28b93225cb49",
+  "acp_job_id": "76511",
   "prompt": "Research the top five AI wallet companies and compare their products, pricing, strengths, and weaknesses.",
   "deliverable": {
     "title": "Research 5 AI wallet companies",
     "goal": "Research 5 AI wallet companies",
-    "retrieved_at": "2026-09-05T15:38:47+00:00",
-    "findings": [
-      {
-        "name": "Opera",
-        "company": "Opera",
-        "type": "Company / Product",
-        "summary": "Opera Norway AS is a multinational technology corporation headquartered in Oslo, Norway, with additional offices in Europe, China, and Africa. Opera offers a range of products and services that include PC and mobile web browsers, GameMaker and gaming portals, the Opera News content recommendation products, the Opera Ads platform, and a number of Web3 and e-commerce products and services. Opera is noted for browser innovation and its early adoption of technologies such as artificial intelligence (AI), cryptocurrency, and Web3. The company has 296 million monthly active users.",
-        "products": [
-          "Opera"
-        ],
-        "pricing": "Not publicly disclosed in the retrieved source.",
-        "strengths": "Opera Norway AS is a multinational technology corporation headquartered in Oslo, Norway, with additional offices in Europe, China, and Africa.",
-        "weaknesses": "Subject to ecosystem integration requirements and network dependencies.",
-        "sources": [
-          {
-            "label": "Wikipedia",
-            "url": "https://en.wikipedia.org/wiki/Opera_(company)"
-          }
-        ]
-      }
-    ],
+    "retrieved_at": "2026-09-05T16:39:25+00:00",
+    "findings": [],
     "deliverables": {
-      "names": [
-        "Opera"
-      ],
-      "products": [
-        [
-          "Opera"
-        ]
-      ],
-      "pricing": [
-        "Not publicly disclosed in the retrieved source."
-      ],
-      "strengths": [
-        "Opera Norway AS is a multinational technology corporation headquartered in Oslo, Norway, with additional offices in Europe, China, and Africa."
-      ],
-      "weaknesses": [
-        "Subject to ecosystem integration requirements and network dependencies."
-      ],
+      "names": [],
+      "products": [],
+      "pricing": [],
+      "strengths": [],
+      "weaknesses": [],
       "requested": [
         "5 names",
         "products",
@@ -58,9 +27,10 @@
     ],
     "applied_lesson_ids": [],
     "notes": [
-      "1 qualifying entities could be verified from the available sources.",
-      "Identified 1 verified options; additional candidates could not be verified with high confidence from public sources without risk of false matches."
+      "0 qualifying entities could be verified from the available sources.",
+      "Identified 0 verified options; additional candidates could not be verified with high confidence from public sources without risk of false matches.",
+      "No public sources answered this query with verified qualification."
     ]
   },
-  "timestamp": "2026-09-05T15:39:03Z"
+  "timestamp": "2026-09-05T16:39:39Z"
 }
