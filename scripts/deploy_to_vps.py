@@ -1,12 +1,12 @@
 import subprocess
 import os
 import sys
+import tempfile
 from pathlib import Path
 from dotenv import dotenv_values
 
 SSH_KEY = r"C:\Users\HomePC\.ssh\villa-vps-deploy_ed25519"
 VPS_HOST = "root@103.195.188.198"
-COMMIT_SHA = "8097efb1d0cf5d0bcdc9c341a50c55f1b9b0fa8e"
 
 def run_remote(cmd, input_data=None):
     ssh_cmd = [
@@ -29,12 +29,44 @@ def run_remote(cmd, input_data=None):
         sys.exit(1)
     return res.stdout
 
+def run_scp(src, dst):
+    scp_cmd = [
+        "scp", "-i", SSH_KEY,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "BatchMode=yes",
+        src,
+        f"{VPS_HOST}:{dst}"
+    ]
+    res = subprocess.run(
+        scp_cmd,
+        text=True,
+        capture_output=True
+    )
+    if res.returncode != 0:
+        print(f"SCP failed from {src} to {dst}\nStderr: {res.stderr}")
+        sys.exit(1)
+
+def get_head_sha():
+    res = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+    return res.stdout.strip()
+
 def main():
+    head_sha = get_head_sha()
+    print(f"Deploying HEAD SHA: {head_sha}")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tar_path = Path(tmpdir) / "prior-deploy.tar.gz"
+        print(f"Creating git archive at {tar_path}...")
+        subprocess.run(["git", "archive", "--format=tar.gz", "-o", str(tar_path), "HEAD"], check=True)
+
+        print("Uploading archive to VPS /tmp/prior-deploy.tar.gz...")
+        run_scp(str(tar_path), "/tmp/prior-deploy.tar.gz")
+
     print("Extracting archive on VPS...")
     run_remote("""
         tar -xzf /tmp/prior-deploy.tar.gz -C /opt/prior
         chown -R prior:prior /opt/prior
-        ls -la /opt/prior/src/prior
+        rm -f /tmp/prior-deploy.tar.gz
     """)
 
     print("Installing python package on VPS...")
@@ -55,7 +87,7 @@ def main():
         "PRIOR_MEMORY_DB": "/opt/prior/data/prior.db",
         "PRIOR_HOST": "127.0.0.1",
         "PRIOR_PORT": "8789",
-        "PRIOR_BUILD_COMMIT": COMMIT_SHA,
+        "PRIOR_BUILD_COMMIT": head_sha,
         "PRIOR_LOCAL_PROVIDER": "local",
         "ACP_ENABLED": "true",
         "BASE_RPC_URL": local_env.get("BASE_RPC_URL", "https://mainnet.base.org"),
@@ -77,11 +109,13 @@ def main():
     run_remote("cat > /etc/prior/prior.env && chmod 600 /etc/prior/prior.env", input_data=env_content)
     print("Updated /etc/prior/prior.env successfully (secrets not logged).")
 
-    print("Restarting prior.service...")
+    print("Restarting prior.service and prior-acp-seller.service...")
     out = run_remote("""
         systemctl restart prior.service
+        systemctl restart prior-acp-seller.service
         sleep 2
         systemctl status prior.service --no-pager
+        systemctl status prior-acp-seller.service --no-pager
     """)
     print(out.encode("ascii", errors="replace").decode("ascii"))
 
@@ -93,3 +127,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
