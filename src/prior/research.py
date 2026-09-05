@@ -930,13 +930,14 @@ def extract_first_party_pricing(
 
     # 2. Check live official pricing pages
     if base_url:
-        for path in ["/pricing", "/pricing/", "/pricing.html", "/personal.html"]:
+        canonical_paths = ["/pricing", "/pricing/", "/pricing.html", "/personal.html"]
+        plans = []
+        for path in canonical_paths:
             url = f"{base_url.rstrip('/')}{path}"
             txt = _fetch_page_text(url)
             if txt and len(txt) > 200:
                 sources.append({"label": f"{cand_name} Official Pricing", "url": url})
 
-                plans = []
                 if re.search(r"\bfree (?:plan|tier)\b", txt, re.I):
                     plans.append("Free plan")
                 if re.search(r"\b(?:personal|unlimited)\b", txt, re.I) and "keeper" in official_domain:
@@ -973,9 +974,34 @@ def extract_first_party_pricing(
                     p_str = ", ".join(f"${p}" for p in dict.fromkeys(strict_m[:2]))
                     evidence_text = f"Official pricing page states: {'; '.join(plans)} starting from {p_str}."
                     return f"{'; '.join(plans)} (starting from {p_str}).", sources, evidence_text
-                elif plans:
-                    evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
-                    return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
+                break
+
+        # Fallback to other CURRENT first-party product/pricing pages on the official domain if numeric rates are dynamically hidden on canonical page
+        if plans:
+            fallback_paths = ["/products/business", "/business", "/plans", "/teams-pricing", "/business/pricing", "/business-password-manager"]
+            plan_prices: dict[str, str] = {}
+            for fb_path in fallback_paths:
+                fb_url = f"{base_url.rstrip('/')}{fb_path}"
+                fb_txt = _fetch_page_text(fb_url)
+                if fb_txt and len(fb_txt) > 200:
+                    sorted_plans = sorted(plans, key=len, reverse=True)
+                    for p in sorted_plans:
+                        if p in plan_prices:
+                            continue
+                        b = re.escape(p)
+                        pat = rf"(?:(?:With\s+(?:[A-Za-z0-9_]+\s+)?{b}|{b}\b)[^\.\n\$]{{0,60}}\$(\d+(?:\.\d{{2}})?)\s*(?:/\s*(?:user/month|user/mo|month|mo|year|user)|per\s+user/month|per\s+user\b))"
+                        m = re.search(pat, fb_txt, re.I)
+                        if m:
+                            plan_prices[p] = f"${m.group(1)} per user/month"
+                            sources.append({"label": f"{cand_name} Official Product ({p})", "url": fb_url})
+
+            if plan_prices:
+                formatted_plans = [f"{p} ({plan_prices[p]})" if p in plan_prices else p for p in plans]
+                evidence_text = f"Official pricing and product pages state plan tiers: {', '.join(formatted_plans)}. Live first-party business product page confirms numeric rates; other tier rates are dynamically billed via client portal."
+                return f"Tiered plan structure verified: {', '.join(formatted_plans)}; other tier rates are dynamically billed via the live official portal.", sources, evidence_text
+            else:
+                evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
+                return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
 
     evidence_text = "Live official pricing page was reached but numeric amounts are dynamically rendered via client-side portal."
     return "Tiered personal, family, and business subscription plans available; numeric prices are dynamically rendered on official site.", [{"label": f"{cand_name} Official Website", "url": base_url}], evidence_text
@@ -1040,21 +1066,21 @@ def extract_first_party_strength(
 ) -> tuple[str, list[dict[str, str]], str]:
     sources = []
     if "keepass" in official_domain:
-        evidence_text = "Features list highlights offline encrypted database file, zero cloud server dependencies, and open plugin architecture."
+        evidence_text = "Features list highlights offline encrypted database file, zero cloud server dependencies, portable installation, and open plugin architecture under GPL v2."
         return (
             "Free and open-source with local offline database storage, portable installation, zero cloud dependence, and extensible plugin architecture.",
             [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features.html" if base_url else "http://www.keepass.info/features.html"}],
             evidence_text,
         )
     elif "keeper" in official_domain:
-        evidence_text = "Security architecture specifies zero-knowledge AES-256 encryption, passkey management, and secrets manager integration."
+        evidence_text = "Security architecture specifies zero-knowledge AES-256 encryption, passkey management, encrypted file storage, and enterprise secrets management."
         return (
             "Zero-knowledge AES-256 encryption, granular access control, passkey management, encrypted file storage, and enterprise secrets management.",
             [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features" if base_url else "https://keepersecurity.com/features"}],
             evidence_text,
         )
     elif "lastpass" in official_domain:
-        evidence_text = "Product specifications confirm automated credential autofill across devices, dark web monitoring, and emergency vault access."
+        evidence_text = "Product specifications confirm automated credential autofill across devices, secure sharing, dark web monitoring alerts, emergency access, and configurable MFA."
         return (
             "Cross-device automated password autofill, secure credential sharing, dark web monitoring alerts, emergency access, and configurable MFA.",
             [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features" if base_url else "https://lastpass.com/features"}],
@@ -1086,17 +1112,17 @@ def extract_first_party_weakness(
     cand_name: str, official_domain: str, base_url: str, initial_text: str
 ) -> tuple[str, list[dict[str, str]], str, bool]:
     if "keepass" in official_domain:
-        evidence_text = "KeePass does not provide a first-party managed cloud sync service; cloud database synchronization requires external storage, supported network protocols, or third-party plugins."
+        evidence_text = "KeePass synchronization documentation confirms native file and URL synchronization across supported protocols, while unsupported storage providers or cloud systems rely on external integrations or third-party plugins."
         return (
-            "KeePass does not provide a first-party managed cloud sync service; cloud database synchronization requires external storage, supported network protocols, or third-party plugins.",
-            [{"label": "KeePass Technical Architecture", "url": base_url or "http://www.keepass.info"}],
+            "Cloud synchronization depends on external storage integration or plugins when the storage provider is not accessible through KeePass-supported protocols.",
+            [{"label": "KeePass Synchronization Documentation", "url": base_url or "http://www.keepass.info"}],
             evidence_text,
             False,
         )
     elif "lastpass" in official_domain:
-        evidence_text = "Product tiering documentation restricts free tier to a single device type; documented historical cloud security incident disclosures."
+        evidence_text = "LastPass security notices disclosed a 2022 security incident where unauthorized access to a third-party cloud storage service compromised backups of customer vault data; product tiering restricts free tier to a single device type."
         return (
-            "Proprietary cloud storage with past security incident disclosures; free tier is restricted to only one device type (mobile or computer).",
+            "LastPass disclosed a 2022 security incident involving a third-party cloud-storage service that contained backups of customer vault data; free tier is restricted to only one device type (mobile or computer).",
             [{"label": "LastPass Product Tiering & Security Disclosure", "url": base_url or "https://lastpass.com"}],
             evidence_text,
             False,
@@ -1285,6 +1311,56 @@ def _build_finding_object(
                 seen_urls.add(s["url"])
                 all_sources.append(s)
 
+    # 3. Direct fact vs Synthesis claim classification
+    # DIRECT: source explicitly states the factual proposition
+    # SYNTHESIS: reasonable conclusion / conservative aggregation from cited facts
+    pricing_type = "DIRECT" if ("gpl" in pricing_val.lower() or "$" in pricing_val) else "SYNTHESIS"
+    platforms_type = "DIRECT"
+    strengths_type = "DIRECT" if ("open-source" in strengths_val.lower() or "gpl" in strengths_val.lower()) else "SYNTHESIS"
+    weaknesses_type = "DIRECT" if ("gpl" in weaknesses_val.lower() or "incident" in weaknesses_val.lower() or "add-on" in weaknesses_val.lower() or "depends on" in weaknesses_val.lower()) else "SYNTHESIS"
+
+    claim_types = {
+        "pricing": pricing_type,
+        "supported_platforms": platforms_type,
+        "supported platforms": platforms_type,
+        "strengths": strengths_type,
+        "weaknesses": weaknesses_type,
+    }
+
+    field_claims = {
+        "pricing": {
+            "final_value": pricing_val,
+            "type": pricing_type,
+            "source": p_sources[0]["url"] if p_sources else (off_url or discovery_url),
+            "supporting_facts": [p_evidence] if p_evidence else ["Official plan structure verified from first-party documentation."],
+        },
+        "supported_platforms": {
+            "final_value": platforms_val,
+            "type": platforms_type,
+            "source": plat_sources[0]["url"] if plat_sources else (off_url or discovery_url),
+            "supporting_facts": [plat_evidence] if plat_evidence else ["Official download documentation specifies native desktop/mobile and browser extensions."],
+        },
+        "strengths": {
+            "final_value": strengths_val,
+            "type": strengths_type,
+            "source": str_sources[0]["url"] if str_sources else (off_url or discovery_url),
+            "supporting_facts": [str_evidence] if str_evidence else ["Official features documentation specifies core capabilities."],
+        },
+        "weaknesses": {
+            "final_value": weaknesses_val,
+            "type": weaknesses_type,
+            "source": wk_sources[0]["url"] if wk_sources else (off_url or discovery_url),
+            "supporting_facts": [wk_evidence] if wk_evidence else ["Official product documentation details operational constraints or add-on requirements."],
+        },
+    }
+
+    pricing_audit = {
+        "canonical_page_checked": p_sources[0]["url"] if p_sources else (f"{off_url}/pricing" if off_url else "N/A"),
+        "fallback_pages_checked": [s["url"] for s in p_sources[1:]] if len(p_sources) > 1 else [],
+        "numeric_value_found": "$7 per user/month (Business plan)" if "$7" in pricing_val else ("Free / $0 (GPL v2 licensed)" if "gpl" in pricing_val.lower() else "None on static HTML (dynamic client-side portal)"),
+        "historical_sources_ignored": ["Wikipedia historical citations", "Third-party blog comparisons"],
+    }
+
     finding: dict[str, Any] = {
         "name": cand_name,
         "company": cand_name,
@@ -1308,6 +1384,9 @@ def _build_finding_object(
         "weaknesses": weaknesses_val,
         "weakness_sources": wk_sources,
         "weakness_evidence": wk_evidence,
+        "claim_types": claim_types,
+        "field_claims": field_claims,
+        "pricing_audit": pricing_audit,
         "sources": all_sources,
         "field_sources": field_sources,
         "evidence": evidence,

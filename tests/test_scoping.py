@@ -96,6 +96,10 @@ def test_disabled_lessons_do_not_apply_after_restart(tmp_path, monkeypatch):
     db = tmp_path / "sibyl.db"
     monkeypatch.setattr(settings, "memory_db_path", lambda: db)
     monkeypatch.setattr(service, "active_provider", lambda: LocalResearchProvider())
+    monkeypatch.setattr(
+        "prior.providers.local.run_research",
+        lambda spec, contract: {"type": "object", "value": {"findings": []}},
+    )
 
     ws = "ws_restart_test"
     j1 = service.specify(ws, "Research the top five AI wallet companies.")

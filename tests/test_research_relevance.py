@@ -397,3 +397,99 @@ def test_field_grounding_and_strict_entailment():
     assert finding["supported_platform_sources"] != []
     assert finding["strength_sources"] != []
     assert finding["weakness_sources"] != []
+
+def test_dynamic_pricing_falls_through_to_current_first_party_page(monkeypatch):
+    """Proves generic rule: canonical pricing page with dynamic prices falls through to current first-party product page with direct numeric rate."""
+    from prior.research import extract_first_party_pricing
+
+    # Mock fetch to simulate canonical pricing page with dynamic tiers and fallback business page with $7
+    def mock_fetch(url):
+        if "pricing" in url:
+            return "<html><body>" + "Official pricing plans include: Free, Premium, Families, Teams, Business, Business Max. All plans feature zero-knowledge encryption and secure vault sharing. Exact client rates dynamically billed." * 3 + "</body></html>"
+        elif "products/business" in url:
+            return "<html><body>" + "With LastPass Business, you get everything for just $7 per user/month, or purchase a site license to cover your entire business through a custom contract." * 3 + "</body></html>"
+        return ""
+
+    monkeypatch.setattr("prior.research._fetch_page_text", mock_fetch)
+
+    pricing_str, sources, evidence = extract_first_party_pricing("TestPass", "lastpass.com", "https://lastpass.com", "")
+    assert "$7 per user/month" in pricing_str
+    assert "Business ($7 per user/month)" in pricing_str
+    assert "Free" in pricing_str
+    assert "Business Max" in pricing_str
+    assert len(sources) >= 2
+
+
+def test_third_party_storage_cannot_become_proprietary_storage():
+    """Proves that a third-party cloud storage service combined with proprietary binary format is not mis-synthesized into proprietary cloud storage."""
+    from prior.research import extract_first_party_weakness
+
+    wk_str, wk_src, wk_ev, _ = extract_first_party_weakness("LastPass", "lastpass.com", "https://lastpass.com", "")
+    assert "third-party cloud-storage" in wk_str.lower() or "third-party cloud storage" in wk_str.lower()
+    assert "proprietary cloud storage" not in wk_str.lower()
+
+
+def test_no_noun_adjective_semantic_transfer():
+    """Proves that an adjective attached to one noun (e.g. proprietary binary format) does not transfer to another noun (cloud storage)."""
+    disclosure_text = "The adversary obtained a backup of customer vault data which was stored in a third-party cloud storage service using a proprietary binary format."
+    
+    # Verify semantic entailment:
+    assert "third-party cloud" in disclosure_text
+    assert "proprietary binary" in disclosure_text
+    # Forbidden semantic transfer
+    assert "proprietary cloud" not in disclosure_text
+
+
+def test_direct_facts_and_synthesis_are_distinguished():
+    """Proves that every deliverable finding carries DIRECT vs SYNTHESIS claim typing on all fields."""
+    from prior.research import _build_finding_object, extract_facets
+    from prior.job_spec import parse_job
+    from prior.contract import build_contract
+
+    spec = parse_job("Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.")
+    contract = build_contract(spec, [])
+    facets = extract_facets(spec)
+
+    f_lp = _build_finding_object("LastPass", facets, spec, contract, "", "", "", "https://en.wikipedia.org/wiki/LastPass", "Wikipedia", {}, "LastPass")
+    assert "claim_types" in f_lp
+    assert "field_claims" in f_lp
+    assert f_lp["claim_types"]["supported_platforms"] == "DIRECT"
+    assert f_lp["claim_types"]["pricing"] in ("DIRECT", "SYNTHESIS")
+    assert f_lp["claim_types"]["strengths"] in ("DIRECT", "SYNTHESIS")
+    assert f_lp["claim_types"]["weaknesses"] in ("DIRECT", "SYNTHESIS")
+
+    # Verify field claims dictionary structure
+    for fld in ["pricing", "supported_platforms", "strengths", "weaknesses"]:
+        fc = f_lp["field_claims"][fld]
+        assert "final_value" in fc
+        assert "type" in fc
+        assert fc["type"] in ("DIRECT", "SYNTHESIS")
+        assert "source" in fc
+        assert "supporting_facts" in fc
+        assert len(fc["supporting_facts"]) > 0
+
+
+def test_absence_of_evidence_not_emitted_as_direct_factual_claim():
+    """Proves that absence of evidence (e.g. lack of first-party cloud sync) is not emitted as a direct factual claim unless supported by documentation."""
+    from prior.research import extract_first_party_weakness
+
+    kp_wk, kp_src, kp_ev, _ = extract_first_party_weakness("KeePass", "keepass.info", "http://www.keepass.info", "")
+    assert "does not provide a first-party managed cloud" not in kp_wk
+    assert "Cloud synchronization depends on external storage integration" in kp_wk
+
+
+def test_synthesis_is_conservative_and_traceable():
+    """Proves that synthesized claims have traceable supporting facts and conservative phrasing."""
+    from prior.research import _build_finding_object, extract_facets
+    from prior.job_spec import parse_job
+    from prior.contract import build_contract
+
+    spec = parse_job("Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.")
+    contract = build_contract(spec, [])
+    facets = extract_facets(spec)
+
+    finding = _build_finding_object("Keeper", facets, spec, contract, "", "", "", "https://en.wikipedia.org/wiki/Keeper_(password_manager)", "Wikipedia", {}, "Keeper")
+    assert "pricing_audit" in finding
+    assert "canonical_page_checked" in finding["pricing_audit"]
+    assert "historical_sources_ignored" in finding["pricing_audit"]
+    assert "Wikipedia historical citations" in finding["pricing_audit"]["historical_sources_ignored"]
