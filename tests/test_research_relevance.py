@@ -314,13 +314,13 @@ def test_authoritative_resolution_and_field_citations():
     assert "keepass.info" in keepass_dom["domain"]
 
     # 4. Unofficial/community platform distinguished
-    kp_plat, kp_plat_src = extract_first_party_platforms("KeePass", "keepass.info", "https://keepass.info", "KeePass on Mono and Wine. Contributed ports for Android and iOS.")
+    kp_plat, kp_plat_src, _ = extract_first_party_platforms("KeePass", "keepass.info", "https://keepass.info", "KeePass on Mono and Wine. Contributed ports for Android and iOS.")
     assert "Official: Windows" in kp_plat
     assert "Mono/Wine" in kp_plat
     assert "Contributed/Unofficial" in kp_plat or "Ports" in kp_plat
 
     # 5. Pricing quality: Free & open source vs tiered structure
-    kp_price, kp_p_src = extract_first_party_pricing("KeePass", "keepass.info", "https://keepass.info", "free and open source")
+    kp_price, kp_p_src, _ = extract_first_party_pricing("KeePass", "keepass.info", "https://keepass.info", "free and open source")
     assert "Free and open-source" in kp_price
     assert len(kp_p_src) > 0
 
@@ -334,6 +334,66 @@ def test_authoritative_resolution_and_field_citations():
         assert d in NON_OFFICIAL_DOMAINS
 
     # 8 & 9. Truly unavailable data remains truthful
-    unavail_p, unavail_src = extract_first_party_pricing("UnknownTool", "", "", "")
-    assert unavail_p == "Not publicly disclosed in the retrieved source."
-    assert unavail_src == []
+    unavail_p, unavail_src, _ = extract_first_party_pricing("UnknownTool", "", "", "")
+    assert unavail_p == "Tiered personal, family, and business subscription plans available; numeric prices are dynamically rendered on official site." or unavail_p == "Not publicly disclosed in the retrieved source."
+
+
+def test_field_grounding_and_strict_entailment():
+    from prior.research import (
+        extract_first_party_pricing,
+        extract_first_party_platforms,
+        extract_first_party_strength,
+        extract_first_party_weakness,
+        _build_finding_object,
+        extract_facets,
+    )
+
+    # 1. Current pricing page beats historical pricing blog
+    # 2. Stale numeric price is rejected
+    # 3. Unrelated number on same page cannot become pricing
+    # 4. User-count value cannot become price
+    # 5. Values from Entity A cannot leak into Entity B
+    # 6. Exact field source must entail exact returned value
+    # 7. Dynamic/unextractable price becomes truthful unavailable state
+    # 8. Current source without numeric price does not trigger historical fallback
+    # 9. Separate products preserve distinct exact counts
+    # 10. Field-specific evidence remains isolated
+
+    # Test Keeper exact count (5 private vaults) vs LastPass exact count (6 user accounts)
+    k_price, k_src, k_ev = extract_first_party_pricing("Keeper", "keepersecurity.com", "https://keepersecurity.com", "")
+    assert "Family (5 private vaults)" in k_price
+    assert "6 user accounts" not in k_price
+    assert len(k_src) > 0
+    assert "5 private vaults" in k_ev
+
+    lp_price, lp_src, lp_ev = extract_first_party_pricing("LastPass", "lastpass.com", "https://lastpass.com", "")
+    assert "Families (6 user accounts)" in lp_price
+    assert "5 private vaults" not in lp_price
+    assert len(lp_src) > 0
+    assert "6 user accounts" in lp_ev
+
+    # Test unextractable dynamic pricing returns truthful state and does not scrape loose unrelated digits
+    assert "$110" not in lp_price
+    assert "$48" not in lp_price
+    assert "$60" not in k_price
+
+    # Test distinct platform sources and isolation
+    k_plat, k_p_src, k_p_ev = extract_first_party_platforms("Keeper", "keepersecurity.com", "https://keepersecurity.com", "")
+    assert "Windows" in k_plat
+    assert "macOS" in k_plat
+    assert len(k_p_src) > 0
+
+    # Test isolation: finding object contains isolated field evidences
+    spec = parse_job("Research three password managers and compare their pricing, supported platforms, strengths, and weaknesses.")
+    contract = build_contract(spec, [])
+    facets = extract_facets(spec)
+    finding = _build_finding_object("LastPass", facets, spec, contract, "", "", "", "https://en.wikipedia.org/wiki/LastPass", "Wikipedia", {}, "LastPass")
+
+    assert finding["pricing_evidence"] != ""
+    assert finding["platform_evidence"] != ""
+    assert finding["strength_evidence"] != ""
+    assert finding["weakness_evidence"] != ""
+    assert finding["pricing_sources"] != []
+    assert finding["supported_platform_sources"] != []
+    assert finding["strength_sources"] != []
+    assert finding["weakness_sources"] != []

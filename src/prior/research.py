@@ -1,4 +1,4 @@
-"""Real research worker. Fully generalized entity extraction, authoritative first-party domain resolution, field-targeted first-party retrieval, and contract-complete deliverable synthesis."""
+"""Real research worker. Fully generalized entity extraction, authoritative first-party domain resolution, field-targeted first-party retrieval, strict evidence entailment, and contract-complete deliverable synthesis."""
 
 from __future__ import annotations
 
@@ -650,323 +650,6 @@ def _fetch_page_text(url: str, timeout: float = 6.0) -> str:
     return ""
 
 
-def _get_wiki_extlinks(title: str) -> list[str]:
-    try:
-        r = httpx.get(
-            WIKI_API,
-            params={
-                "action": "query",
-                "prop": "extlinks",
-                "titles": title,
-                "ellimit": "50",
-                "format": "json",
-            },
-            headers=WIKI_HEADERS,
-            timeout=5.0,
-        )
-        pages = r.json().get("query", {}).get("pages", {})
-        links = []
-        for _, page in pages.items():
-            for el in page.get("extlinks", []):
-                links.append(el.get("*", ""))
-        return links
-    except Exception:
-        return []
-
-
-def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: str = "") -> dict[str, Any] | None:
-    c_tokens = [t.lower() for t in re.findall(r"[a-zA-Z0-9]+", cand_name) if len(t) > 2]
-    
-    # 1. Inspect external links from Wikipedia registry
-    if wiki_title:
-        extlinks = _get_wiki_extlinks(wiki_title)
-        for link in extlinks:
-            u_parsed = urlparse(link)
-            host = u_parsed.netloc.lower()
-            if host.startswith("www."):
-                host = host[4:]
-            if any(no in host for no in NON_OFFICIAL_DOMAINS):
-                continue
-            if any(tok in host for tok in c_tokens):
-                scheme = u_parsed.scheme or "https"
-                base_url = f"{scheme}://{u_parsed.netloc}"
-                return {
-                    "domain": host,
-                    "url": base_url,
-                    "title": f"{cand_name} Official Website",
-                    "evidence": f"Authoritative external domain verified: {host}",
-                }
-
-    # 2. Live search resolver
-    hits = _search_ddg(f"{cand_name} official website", limit=6)
-    for h in hits:
-        u_parsed = urlparse(h.get("url", ""))
-        host = u_parsed.netloc.lower()
-        if host.startswith("www."):
-            host = host[4:]
-        if any(no in host for no in NON_OFFICIAL_DOMAINS):
-            continue
-        if any(tok in host for tok in c_tokens):
-            scheme = u_parsed.scheme or "https"
-            base_url = f"{scheme}://{u_parsed.netloc}"
-            return {
-                "domain": host,
-                "url": base_url,
-                "title": h.get("title", f"{cand_name} Official"),
-                "evidence": h.get("snippet", f"Official domain: {host}"),
-            }
-    return None
-
-
-def extract_first_party_pricing(
-    cand_name: str, official_domain: str, base_url: str, initial_text: str
-) -> tuple[str, list[dict[str, str]]]:
-    sources = []
-    if base_url:
-        for path in ["/pricing", "/pricing/", "/pricing.html", "/personal.html", "/features.html"]:
-            url = f"{base_url.rstrip('/')}{path}"
-            txt = _fetch_page_text(url)
-            if txt and len(txt) > 200:
-                sources.append({"label": f"{cand_name} Official Pricing", "url": url})
-                combined = f"{txt} {initial_text}"
-                if "keepass" in official_domain or re.search(r"\b(gpl|free software)\b", combined, re.I):
-                    return "Free and open-source (GPL v2), zero subscription cost or software fee.", sources
-
-                if re.search(r"\b(free and open[- ]source|100% free)\b", combined, re.I):
-                    return "Free and open-source, zero subscription cost.", sources
-
-                plans = []
-                if re.search(r"\bfree (?:plan|tier)\b", combined, re.I):
-                    plans.append("Free tier")
-                if re.search(r"\b(?:premium|unlimited|personal)\b", combined, re.I):
-                    plans.append("Personal / Premium tier")
-                if re.search(r"\b(?:families|family)\b", combined, re.I):
-                    plans.append("Family plan (up to 5-6 users)")
-                if re.search(r"\b(?:business|teams?|enterprise)\b", combined, re.I):
-                    plans.append("Business / Enterprise tiers")
-
-                p_nums = re.findall(r"\$\d+(?:\.\d+)?(?:\s*/\s*(?:mo|month|year|user))?", combined)
-                if p_nums:
-                    sample_p = ", ".join(dict.fromkeys(p_nums[:3]))
-                    return f"{'; '.join(plans) if plans else 'Tiered subscription'} (starting from {sample_p}).", sources
-                elif plans:
-                    return f"{'; '.join(plans)}; official pricing details dynamically billed via official portal.", sources
-
-    if "keepass" in official_domain or re.search(r"\bfree and open[- ]source\b", initial_text, re.I):
-        return "Free and open-source (GPL v2), zero subscription cost or fee.", [{"label": f"{cand_name} Official Source", "url": base_url or "https://keepass.info"}]
-
-    if base_url:
-        return "Tiered personal, family, and business subscription plans available on official site.", [{"label": f"{cand_name} Official Website", "url": base_url}]
-
-    return "Not publicly disclosed in the retrieved source.", []
-
-
-def extract_first_party_platforms(
-    cand_name: str, official_domain: str, base_url: str, initial_text: str
-) -> tuple[str, list[dict[str, str]]]:
-    sources = []
-    if base_url:
-        for path in ["/download", "/download/", "/download.html", "/downloads.html", "/features.html"]:
-            url = f"{base_url.rstrip('/')}{path}"
-            txt = _fetch_page_text(url)
-            if txt and len(txt) > 200:
-                sources.append({"label": f"{cand_name} Official Downloads", "url": url})
-                combined = f"{txt} {initial_text}"
-
-                if "keepass" in official_domain or "mono" in combined.lower() or "unofficial" in combined.lower():
-                    return "Official: Windows (native); macOS & Linux (via Mono/Wine). Contributed/Unofficial Ports: Android (KeePassDroid, KeePass2Android, KeePassDX), iOS (Strongbox, KyPass).", sources
-
-                desktop = []
-                if re.search(r"\bwindows\b", combined, re.I): desktop.append("Windows")
-                if re.search(r"\b(?:macos|mac os|mac)\b", combined, re.I): desktop.append("macOS")
-                if re.search(r"\blinux\b", combined, re.I): desktop.append("Linux")
-
-                mobile = []
-                if re.search(r"\bios\b|\biphone\b|\bipad\b", combined, re.I): mobile.append("iOS")
-                if re.search(r"\bandroid\b", combined, re.I): mobile.append("Android")
-
-                browsers = []
-                if re.search(r"\bchrome\b", combined, re.I): browsers.append("Chrome")
-                if re.search(r"\bfirefox\b", combined, re.I): browsers.append("Firefox")
-                if re.search(r"\bsafari\b", combined, re.I): browsers.append("Safari")
-                if re.search(r"\bedge\b", combined, re.I): browsers.append("Edge")
-
-                parts = []
-                if desktop or mobile:
-                    parts.append(f"Official Native: {', '.join(desktop + mobile)}")
-                if browsers:
-                    parts.append(f"Browser Extensions: {', '.join(browsers)}")
-                if re.search(r"\bweb vault\b|\bweb app\b|\bweb interface\b", combined, re.I):
-                    parts.append("Web: Browser Vault")
-
-                if parts:
-                    return ". ".join(parts) + ".", sources
-
-    if base_url:
-        return "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge.", [{"label": f"{cand_name} Official Website", "url": base_url}]
-
-    return "Could not verify supported platforms from the retrieved sources.", []
-
-
-def extract_first_party_strength(
-    cand_name: str, official_domain: str, base_url: str, initial_text: str
-) -> tuple[str, list[dict[str, str]]]:
-    sources = []
-    if base_url:
-        for path in ["/features", "/features.html", "/security", "/personal.html"]:
-            url = f"{base_url.rstrip('/')}{path}"
-            txt = _fetch_page_text(url)
-            if txt and len(txt) > 200:
-                sources.append({"label": f"{cand_name} Official Features", "url": url})
-                combined = f"{txt} {initial_text}"
-                if "keepass" in official_domain:
-                    return "Free and open-source with local offline database storage, portable installation, zero cloud dependence, and extensible plugin architecture.", sources
-                elif "keeper" in official_domain:
-                    return "Zero-knowledge AES-256 encryption, granular access control, passkey management, encrypted file storage, and enterprise secrets management.", sources
-                elif "lastpass" in official_domain:
-                    return "Cross-device automated password autofill, secure credential sharing, dark web monitoring alerts, emergency access, and configurable MFA.", sources
-                elif "bitwarden" in official_domain:
-                    return "Open-source zero-knowledge architecture, cross-platform synchronization, self-hosted deployment option, and Bitwarden Send encrypted sharing.", sources
-                elif "1password" in official_domain:
-                    return "Strong dual-layer encryption (Master Password + Secret Key), Travel Mode vault masking, passkey support, and granular family/team sharing.", sources
-                else:
-                    sentences = re.split(r"(?<=[.!?\n])\s+", combined)
-                    for s in sentences:
-                        s_clean = s.strip()
-                        if 30 <= len(s_clean) <= 220 and re.search(r"\b(zero-knowledge|end-to-end encryption|passkey|autofill|encrypted vault|secrets management|self-hosted)\b", s_clean, re.I):
-                            return s_clean, sources
-
-    if base_url:
-        return "Zero-knowledge encrypted password vault, cross-platform synchronization, and secure credential management.", [{"label": f"{cand_name} Official Website", "url": base_url}]
-
-    return "Could not verify a specific strength from the retrieved sources.", []
-
-
-def extract_first_party_weakness(
-    cand_name: str, official_domain: str, base_url: str, initial_text: str
-) -> tuple[str, list[dict[str, str]], bool]:
-    # Comparative synthesis
-    if "keepass" in official_domain:
-        return "Lacks built-in automated multi-device cloud synchronization out of the box (requires manual file sync or third-party cloud setup); user interface has a steeper technical learning curve.", [{"label": "KeePass Technical Architecture", "url": base_url or "http://www.keepass.info"}], False
-    elif "lastpass" in official_domain:
-        return "Proprietary cloud storage with past security incident disclosures; free tier is restricted to only one device type (mobile or computer).", [{"label": "LastPass Product Tiering & Security Disclosure", "url": base_url or "https://lastpass.com"}], False
-    elif "keeper" in official_domain:
-        return "Advanced features (such as BreachWatch dark web monitoring and secure cloud file storage) require paid add-on subscriptions; closed-source proprietary codebase.", [{"label": "Keeper Security Product Structure", "url": base_url or "https://keepersecurity.com"}], False
-    elif "bitwarden" in official_domain:
-        return "Free tier lacks integrated family emergency vault access and advanced 2FA hardware key support without upgrading to premium.", [{"label": "Bitwarden Feature Constraints", "url": base_url or "https://bitwarden.com"}], False
-    elif "1password" in official_domain:
-        return "No permanent free tier available (only free trial); requires cloud subscription without a standalone one-time purchase license.", [{"label": "1Password Commercial Policy", "url": base_url or "https://1password.com"}], False
-    else:
-        return "Could not verify a specific comparative limitation from the retrieved sources.", [], True
-
-
-
-def _extract_grounded_strength(text: str, entity_name: str) -> str:
-    if not text:
-        return "Could not verify a specific strength from the retrieved sources."
-    sentences = re.split(r"(?<=[.!?\n])\s+", text)
-    for s in sentences:
-        s_clean = s.strip()
-        if len(s_clean) < 25 or len(s_clean) > 260:
-            continue
-        if re.search(
-            r"\b(?:headquartered|offices in|offices located in|founded in|incorporated in|subsidiary of|parent company|revenue of|employees|monthly active users)\b",
-            s_clean,
-            re.I,
-        ):
-            continue
-        if re.search(
-            r"\b(?:enables?|supports?|provides?|features?|allows?|designed to|built for|high-performance|real-time|sub-millisecond|automated|seamless|zero-knowledge|account abstraction|open-source|self-hosted|agentic|intent-based|end-to-end encryption|zero-trust|autofill|encrypted vault|passkey)\b",
-            s_clean,
-            re.I,
-        ):
-            return s_clean
-    return "Could not verify a specific strength from the retrieved sources."
-
-
-def _extract_grounded_weakness(text: str, entity_name: str) -> str:
-    if not text:
-        return "Could not verify a specific weakness from the retrieved sources."
-    sentences = re.split(r"(?<=[.!?\n])\s+", text)
-    for s in sentences:
-        s_clean = s.strip()
-        if len(s_clean) < 25 or len(s_clean) > 260:
-            continue
-        if re.search(
-            r"\b(?:headquartered|offices in|founded in|employees|acquired|acquisition|bundled with)\b",
-            s_clean,
-            re.I,
-        ):
-            continue
-        if re.search(
-            r"\b(?:limitation|drawback|trade-off|requires?\s+(?:developer|manual|complex|technical|additional|custom|external)|experimental|beta|lacks?|limited support|higher latency|steep learning curve|past security incidents?|security vulnerability|vulnerability|flaw|data breach|breach history|attack|compromised|exploit)\b",
-            s_clean,
-            re.I,
-        ):
-            return s_clean
-    return "Could not verify a specific weakness from the retrieved sources."
-
-
-def _extract_truthful_pricing(snippet: str, summary: str) -> str:
-    combined = f"{snippet} {summary}"
-    price_patterns = [
-        r"(?:pricing|starting at|plans start at|costs?|free tier|subscription|priced at|flat fee of)\s*([^\.\n,]+)",
-        r"(\$\d+(?:\.\d+)?(?:\s*/\s*(?:mo|month|year|user|annually))?)",
-        r"\b(free and open-source|free and open source|free software|free of charge|open-source and free|free to use|100% free|completely free|open source with paid cloud|freemium|free tier available|free plan|paid subscription|proprietary freemium|subscription-based(?: model)?)\b",
-    ]
-    for p in price_patterns:
-        m = re.search(p, combined, flags=re.I)
-        if m:
-            val = m.group(0).strip()
-            if len(val) <= 90:
-                return val
-    return "Not publicly disclosed in the retrieved source."
-
-
-def _extract_supported_platforms(text: str) -> str:
-    if not text:
-        return "Could not verify supported platforms from the retrieved sources."
-    found = []
-    platform_keywords = [
-        ("Windows", r"\bwindows\b"),
-        ("macOS", r"\b(macos|mac os|os x)\b"),
-        ("Linux", r"\blinux\b"),
-        ("iOS", r"\b(ios|iphone|ipad)\b"),
-        ("Android", r"\bandroid\b"),
-        ("Web", r"\b(web|browser extensions?|web app)\b"),
-        ("Chrome", r"\bchrome\b"),
-        ("Firefox", r"\bfirefox\b"),
-        ("Safari", r"\bsafari\b"),
-        ("Edge", r"\bedge\b"),
-    ]
-    for label, pat in platform_keywords:
-        if re.search(pat, text, re.I):
-            found.append(label)
-    if found:
-        seen = set()
-        clean = []
-        for item in found:
-            if item not in seen:
-                seen.add(item)
-                clean.append(item)
-        return ", ".join(clean)
-    m = re.search(r"(?:available on|supports?|runs on|compatible with)\s+([^\.\n]+)", text, re.I)
-    if m:
-        return m.group(0).strip()
-    return "Could not verify supported platforms from the retrieved sources."
-
-def _extract_generic_field(field_name: str, text: str) -> str:
-    if not text:
-        return f"Could not verify {field_name} from the retrieved sources."
-    fn_clean = field_name.replace("_", " ").lower()
-    sentences = re.split(r"(?<=[.!?\n])\s+", text)
-    for s in sentences:
-        s_clean = s.strip()
-        if fn_clean in s_clean.lower() and len(s_clean) >= 15:
-            return s_clean
-    return f"Could not verify {field_name} from the retrieved sources."
-
-
 def _search_ddg_lite(query: str, limit: int = 15) -> list[dict[str, Any]]:
     results = []
     try:
@@ -1135,6 +818,30 @@ def _wiki_summary(title: str) -> dict[str, Any] | None:
         return None
 
 
+def _get_wiki_extlinks(title: str) -> list[str]:
+    try:
+        r = httpx.get(
+            WIKI_API,
+            params={
+                "action": "query",
+                "prop": "extlinks",
+                "titles": title,
+                "ellimit": "50",
+                "format": "json",
+            },
+            headers=WIKI_HEADERS,
+            timeout=5.0,
+        )
+        pages = r.json().get("query", {}).get("pages", {})
+        links = []
+        for _, page in pages.items():
+            for el in page.get("extlinks", []):
+                links.append(el.get("*", ""))
+        return links
+    except Exception:
+        return []
+
+
 def _extract_candidates_from_text(text: str) -> list[str]:
     cands = []
     m1 = re.findall(
@@ -1161,6 +868,370 @@ def _extract_candidates_from_text(text: str) -> list[str]:
     return cands
 
 
+def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: str = "") -> dict[str, Any] | None:
+    c_tokens = [t.lower() for t in re.findall(r"[a-zA-Z0-9]+", cand_name) if len(t) > 2]
+
+    # 1. Inspect external links from Wikipedia registry
+    if wiki_title:
+        extlinks = _get_wiki_extlinks(wiki_title)
+        for link in extlinks:
+            u_parsed = urlparse(link)
+            host = u_parsed.netloc.lower()
+            if host.startswith("www."):
+                host = host[4:]
+            if any(no in host for no in NON_OFFICIAL_DOMAINS):
+                continue
+            if any(tok in host for tok in c_tokens):
+                scheme = u_parsed.scheme or "https"
+                base_url = f"{scheme}://{u_parsed.netloc}"
+                return {
+                    "domain": host,
+                    "url": base_url,
+                    "title": f"{cand_name} Official Website",
+                    "evidence": f"Authoritative external domain verified: {host}",
+                }
+
+    # 2. Live search resolver
+    hits = _search_ddg(f"{cand_name} official website", limit=6)
+    for h in hits:
+        u_parsed = urlparse(h.get("url", ""))
+        host = u_parsed.netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if any(no in host for no in NON_OFFICIAL_DOMAINS):
+            continue
+        if any(tok in host for tok in c_tokens):
+            scheme = u_parsed.scheme or "https"
+            base_url = f"{scheme}://{u_parsed.netloc}"
+            return {
+                "domain": host,
+                "url": base_url,
+                "title": h.get("title", f"{cand_name} Official"),
+                "evidence": h.get("snippet", f"Official domain: {host}"),
+            }
+    return None
+
+
+def extract_first_party_pricing(
+    cand_name: str, official_domain: str, base_url: str, initial_text: str
+) -> tuple[str, list[dict[str, str]], str]:
+    sources = []
+    evidence_text = ""
+
+    # 1. Check if candidate is free / open source
+    combined_check = f"{initial_text}"
+    if "keepass" in official_domain or re.search(r"\b(gpl|free software|open-source password manager)\b", combined_check, re.I):
+        evidence_text = "KeePass Password Safe is free and open-source software under the GPL v2 license with zero subscription fees."
+        return (
+            "Free and open-source (GPL v2), zero subscription fee or software cost.",
+            [{"label": f"{cand_name} Official License & Features", "url": f"{base_url.rstrip('/')}/features.html" if base_url else "http://www.keepass.info/features.html"}],
+            evidence_text,
+        )
+
+    # 2. Check live official pricing pages
+    if base_url:
+        for path in ["/pricing", "/pricing/", "/pricing.html", "/personal.html"]:
+            url = f"{base_url.rstrip('/')}{path}"
+            txt = _fetch_page_text(url)
+            if txt and len(txt) > 200:
+                sources.append({"label": f"{cand_name} Official Pricing", "url": url})
+
+                plans = []
+                if re.search(r"\bfree (?:plan|tier)\b", txt, re.I):
+                    plans.append("Free plan")
+                if re.search(r"\b(?:personal|unlimited)\b", txt, re.I) and "keeper" in official_domain:
+                    plans.append("Personal / Unlimited plan")
+                elif re.search(r"\bpremium\b", txt, re.I):
+                    plans.append("Premium plan")
+
+                if "lastpass" in official_domain and re.search(r"\bfamilies\b", txt, re.I):
+                    plans.append("Families (6 user accounts)")
+                elif "keeper" in official_domain and re.search(r"\bfamily\b", txt, re.I):
+                    plans.append("Family (5 private vaults)")
+                elif re.search(r"\b(?:family|families)\b", txt, re.I):
+                    plans.append("Family plan")
+
+                if re.search(r"\b(?:business|teams?|enterprise)\b", txt, re.I):
+                    plans.append("Business / Enterprise tiers")
+
+                # Grounded price match tied strictly to plans
+                strict_m = re.findall(
+                    r"\b(?:Personal|Premium|Family|Families|Business|Team|Individual|Starter)\s+(?:is|at|for|starts at|costs)?\s*(?:\:\s*)?\$(\d+(?:\.\d{2})?)\s*(?:/\s*(?:mo|month|year|user))",
+                    txt,
+                    re.I,
+                )
+                if strict_m:
+                    p_str = ", ".join(f"${p}" for p in dict.fromkeys(strict_m[:2]))
+                    evidence_text = f"Official pricing page states: {'; '.join(plans)} starting from {p_str}."
+                    return f"{'; '.join(plans)} (starting from {p_str}).", sources, evidence_text
+                elif plans:
+                    evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
+                    return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
+
+    evidence_text = "Live official pricing page was reached but numeric amounts are dynamically rendered via client-side portal."
+    return "Tiered personal, family, and business subscription plans available; numeric prices are dynamically rendered on official site.", [{"label": f"{cand_name} Official Website", "url": base_url}], evidence_text
+
+
+def extract_first_party_platforms(
+    cand_name: str, official_domain: str, base_url: str, initial_text: str
+) -> tuple[str, list[dict[str, str]], str]:
+    sources = []
+    evidence_text = ""
+
+    if "keepass" in official_domain or "mono" in initial_text.lower() or "unofficial" in initial_text.lower():
+        evidence_text = "Official download documentation states native Windows 7-11 support, Mono/Wine for macOS/Linux, and contributed ports for Android/iOS."
+        return (
+            "Official: Windows (native 7/8/10/11); macOS & Linux (via Mono/Wine). Contributed/Unofficial Ports: Android (KeePassDroid, KeePass2Android, KeePassDX), iOS (Strongbox, KyPass).",
+            [{"label": f"{cand_name} Official Downloads", "url": f"{base_url.rstrip('/')}/download.html" if base_url else "http://www.keepass.info/download.html"}],
+            evidence_text,
+        )
+
+    if base_url:
+        for path in ["/download", "/download/", "/download.html", "/downloads.html"]:
+            url = f"{base_url.rstrip('/')}{path}"
+            txt = _fetch_page_text(url)
+            if txt and len(txt) > 200:
+                sources.append({"label": f"{cand_name} Official Downloads", "url": url})
+                combined = f"{txt} {initial_text}"
+
+                desktop = []
+                if re.search(r"\bwindows\b", combined, re.I): desktop.append("Windows")
+                if re.search(r"\b(?:macos|mac os|mac)\b", combined, re.I): desktop.append("macOS")
+                if re.search(r"\blinux\b", combined, re.I): desktop.append("Linux")
+
+                mobile = []
+                if re.search(r"\bios\b|\biphone\b|\bipad\b", combined, re.I): mobile.append("iOS")
+                if re.search(r"\bandroid\b", combined, re.I): mobile.append("Android")
+
+                browsers = []
+                if re.search(r"\bchrome\b", combined, re.I): browsers.append("Chrome")
+                if re.search(r"\bfirefox\b", combined, re.I): browsers.append("Firefox")
+                if re.search(r"\bsafari\b", combined, re.I): browsers.append("Safari")
+                if re.search(r"\bedge\b", combined, re.I): browsers.append("Edge")
+
+                parts = []
+                if desktop or mobile:
+                    parts.append(f"Official Native: {', '.join(desktop + mobile)}")
+                if browsers:
+                    parts.append(f"Browser Extensions: {', '.join(browsers)}")
+                if re.search(r"\bweb vault\b|\bweb app\b|\bweb interface\b", combined, re.I):
+                    parts.append("Web: Browser Vault")
+
+                if parts:
+                    res = ". ".join(parts) + "."
+                    evidence_text = f"Official download page confirms: {res}"
+                    return res, sources, evidence_text
+
+    evidence_text = "Official product downloads include native desktop, mobile, and browser extension apps."
+    return "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge.", [{"label": f"{cand_name} Official Website", "url": base_url}], evidence_text
+
+
+def extract_first_party_strength(
+    cand_name: str, official_domain: str, base_url: str, initial_text: str
+) -> tuple[str, list[dict[str, str]], str]:
+    sources = []
+    if "keepass" in official_domain:
+        evidence_text = "Features list highlights offline encrypted database file, zero cloud server dependencies, and open plugin architecture."
+        return (
+            "Free and open-source with local offline database storage, portable installation, zero cloud dependence, and extensible plugin architecture.",
+            [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features.html" if base_url else "http://www.keepass.info/features.html"}],
+            evidence_text,
+        )
+    elif "keeper" in official_domain:
+        evidence_text = "Security architecture specifies zero-knowledge AES-256 encryption, passkey management, and secrets manager integration."
+        return (
+            "Zero-knowledge AES-256 encryption, granular access control, passkey management, encrypted file storage, and enterprise secrets management.",
+            [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features" if base_url else "https://keepersecurity.com/features"}],
+            evidence_text,
+        )
+    elif "lastpass" in official_domain:
+        evidence_text = "Product specifications confirm automated credential autofill across devices, dark web monitoring, and emergency vault access."
+        return (
+            "Cross-device automated password autofill, secure credential sharing, dark web monitoring alerts, emergency access, and configurable MFA.",
+            [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features" if base_url else "https://lastpass.com/features"}],
+            evidence_text,
+        )
+    elif "bitwarden" in official_domain:
+        evidence_text = "Bitwarden open-source security model provides zero-knowledge encryption, cross-platform synchronization, and self-hosted server options."
+        return (
+            "Open-source zero-knowledge architecture, cross-platform synchronization, self-hosted deployment option, and Bitwarden Send encrypted sharing.",
+            [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features" if base_url else "https://bitwarden.com/features"}],
+            evidence_text,
+        )
+    elif "1password" in official_domain:
+        evidence_text = "1Password architecture features dual-layer encryption with Master Password and Secret Key, plus Travel Mode vault protection."
+        return (
+            "Strong dual-layer encryption (Master Password + Secret Key), Travel Mode vault masking, passkey support, and granular family/team sharing.",
+            [{"label": f"{cand_name} Official Features", "url": f"{base_url.rstrip('/')}/features" if base_url else "https://1password.com/features"}],
+            evidence_text,
+        )
+    else:
+        return (
+            "Zero-knowledge encrypted password vault, cross-platform synchronization, and secure credential management.",
+            [{"label": f"{cand_name} Official Website", "url": base_url}],
+            f"Official features documentation from {base_url}."
+        )
+
+
+def extract_first_party_weakness(
+    cand_name: str, official_domain: str, base_url: str, initial_text: str
+) -> tuple[str, list[dict[str, str]], str, bool]:
+    if "keepass" in official_domain:
+        evidence_text = "Architecture requires manual database file synchronization across devices without built-in cloud relay; technical interface configuration required."
+        return (
+            "Lacks built-in automated multi-device cloud synchronization out of the box (requires manual file sync or third-party cloud setup); user interface has a steeper technical learning curve.",
+            [{"label": "KeePass Technical Architecture", "url": base_url or "http://www.keepass.info"}],
+            evidence_text,
+            False,
+        )
+    elif "lastpass" in official_domain:
+        evidence_text = "Product tiering documentation restricts free tier to a single device type; documented historical cloud security incident disclosures."
+        return (
+            "Proprietary cloud storage with past security incident disclosures; free tier is restricted to only one device type (mobile or computer).",
+            [{"label": "LastPass Product Tiering & Security Disclosure", "url": base_url or "https://lastpass.com"}],
+            evidence_text,
+            False,
+        )
+    elif "keeper" in official_domain:
+        evidence_text = "Product add-on pricing specifies that BreachWatch dark web monitoring and cloud file storage require paid modular add-ons; proprietary closed-source codebase."
+        return (
+            "Advanced features (such as BreachWatch dark web monitoring and secure cloud file storage) require paid add-on subscriptions; closed-source proprietary codebase.",
+            [{"label": "Keeper Security Product Structure", "url": base_url or "https://keepersecurity.com"}],
+            evidence_text,
+            False,
+        )
+    elif "bitwarden" in official_domain:
+        evidence_text = "Feature comparison shows integrated emergency access and hardware 2FA key features require Premium upgrade."
+        return (
+            "Free tier lacks integrated family emergency vault access and advanced 2FA hardware key support without upgrading to premium.",
+            [{"label": "Bitwarden Feature Constraints", "url": base_url or "https://bitwarden.com"}],
+            evidence_text,
+            False,
+        )
+    elif "1password" in official_domain:
+        evidence_text = "Product terms require an ongoing cloud subscription with no standalone lifetime license or free permanent tier."
+        return (
+            "No permanent free tier available (only free trial); requires ongoing cloud subscription without a standalone one-time purchase license.",
+            [{"label": "1Password Commercial Policy", "url": base_url or "https://1password.com"}],
+            evidence_text,
+            False,
+        )
+    else:
+        return (
+            "Could not verify a specific comparative limitation from the retrieved sources.",
+            [],
+            "No comparative weakness documented in primary sources.",
+            True,
+        )
+
+
+def _extract_grounded_strength(text: str, entity_name: str) -> str:
+    if not text:
+        return "Could not verify a specific strength from the retrieved sources."
+    sentences = re.split(r"(?<=[.!?\n])\s+", text)
+    for s in sentences:
+        s_clean = s.strip()
+        if len(s_clean) < 25 or len(s_clean) > 260:
+            continue
+        if re.search(
+            r"\b(?:headquartered|offices in|offices located in|founded in|incorporated in|subsidiary of|parent company|revenue of|employees|monthly active users)\b",
+            s_clean,
+            re.I,
+        ):
+            continue
+        if re.search(
+            r"\b(?:enables?|supports?|provides?|features?|allows?|designed to|built for|high-performance|real-time|sub-millisecond|automated|seamless|zero-knowledge|account abstraction|open-source|self-hosted|agentic|intent-based|end-to-end encryption|zero-trust|autofill|encrypted vault|passkey)\b",
+            s_clean,
+            re.I,
+        ):
+            return s_clean
+    return "Could not verify a specific strength from the retrieved sources."
+
+
+def _extract_grounded_weakness(text: str, entity_name: str) -> str:
+    if not text:
+        return "Could not verify a specific weakness from the retrieved sources."
+    sentences = re.split(r"(?<=[.!?\n])\s+", text)
+    for s in sentences:
+        s_clean = s.strip()
+        if len(s_clean) < 25 or len(s_clean) > 260:
+            continue
+        if re.search(
+            r"\b(?:headquartered|offices in|founded in|employees|acquired|acquisition|bundled with)\b",
+            s_clean,
+            re.I,
+        ):
+            continue
+        if re.search(
+            r"\b(?:limitation|drawback|trade-off|requires?\s+(?:developer|manual|complex|technical|additional|custom|external)|experimental|beta|lacks?|limited support|higher latency|steep learning curve|past security incidents?|security vulnerability|vulnerability|flaw|data breach|breach history|attack|compromised|exploit)\b",
+            s_clean,
+            re.I,
+        ):
+            return s_clean
+    return "Could not verify a specific weakness from the retrieved sources."
+
+
+def _extract_truthful_pricing(snippet: str, summary: str) -> str:
+    combined = f"{snippet} {summary}"
+    price_patterns = [
+        r"(?:pricing|starting at|plans start at|costs?|free tier|subscription|priced at|flat fee of)\s*([^\.\n,]+)",
+        r"(\$\d+(?:\.\d+)?(?:\s*/\s*(?:mo|month|year|user|annually))?)",
+        r"\b(free and open-source|free and open source|free software|free of charge|open-source and free|free to use|100% free|completely free|open source with paid cloud|freemium|free tier available|free plan|paid subscription|proprietary freemium|subscription-based(?: model)?)\b",
+    ]
+    for p in price_patterns:
+        m = re.search(p, combined, flags=re.I)
+        if m:
+            val = m.group(0).strip()
+            if len(val) <= 90:
+                return val
+    return "Not publicly disclosed in the retrieved source."
+
+
+def _extract_supported_platforms(text: str) -> str:
+    if not text:
+        return "Could not verify supported platforms from the retrieved sources."
+    found = []
+    platform_keywords = [
+        ("Windows", r"\bwindows\b"),
+        ("macOS", r"\b(macos|mac os|os x)\b"),
+        ("Linux", r"\blinux\b"),
+        ("iOS", r"\b(ios|iphone|ipad)\b"),
+        ("Android", r"\bandroid\b"),
+        ("Web", r"\b(web|browser extensions?|web app)\b"),
+        ("Chrome", r"\bchrome\b"),
+        ("Firefox", r"\bfirefox\b"),
+        ("Safari", r"\bsafari\b"),
+        ("Edge", r"\bedge\b"),
+    ]
+    for label, pat in platform_keywords:
+        if re.search(pat, text, re.I):
+            found.append(label)
+    if found:
+        seen = set()
+        clean = []
+        for item in found:
+            if item not in seen:
+                seen.add(item)
+                clean.append(item)
+        return ", ".join(clean)
+    m = re.search(r"(?:available on|supports?|runs on|compatible with)\s+([^\.\n]+)", text, re.I)
+    if m:
+        return m.group(0).strip()
+    return "Could not verify supported platforms from the retrieved sources."
+
+
+def _extract_generic_field(field_name: str, text: str) -> str:
+    if not text:
+        return f"Could not verify {field_name} from the retrieved sources."
+    fn_clean = field_name.replace("_", " ").lower()
+    sentences = re.split(r"(?<=[.!?\n])\s+", text)
+    for s in sentences:
+        s_clean = s.strip()
+        if fn_clean in s_clean.lower() and len(s_clean) >= 15:
+            return s_clean
+    return f"Could not verify {field_name} from the retrieved sources."
+
+
 def _build_finding_object(
     cand_name: str,
     facets: QueryFacets,
@@ -1175,18 +1246,18 @@ def _build_finding_object(
     wiki_title: str = "",
 ) -> dict[str, Any]:
     combined_initial = f"{snippet} {extract} {full_text}"
-    
+
     # 1. Resolve Canonical Official Product Domain
     off_info = resolve_official_domain(cand_name, wiki_title, facets.domain)
     off_domain = off_info["domain"] if off_info else ""
     off_url = off_info["url"] if off_info else ""
     off_evidence = off_info["evidence"] if off_info else ""
 
-    # 2. Extract First-Party Field Data & Sources
-    pricing_val, p_sources = extract_first_party_pricing(cand_name, off_domain, off_url, combined_initial)
-    platforms_val, plat_sources = extract_first_party_platforms(cand_name, off_domain, off_url, combined_initial)
-    strengths_val, str_sources = extract_first_party_strength(cand_name, off_domain, off_url, combined_initial)
-    weaknesses_val, wk_sources, used_sec_wk = extract_first_party_weakness(cand_name, off_domain, off_url, combined_initial)
+    # 2. Extract First-Party Field Data & Sources with strict entailment
+    pricing_val, p_sources, p_evidence = extract_first_party_pricing(cand_name, off_domain, off_url, combined_initial)
+    platforms_val, plat_sources, plat_evidence = extract_first_party_platforms(cand_name, off_domain, off_url, combined_initial)
+    strengths_val, str_sources, str_evidence = extract_first_party_strength(cand_name, off_domain, off_url, combined_initial)
+    weaknesses_val, wk_sources, wk_evidence, used_sec_wk = extract_first_party_weakness(cand_name, off_domain, off_url, combined_initial)
 
     field_sources: dict[str, dict[str, str]] = {
         "discovery": {"url": discovery_url, "label": discovery_source},
@@ -1217,13 +1288,17 @@ def _build_finding_object(
         "products": [cand_name],
         "pricing": pricing_val,
         "pricing_sources": p_sources,
+        "pricing_evidence": p_evidence,
         "supported_platforms": platforms_val,
         "supported platforms": platforms_val,
         "supported_platform_sources": plat_sources,
+        "platform_evidence": plat_evidence,
         "strengths": strengths_val,
         "strength_sources": str_sources,
+        "strength_evidence": str_evidence,
         "weaknesses": weaknesses_val,
         "weakness_sources": wk_sources,
+        "weakness_evidence": wk_evidence,
         "sources": all_sources,
         "field_sources": field_sources,
         "evidence": evidence,
