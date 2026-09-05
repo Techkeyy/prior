@@ -105,7 +105,38 @@ PUBLISHER_OR_AGENCY_PATTERNS = [
     r"\blandscape\b",
 ]
 
+CONCEPT_SUMMARY_INDICATORS = [
+    r"\bis a measure of\b",
+    r"\bis a metric\b",
+    r"\bis a concept\b",
+    r"\bis a term (?:for|used)\b",
+    r"\bis the process of\b",
+    r"\bis an attack\b",
+    r"\bis a security vulnerability\b",
+    r"\bis a technique\b",
+    r"\bis a method for\b",
+    r"\brefers to the process\b",
+    r"\bis a theoretical\b",
+    r"\bis an algorithm for\b",
+    r"\bis a cryptographic hash\b",
+    r"\bis a mathematical\b",
+]
+
 GENERIC_CONCEPT_PATTERNS = [
+    r"^password strength.*$",
+    r"^password policy.*$",
+    r"^password cracking.*$",
+    r"^password recovery.*$",
+    r"^password hashing.*$",
+    r"^password fatigue.*$",
+    r"^password complexity.*$",
+    r"^password expiration.*$",
+    r"^password spraying.*$",
+    r"^credential stuffing.*$",
+    r"^single sign-on.*$",
+    r"^multi-factor authentication.*$",
+    r"^two-factor authentication.*$",
+    r"^authenticator.*$",
     r"^ai$",
     r"^llm$",
     r"^api$",
@@ -456,6 +487,10 @@ def _validate_candidate_facets(
     cand_lower = name.lower()
     if cand_lower == facets.subject.lower() or cand_lower == facets.domain.lower():
         return False, "Generic concept title matching query subject/domain", evidence
+    for pat in CONCEPT_SUMMARY_INDICATORS:
+        if re.search(pat, summary, re.I) or re.search(pat, snippet, re.I):
+            return False, "Summary describes a concept/metric/technique rather than a software product", evidence
+
     if cand_lower in ("password manager", "password managers", "password management", "crypto wallet", "digital wallet", "ai wallet", "observability platform", "feature flag", "database"):
         return False, "Generic concept category name", evidence
 
@@ -628,7 +663,7 @@ def _extract_truthful_pricing(snippet: str, summary: str) -> str:
     price_patterns = [
         r"(?:pricing|starting at|plans start at|costs?|free tier|subscription|priced at|flat fee of)\s*([^\.\n,]+)",
         r"(\$\d+(?:\.\d+)?(?:\s*/\s*(?:mo|month|year|user|annually))?)",
-        r"\b(100% free|completely free|free and open source|open source with paid cloud|freemium|free tier available|free plan|paid subscription|proprietary freemium|subscription-based(?: model)?)\b",
+        r"\b(free and open-source|free and open source|free software|free of charge|open-source and free|free to use|100% free|completely free|open source with paid cloud|freemium|free tier available|free plan|paid subscription|proprietary freemium|subscription-based(?: model)?)\b",
     ]
     for p in price_patterns:
         m = re.search(p, combined, flags=re.I)
@@ -710,7 +745,7 @@ def _extract_grounded_weakness(text: str, entity_name: str) -> str:
         ):
             continue
         if re.search(
-            r"\b(?:limitation|drawback|trade-off|requires?\s+(?:developer|manual|complex|technical|additional|custom|external)|experimental|beta|lacks?|limited support|higher latency|steep learning curve|past security incidents?|security vulnerability|breach history|data breach|vulnerability)\b",
+            r"\b(?:limitation|drawback|trade-off|requires?\s+(?:developer|manual|complex|technical|additional|custom|external)|experimental|beta|lacks?|limited support|higher latency|steep learning curve|past security incidents?|security vulnerability|vulnerability|flaw|criticism|data breach|breach history|attack|compromised|exploit)\b",
             s_clean,
             re.I,
         ):
