@@ -152,16 +152,17 @@ def test_relation_extraction_needs_brand_plus_terms():
     # Brand + required terms in one sentence -> evidence returned.
     rel = _extract_category_relation(
         "Dropbox is a file hosting service that offers cloud storage.",
-        "dropbox",
+        "Dropbox",
         ["cloud", "storage"],
         2,
     )
     assert rel is not None
-    # Brand present but category terms split/absent -> no relation.
+    # Broad suite sentence never identifies the suite itself as the category,
+    # even though the brand token appears next to both category terms.
     assert (
         _extract_category_relation(
             "Google Cloud Platform is a cloud computing platform.",
-            "google",
+            "Google Cloud Platform",
             ["cloud", "storage"],
             2,
         )
@@ -502,7 +503,7 @@ def test_76624_nav_footer_plan_words_not_pricing(monkeypatch):
 def test_76624_explicit_plan_price_pairing_passes(monkeypatch):
     extract_first_party_pricing = _pricing_with_mocked_fetch(
         monkeypatch,
-        {"/pricing": "<html><body>" + "Our Business costs $10 per user/month with annual billing and admin controls. " * 8 + "</body></html>"},
+        {"/pricing": "<html><body>" + "Our Acme Store Business costs $10 per user/month with annual billing and admin controls. " * 8 + "</body></html>"},
     )
     val, sources, _ = extract_first_party_pricing(
         "Acme Store", "acmestore.example", "https://acmestore.example", ""
@@ -514,7 +515,7 @@ def test_76624_explicit_plan_price_pairing_passes(monkeypatch):
 def test_76624_usage_rate_passes(monkeypatch):
     extract_first_party_pricing = _pricing_with_mocked_fetch(
         monkeypatch,
-        {"/pricing": "<html><body>" + "Simple storage pricing at $0.023 per GB-month with no minimum fees ever. " * 8 + "</body></html>"},
+        {"/pricing": "<html><body>" + "Simple Acme Store storage pricing at $0.023 per GB-month with no minimum fees ever. " * 8 + "</body></html>"},
     )
     val, sources, _ = extract_first_party_pricing(
         "Acme Store", "acmestore.example", "https://acmestore.example", ""
@@ -526,7 +527,7 @@ def test_76624_usage_rate_passes(monkeypatch):
 def test_76624_payg_model_statement_without_tiers(monkeypatch):
     extract_first_party_pricing = _pricing_with_mocked_fetch(
         monkeypatch,
-        {"/pricing": "<html><body>" + "Our service uses pay-as-you-go pricing based on usage across all regions worldwide. " * 8 + "</body></html>"},
+        {"/pricing": "<html><body>" + "Acme Store uses pay-as-you-go pricing based on usage across all regions worldwide. " * 8 + "</body></html>"},
     )
     val, _, _ = extract_first_party_pricing(
         "Acme Store", "acmestore.example", "https://acmestore.example", ""
@@ -534,3 +535,78 @@ def test_76624_payg_model_statement_without_tiers(monkeypatch):
     assert "pay-as-you-go" in val.lower()
     assert "Free plan" not in val
     assert "Business / Enterprise" not in val
+
+
+def test_76668_generic_google_cloud_page_not_gcs_pricing(monkeypatch):
+    """Exact 76668 failure: Google Cloud-wide statement must not become
+    Google Cloud Storage pricing."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "$300 in free credits 20+ free products Only pay for what you use With Google Cloud\u2019s pay-as-you-go pricing structure, you only pay for the services you use. " * 6 + "</body></html>"},
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.google.com", "https://cloud.google.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_76668_generic_aws_page_not_s3_pricing(monkeypatch):
+    """Exact 76668 failure: AWS-wide statement must not become S3 pricing."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "AWS offers you a pay-as-you-go approach for pricing for the vast majority of our cloud services. " * 8 + "</body></html>"},
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.amazon.com", "https://aws.amazon.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_76668_product_specific_parent_domain_page_passes(monkeypatch):
+    """Child product on parent domain passes when the pricing URL itself is
+    product-specific, even without an entity mention in the text."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/storage/pricing": "<html><body>" + "Object storage is $0.020 per GB-month for standard class in all regions. " * 8 + "</body></html>"},
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.google.com", "https://cloud.google.com/storage", ""
+    )
+    assert "$0.020 per GB-month" in val
+    assert len(sources) > 0
+
+
+def test_76668_company_wide_page_without_candidate_is_truthful(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "Our company-wide pay-as-you-go pricing covers all cloud services and support plans. " * 8 + "</body></html>"},
+    )
+    val, _, _ = extract_first_party_pricing(
+        "Nimbus", "nimbus.example", "https://nimbus.example", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+
+
+def test_76668_live_gcp_storage_block_rejected():
+    """Actual 76668 evidence shape: the unsplit 'Storage and databases'
+    section block lists Cloud Storage as one item among many. It never
+    identifies Google Cloud Platform itself as a cloud storage service."""
+    facets = _cloud_facets()
+    block = (
+        "=== Storage and databases ===\n"
+        "Cloud Storage \u2013 Object storage with integrated edge caching to store unstructured data\n"
+        "Cloud SQL \u2013 Database as a Service based on MySQL, PostgreSQL and Microsoft SQL Server\n"
+        "Cloud Bigtable \u2013 Managed NoSQL database service\n"
+        "Filestore \u2013 High-performance file storage for Google Cloud users"
+    )
+    ok, reason, _ = _validate_candidate_facets(
+        "Google Cloud Platform",
+        "Google Cloud is a suite of cloud computing services.",
+        block,
+        "https://en.wikipedia.org/wiki/Google_Cloud_Platform",
+        facets,
+    )
+    assert not ok
+    assert "relational" in reason.lower() or "category" in reason.lower()

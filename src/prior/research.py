@@ -304,32 +304,51 @@ _COMPONENT_MARKERS = (
 )
 
 
+def _relation_identifies_candidate(unit_lower: str, cand_name: str) -> bool:
+    """The unit must identify THE CANDIDATE itself — not merely share a brand
+    token with it. Single-token entities: token presence. Multi-token: full
+    normalized name, or at least two entity tokens including the longest
+    (most distinctive) one. A section block listing 'Cloud Storage' as one
+    item therefore never identifies 'Google Cloud Platform'."""
+    tokens = _entity_tokens(cand_name)
+    if not tokens:
+        return False
+    if len(tokens) == 1:
+        return tokens[0] in unit_lower
+    norm = re.sub(r"\s+", " ", (cand_name or "").lower()).strip()
+    if norm and len(norm) > 3 and norm in unit_lower:
+        return True
+    longest = max(tokens, key=len)
+    hits = [t for t in tokens if t in unit_lower]
+    return len(hits) >= 2 and longest in hits
+
+
 def _extract_category_relation(
-    text: str, brand: str, terms: list[str], required: int
+    text: str, cand_name: str, terms: list[str], required: int
 ) -> str | None:
     """Explicit relational evidence connecting THIS candidate to the category.
 
     Generalized membership-vs-component distinction (no category hardcoded):
-    - the candidate brand and the required category terms must share ONE text
-      unit (sentence, else the whole fragment);
-    - the terms must form a COMPACT phrase (contiguous modulo hyphens, the
-      word "based", and singular/plural variants; otherwise within a small
-      word window). "cloud storage" / "cloud-based storage" / "video
-      conferencing" qualify; "cloud computing ... data storage" spread across
-      a broad list does not;
+    - units are sentences AND individual lines, so a section list block can
+      never pool a brand mention from one line with a category phrase from
+      another;
+    - the unit must IDENTIFY the candidate itself (full name or distinctive
+      multi-token overlap), not merely contain its brand token;
+    - the required category terms must form a COMPACT phrase (contiguous
+      modulo hyphens, the word "based", and singular/plural variants;
+      otherwise within a small word window);
     - enumerative/component constructions (including, suite of, supports,
-      ...) introducing the terms reject the unit: the category is then a
-      component of a broader suite, not the candidate's identity.
-    The candidate's own name appearing in evidence is NOT enough on its own.
-    Prefer under-counting to admitting a parent suite.
+      ...) introducing the terms reject the unit.
+    The candidate's own name appearing elsewhere in the evidence is NOT
+    enough. Prefer under-counting to admitting a parent suite.
     """
-    if not text or not brand or required < 1 or not terms:
+    if not text or not cand_name or required < 1 or not terms:
         return None
-    sentences = [s for s in re.split(r"(?<=[.!?\n])\s+", text) if s.strip()]
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+|\n+", text) if s.strip()]
     units = sentences or [text]
     for unit in units:
         lowered = unit.lower()
-        if brand not in lowered:
+        if not _relation_identifies_candidate(lowered, cand_name):
             continue
         words = re.findall(r"[a-z0-9]+", lowered)
         positions: dict[str, list[int]] = {}
@@ -889,12 +908,13 @@ def _validate_candidate_facets(
         # Generalized boundary for categories without a dedicated validator.
         # Three proofs must ALL hold (under-count preferred over false matching):
         #  1. candidate identity: the brand token is mentioned in retrieved
-        #     text or the discovery URL (the candidate's own name appearing is
-        #     necessary but NOT sufficient);
-        #  2. category membership: explicit relational evidence connecting THIS
-        #     candidate to the requested subject/category terms — a sentence
-        #     naming the candidate alongside the category terms. Derived purely
-        #     from the request's own subject/domain; nothing hardcoded.
+        #     text or the discovery URL (necessary but NOT sufficient);
+        #  2. category membership: a single text unit (sentence or line) that
+        #     IDENTIFIES the candidate itself (full name or distinctive
+        #     multi-token overlap — never a pooled brand mention) alongside a
+        #     compact requested-category phrase, with no component/list
+        #     construction. Derived purely from the request's own
+        #     subject/domain; nothing hardcoded.
         #  3. mandatory qualifiers (if any): enforced by step 2 below.
         brand = _brand_token(name)
         haystack = f"{snippet} {summary}".lower()
@@ -905,7 +925,7 @@ def _validate_candidate_facets(
         if terms:
             required = min(2, len(terms))
             relation = _extract_category_relation(
-                f"{snippet} {summary}", brand, terms, required
+                f"{snippet} {summary}", name, terms, required
             )
             if not relation:
                 return False, "No relational evidence connecting candidate to the requested category terms", evidence
@@ -1256,6 +1276,33 @@ def _extract_pricing_model(text: str) -> str | None:
     return None
 
 
+def _pricing_text_names_entity(page_text: str, url: str, cand_name: str) -> bool:
+    """Entity scope for pricing evidence: THIS ENTITY + THIS FIELD.
+
+    A parent-company/platform pricing statement must not automatically become
+    the product's pricing. Accept only when the page text names the candidate
+    (full name, or brand for single-token entities, or distinctive
+    multi-token overlap including the longest token) or the pricing URL is
+    product-specific (distinctive token in path). Hostname equality is NOT
+    required — a legitimate child product may live on a parent domain.
+    """
+    tokens = _entity_tokens(cand_name)
+    if not tokens:
+        return False
+    hay = (page_text or "").lower()
+    norm = re.sub(r"\s+", " ", (cand_name or "").lower()).strip()
+    if norm and len(norm) > 3 and norm in hay:
+        return True
+    path = urlparse(url or "").path.lower()
+    if len(tokens) == 1:
+        return tokens[0] in hay or tokens[0] in path
+    longest = max(tokens, key=len)
+    hits = [t for t in tokens if t in hay]
+    if len(hits) >= 2 and longest in hits:
+        return True
+    return longest in path and len(longest) >= 4
+
+
 def extract_first_party_pricing(
     cand_name: str, official_domain: str, base_url: str, initial_text: str
 ) -> tuple[str, list[dict[str, str]], str]:
@@ -1315,13 +1362,14 @@ def extract_first_party_pricing(
                 if "lastpass" not in official_domain and re.search(r"\b(?:business|teams?|enterprise)\b", txt, re.I):
                     plans.append("Business / Enterprise tiers")
 
-                # Grounded price match tied strictly to plans
+                # Grounded price match tied strictly to plans AND to this entity:
+                # parent-platform price figures must not become product pricing.
                 strict_m = re.findall(
                     r"\b(?:Personal|Premium|Family|Families|Business|Team|Individual|Starter)\s+(?:is|at|for|starts at|costs)?\s*(?:\:\s*)?\$(\d+(?:\.\d{2})?)\s*(?:/\s*(?:mo|month|year|user))",
                     txt,
                     re.I,
                 )
-                if strict_m:
+                if strict_m and _pricing_text_names_entity(txt, url, cand_name):
                     p_str = ", ".join(f"${p}" for p in dict.fromkeys(strict_m[:2]))
                     evidence_text = f"Official pricing page states: {'; '.join(plans)} starting from {p_str}."
                     return f"{'; '.join(plans)} (starting from {p_str}).", sources, evidence_text
@@ -1360,22 +1408,26 @@ def extract_first_party_pricing(
             if plan_prices:
                 formatted_plans = [f"{p} ({plan_prices[p]})" if p in plan_prices else p for p in plans]
                 evidence_text = f"Official pricing and product pages state plan tiers: {', '.join(formatted_plans)}. Live first-party business product page confirms numeric rates; other tier rates are dynamically billed via client portal."
-                return f"Tiered plan structure verified: {', '.join(formatted_plans)}; other tier rates are dynamically billed via the live official portal.", sources, evidence_text
+                if _pricing_text_names_entity("\n".join(fetched_texts), base_url, cand_name):
+                    return f"Tiered plan structure verified: {', '.join(formatted_plans)}; other tier rates are dynamically billed via the live official portal.", sources, evidence_text
 
         # Concrete evidence only from here on. Grandfathered vendor-exact tiers
         # keep established behavior; otherwise bare plan words (Free/Premium/
         # Business/Enterprise) without a pricing relation prove nothing.
         # An explicit usage rate or pricing-model statement may still qualify.
-        if vendor_exact_tiers:
+        # Every accepted statement must name THIS entity: parent-platform
+        # pricing never becomes child-product pricing.
+        fetched_all = "\n".join(fetched_texts)
+        entity_scoped = _pricing_text_names_entity(fetched_all, base_url, cand_name)
+        if vendor_exact_tiers and entity_scoped:
             evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
             return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
-        fetched_all = "\n".join(fetched_texts)
         usage_rate = _extract_usage_rate(fetched_all)
-        if usage_rate:
+        if usage_rate and entity_scoped:
             evidence_text = f"Official page states usage pricing: {usage_rate}."
             return f"Usage-based pricing: {usage_rate}.", sources, evidence_text
         model_stmt = _extract_pricing_model(fetched_all)
-        if model_stmt:
+        if model_stmt and entity_scoped:
             evidence_text = f"Official page describes pricing model: {model_stmt}"
             return f"Pricing model stated on official page: {model_stmt}", sources, evidence_text
 

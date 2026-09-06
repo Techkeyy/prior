@@ -408,7 +408,7 @@ def test_dynamic_pricing_falls_through_to_current_first_party_page(monkeypatch):
         if "pricing" in url:
             return "<html><body>" + "Official pricing plans include: Free, Premium, Families, Teams, Business, Business Max. All plans feature zero-knowledge encryption and secure vault sharing. Exact client rates dynamically billed." * 3 + "</body></html>"
         elif "products/business" in url:
-            return "<html><body>" + "With LastPass Business, you get everything for just $7 per user/month, or purchase a site license to cover your entire business through a custom contract." * 3 + "</body></html>"
+            return "<html><body>" + "With TestPass Business, you get everything for just $7 per user/month, or purchase a site license to cover your entire business through a custom contract." * 3 + "</body></html>"
         return ""
 
     monkeypatch.setattr("prior.research._fetch_page_text", mock_fetch)
