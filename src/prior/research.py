@@ -215,9 +215,9 @@ _UNAVAILABLE_MARKERS = (
 def _brand_token(cand_name: str) -> str:
     """First significant token of the entity name (the brand token).
 
-    Generalized identity anchor: the official domain must belong to THIS
-    entity, so resolution requires this token — not just any generic category
-    token such as 'cloud' or 'storage' — to appear in the host.
+    Generalized identity anchor used to prove retrieved evidence actually
+    mentions THIS entity. Category membership and domain ownership always
+    require additional relational evidence beyond this token.
     """
     for tok in re.findall(r"[a-zA-Z0-9]+", cand_name or ""):
         if len(tok) > 2:
@@ -225,12 +225,150 @@ def _brand_token(cand_name: str) -> str:
     return ""
 
 
-def _domain_belongs_to_entity(host: str, cand_name: str) -> bool:
-    """Generalized entity<->domain consistency boundary.
+# Linguistic generics only (English function/category-filler words), never
+# category-specific terms. Used so a candidate cannot qualify for a category
+# merely by being described as a "service", "platform", or "company".
+_GENERIC_CATEGORY_WORDS = frozenset({
+    "service", "services", "product", "products", "company", "companies",
+    "platform", "platforms", "tool", "tools", "software", "solution",
+    "solutions", "provider", "providers", "vendor", "vendors", "app",
+    "apps", "application", "applications", "system", "systems", "suite",
+    "program", "programs", "offering", "offerings",
+    "top", "best", "leading", "popular", "free", "online", "new", "good",
+    "review", "reviews", "comparison", "compare", "research", "list",
+    "lists", "guide", "price", "pricing", "product",
+})
 
-    Rejects domains inherited from unrelated vendors (e.g. a host matching only
-    a generic token like 'cloud' must not become the official domain of an
-    entity whose brand token is absent from the host).
+_PUBLIC_SUFFIX_LABELS = frozenset({
+    "com", "org", "net", "io", "co", "gov", "edu", "info", "biz", "me",
+    "www",
+})
+
+# Phrases indicating a search result actually points at the vendor's own site
+# (as opposed to a review, listicle, or article about the entity).
+_OFFICIAL_SITE_CUES = (
+    "official", "homepage", "home page", "download", "buy", "store",
+    "products", "features", "documentation", "docs", "support",
+    "sign up", "signup", "get started", "pricing",
+)
+
+
+def _category_terms(facets: QueryFacets) -> list[str]:
+    """Meaningful category terms derived from the requested subject/domain.
+
+    Fully generalized: tokenize the request's own subject/domain, drop
+    linguistic filler. No category is hardcoded anywhere.
+    """
+    text = f"{facets.subject or ''} {facets.domain or ''}"
+    terms: list[str] = []
+    for tok in re.findall(r"[a-z0-9]+", text.lower()):
+        if len(tok) < 4 or tok.isdigit():
+            continue
+        if tok in _GENERIC_CATEGORY_WORDS:
+            continue
+        if tok not in terms:
+            terms.append(tok)
+    return terms
+
+
+def _term_variants(term: str):
+    """Singular/plural variants so 'storage'/'storages', 'vpn'/'vpns' match."""
+    yield term
+    if term.endswith("s") and len(term) > 4:
+        yield term[:-1]
+    else:
+        yield term + "s"
+
+
+def _extract_category_relation(
+    text: str, brand: str, terms: list[str], required: int
+) -> str | None:
+    """Explicit relational evidence connecting THIS candidate to the category.
+
+    Requires a single text unit (sentence, else the whole fragment) that
+    mentions both the candidate brand and at least `required` distinct
+    category terms. The candidate's own name appearing in evidence is NOT
+    enough on its own.
+    """
+    if not text or not brand or required < 1:
+        return None
+    sentences = [s for s in re.split(r"(?<=[.!?\n])\s+", text) if s.strip()]
+    units = sentences or [text]
+    for unit in units:
+        lowered = unit.lower()
+        if brand not in lowered:
+            continue
+        hits = sum(
+            1 for t in terms if any(v in lowered for v in _term_variants(t))
+        )
+        if hits >= required:
+            cleaned = unit.strip()
+            return cleaned if len(cleaned) <= 320 else cleaned[:320]
+    return None
+
+
+def _host_labels(host: str) -> list[str]:
+    labels = re.findall(r"[a-z0-9]+", (host or "").lower())
+    return [l for l in labels if l not in _PUBLIC_SUFFIX_LABELS and len(l) >= 2]
+
+
+def _entity_tokens(cand_name: str) -> list[str]:
+    return [t.lower() for t in re.findall(r"[a-zA-Z0-9]+", cand_name or "") if len(t) > 2]
+
+
+def _host_similarity_score(cand_name: str, host: str) -> float:
+    """Normalized multi-token entity<->host similarity (0.0-1.0).
+
+    Exact label matches score highest; affix (prefix/suffix/substring) matches
+    on tokens of length >= 4 score partial credit. A host that merely shares
+    one generic category word with a multi-token entity name scores low.
+    """
+    tokens = _entity_tokens(cand_name)
+    labels = _host_labels(host)
+    if not tokens or not labels:
+        return 0.0
+    total = 0.0
+    for tok in tokens:
+        best = 0.0
+        for lab in labels:
+            if tok == lab:
+                best = max(best, 1.0)
+            elif len(tok) >= 4 and (lab.startswith(tok) or tok.startswith(lab)):
+                best = max(best, 0.8)
+            elif len(tok) >= 4 and (tok in lab or lab in tok):
+                best = max(best, 0.6)
+        total += best
+    return total / len(tokens)
+
+
+def _result_names_entity(title: str, snippet: str, cand_name: str) -> bool:
+    """Positive identity evidence: the search result explicitly names THIS entity."""
+    brand = _brand_token(cand_name)
+    text = f"{title or ''} {snippet or ''}".lower()
+    if brand and brand in text:
+        return True
+    norm_name = re.sub(r"\s+", " ", (cand_name or "").lower()).strip()
+    if norm_name and len(norm_name) > 3 and norm_name in text:
+        return True
+    return False
+
+
+def _result_links_org_to_host(title: str, snippet: str, host: str) -> bool:
+    """Positive relationship evidence: a host label is named in the result
+    alongside official-site cues (product->company/parent-domain case)."""
+    text = f"{title or ''} {snippet or ''}".lower()
+    words = set(re.findall(r"[a-z0-9]+", text))
+    label_hit = any(lab in words and len(lab) >= 4 for lab in _host_labels(host))
+    cue_hit = any(cue in text for cue in _OFFICIAL_SITE_CUES)
+    return label_hit and cue_hit
+
+
+def _domain_belongs_to_entity(host: str, cand_name: str) -> bool:
+    """Legacy single-token gate, superseded by evidence-scored resolution.
+
+    Kept for backward compatibility; new code uses _host_similarity_score
+    combined with positive identity/relationship evidence instead of
+    one-token coincidence.
     """
     brand = _brand_token(cand_name)
     if not brand or not host:
@@ -661,17 +799,32 @@ def _validate_candidate_facets(
         evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
     else:
-        # Generalized boundary for categories without a dedicated validator:
-        # require entity-specific evidence (the candidate's brand token must be
-        # mentioned in the retrieved text or discovery URL) so unrelated
-        # entities cannot be selected for a category they were never evidenced
-        # in. Under-count is preferred over false matching.
+        # Generalized boundary for categories without a dedicated validator.
+        # Three proofs must ALL hold (under-count preferred over false matching):
+        #  1. candidate identity: the brand token is mentioned in retrieved
+        #     text or the discovery URL (the candidate's own name appearing is
+        #     necessary but NOT sufficient);
+        #  2. category membership: explicit relational evidence connecting THIS
+        #     candidate to the requested subject/category terms — a sentence
+        #     naming the candidate alongside the category terms. Derived purely
+        #     from the request's own subject/domain; nothing hardcoded.
+        #  3. mandatory qualifiers (if any): enforced by step 2 below.
         brand = _brand_token(name)
         haystack = f"{snippet} {summary}".lower()
         host = urlparse(url).netloc.lower() if url else ""
         if not brand or (brand not in haystack and brand not in host):
             return False, "No entity-specific evidence linking candidate to the requested category", evidence
-        evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
+        terms = _category_terms(facets)
+        if terms:
+            required = min(2, len(terms))
+            relation = _extract_category_relation(
+                f"{snippet} {summary}", brand, terms, required
+            )
+            if not relation:
+                return False, "No relational evidence connecting candidate to the requested category terms", evidence
+            evidence["product_domain"] = {"snippet": relation, "source": url}
+        else:
+            evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
     # 2. Mandatory Relational Qualifier Validation
     full_text = f"{snippet}\n{summary}"
@@ -926,10 +1079,34 @@ def _extract_candidates_from_text(text: str) -> list[str]:
     return cands
 
 
+def _accept_search_host(
+    host: str, title: str, snippet: str, cand_name: str
+) -> bool:
+    """Search-path gate: a domain is accepted because evidence links THIS
+    entity to THIS host — never because of one-token coincidence.
+
+    Requires positive identity evidence (the result explicitly names the
+    entity) AND either normalized multi-token host similarity or an
+    organization relationship (host label named alongside official-site cues,
+    covering product->parent/company domains).
+    """
+    if any(no in host for no in NON_OFFICIAL_DOMAINS):
+        return False
+    if not _result_names_entity(title, snippet, cand_name):
+        return False
+    if _host_similarity_score(cand_name, host) >= 0.5:
+        return True
+    return _result_links_org_to_host(title, snippet, host)
+
+
 def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: str = "") -> dict[str, Any] | None:
-    # 1. Inspect external links from Wikipedia registry
+    # 1. Inspect external links from Wikipedia registry (exact entity page =
+    # authoritative provenance). Prefer hosts with positive lexical connection
+    # to the entity; fall back to the first non-excluded host only when no
+    # connected host exists.
     if wiki_title:
         extlinks = _get_wiki_extlinks(wiki_title)
+        first_provenance: dict[str, Any] | None = None
         for link in extlinks:
             u_parsed = urlparse(link)
             host = u_parsed.netloc.lower()
@@ -937,27 +1114,33 @@ def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: s
                 host = host[4:]
             if any(no in host for no in NON_OFFICIAL_DOMAINS):
                 continue
-            if not _domain_belongs_to_entity(host, cand_name):
-                continue
             scheme = u_parsed.scheme or "https"
             base_url = f"{scheme}://{u_parsed.netloc}"
-            return {
-                "domain": host,
-                "url": base_url,
-                "title": f"{cand_name} Official Website",
-                "evidence": f"Authoritative external domain verified: {host}",
-            }
+            if first_provenance is None:
+                first_provenance = {
+                    "domain": host,
+                    "url": base_url,
+                    "title": f"{cand_name} Official Website",
+                    "evidence": f"Authoritative external domain verified: {host}",
+                }
+            if _host_similarity_score(cand_name, host) >= 0.5:
+                return {
+                    "domain": host,
+                    "url": base_url,
+                    "title": f"{cand_name} Official Website",
+                    "evidence": f"Authoritative external domain verified: {host}",
+                }
+        if first_provenance is not None:
+            return first_provenance
 
-    # 2. Live search resolver
+    # 2. Live search resolver with evidence-scored acceptance.
     hits = _search_ddg(f"{cand_name} official website", limit=6)
     for h in hits:
         u_parsed = urlparse(h.get("url", ""))
         host = u_parsed.netloc.lower()
         if host.startswith("www."):
             host = host[4:]
-        if any(no in host for no in NON_OFFICIAL_DOMAINS):
-            continue
-        if not _domain_belongs_to_entity(host, cand_name):
+        if not _accept_search_host(host, h.get("title", ""), h.get("snippet", ""), cand_name):
             continue
         scheme = u_parsed.scheme or "https"
         base_url = f"{scheme}://{u_parsed.netloc}"
