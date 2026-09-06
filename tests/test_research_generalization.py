@@ -589,6 +589,197 @@ def test_76668_company_wide_page_without_candidate_is_truthful(monkeypatch):
     assert val == "Not publicly disclosed in the retrieved source."
 
 
+def _pad_pricing_html(*parts: str) -> str:
+    return "<html><body>" + "".join(parts) + (" Notes. " * 20) + "</body></html>"
+
+
+def test_claim_scope_navbar_candidate_generic_parent_pricing_unavailable(monkeypatch):
+    """Navbar mention of the candidate must not authorize a parent-company
+    pricing sentence elsewhere on the same page."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Products | Google Cloud Storage | Compute | Databases ",
+                "Welcome to the cloud platform. " * 8,
+                "Google Cloud uses pay-as-you-go pricing for the services you use. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.google.com", "https://cloud.google.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_claim_scope_footer_candidate_generic_parent_pricing_unavailable(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "AWS offers pay-as-you-go pricing across most cloud services. ",
+                "Platform overview continues here. " * 8,
+                "Footer Amazon S3 Documentation Privacy Terms. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.amazon.com", "https://aws.amazon.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_claim_scope_product_list_candidate_generic_parent_pricing_unavailable(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Compute | Google Cloud Storage | SQL | Bigtable ",
+                "Section two. " * 8,
+                "Our cloud platform uses pay-as-you-go pricing. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.google.com", "https://cloud.google.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_claim_scope_distant_candidate_generic_claim_unavailable(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Google Cloud Storage is listed among many products. ",
+                ("Unrelated platform paragraph. " * 25),
+                "The company uses pay-as-you-go pricing for most services. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.google.com", "https://cloud.google.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_claim_scope_exact_plan_price_sentence_names_candidate(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Acme Store Business costs $10 per user/month with annual billing. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Acme Store", "acmestore.example", "https://acmestore.example", ""
+    )
+    assert "$10" in val
+    assert len(sources) > 0
+
+
+def test_claim_scope_exact_usage_rate_sentence_names_candidate(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Acme Store storage pricing at $0.023 per GB-month with no minimum. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Acme Store", "acmestore.example", "https://acmestore.example", ""
+    )
+    assert "$0.023 per GB-month" in val
+    assert len(sources) > 0
+
+
+def test_claim_scope_exact_payg_sentence_names_candidate(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Amazon S3 uses pay-as-you-go pricing based on stored data and requests. ",
+            )
+        },
+    )
+    val, _, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.amazon.com", "https://aws.amazon.com", ""
+    )
+    assert "pay-as-you-go" in val.lower()
+    assert "Free plan" not in val
+
+
+def test_claim_scope_product_specific_parent_domain_url_passes(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/s3/pricing": _pad_pricing_html(
+                "Standard storage costs $0.023 per GB-month in the selected region. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.amazon.com", "https://aws.amazon.com/s3", ""
+    )
+    assert "$0.023 per GB-month" in val
+    assert len(sources) > 0
+
+
+def test_claim_scope_generic_parent_pricing_url_child_elsewhere_unavailable(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Products | Google Cloud Storage | Compute ",
+                "Google Cloud uses pay-as-you-go pricing for the services you use. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.google.com", "https://cloud.google.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_claim_scope_keeper_grounded_pricing_remains(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Keeper Family (5 private vaults) Personal Unlimited Business Enterprise. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Keeper", "keepersecurity.com", "https://keepersecurity.com", ""
+    )
+    assert "Family (5 private vaults)" in val
+    assert len(sources) > 0
+
+
+def test_claim_scope_lastpass_grounded_pricing_remains(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "LastPass Free Premium Families Teams Business Business Max. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "LastPass", "lastpass.com", "https://lastpass.com", ""
+    )
+    assert "Families (6 user accounts)" in val
+    assert len(sources) > 0
+
+
 def test_76668_live_gcp_storage_block_rejected():
     """Actual 76668 evidence shape: the unsplit 'Storage and databases'
     section block lists Cloud Storage as one item among many. It never

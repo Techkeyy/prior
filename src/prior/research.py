@@ -1268,39 +1268,137 @@ def _extract_usage_rate(text: str) -> str | None:
 
 def _extract_pricing_model(text: str) -> str | None:
     """Explicit first-party pricing-model statement (no invented tiers)."""
-    sentences = re.split(r"(?<=[.!?\n])\s+", text or "")
-    for s in sentences:
-        cleaned = s.strip()
+    units = _pricing_model_units(text)
+    return units[0] if units else None
+
+
+def _split_evidence_units(text: str) -> list[str]:
+    # Sentence boundaries AND nav/list-item separators. A pipe-delimited nav
+    # entry ("Products | Candidate | Compute") is a different evidence unit
+    # from a body pricing sentence, even when page text has no sentence
+    # boundary between them. "/" is deliberately NOT a splitter (it appears
+    # inside legitimate rates such as "$10 per user/month").
+    out: list[str] = []
+    for chunk in re.split(r"[|•]", text or ""):
+        out.extend(s.strip() for s in re.split(r"(?<=[.!?\n])\s+", chunk) if s.strip())
+    return out
+
+
+def _pricing_model_units(text: str) -> list[str]:
+    out: list[str] = []
+    for cleaned in _split_evidence_units(text):
         if _MODEL_STATEMENT_RE.search(cleaned) and 10 < len(cleaned) <= 200:
-            return cleaned
-    return None
+            out.append(cleaned)
+    return out
 
 
-def _pricing_text_names_entity(page_text: str, url: str, cand_name: str) -> bool:
-    """Entity scope for pricing evidence: THIS ENTITY + THIS FIELD.
+def _usage_rate_units(text: str) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for cleaned in _split_evidence_units(text):
+        m = _USAGE_RATE_RE.search(cleaned)
+        if m:
+            out.append((m.group(0).strip(), cleaned))
+    if out:
+        return out
+    m = _USAGE_RATE_RE.search(text or "")
+    if m:
+        return [(m.group(0).strip(), (text or "")[max(0, m.start() - 80): m.end() + 80].strip())]
+    return []
 
-    A parent-company/platform pricing statement must not automatically become
-    the product's pricing. Accept only when the page text names the candidate
-    (full name, or brand for single-token entities, or distinctive
-    multi-token overlap including the longest token) or the pricing URL is
-    product-specific (distinctive token in path). Hostname equality is NOT
-    required — a legitimate child product may live on a parent domain.
+
+_GENERIC_PRICING_PATH_SEGS = frozenset({
+    "pricing", "plans", "plan", "products", "product", "docs", "documentation",
+    "index", "html", "htm", "www", "home", "about", "buy", "shop", "support",
+    "help", "blog", "news", "login", "signup", "account", "personal", "business",
+    "enterprise", "teams", "family", "premium", "free", "official", "en", "us",
+})
+_HEADING_SCOPE_CHARS = 80
+_PLAN_PRICE_RE = re.compile(
+    r"\b(?:Personal|Premium|Family|Families|Business|Team|Individual|Starter)\s+(?:is|at|for|starts at|costs)?\s*(?:\:\s*)?\$(\d+(?:\.\d{2})?)\s*(?:/\s*(?:mo|month|year|user))",
+    re.I,
+)
+
+
+def _candidate_norm(cand_name: str) -> str:
+    return re.sub(r"\s+", " ", (cand_name or "").lower()).strip()
+
+
+def _candidate_path_tokens(cand_name: str) -> list[str]:
+    return [t.lower() for t in re.findall(r"[a-zA-Z0-9]+", cand_name or "") if len(t) >= 2]
+
+
+def _pricing_url_is_product_specific(url: str, cand_name: str) -> bool:
+    """Path A: URL path defensibly scopes the page to this candidate.
+
+    Hostname equality is not required. A last-token / full-slug path segment
+    may qualify; a generic /pricing leaf does not.
     """
-    tokens = _entity_tokens(cand_name)
+    path = urlparse(url or "").path.lower()
+    segs = [s for s in path.split("/") if s]
+    if not segs:
+        return False
+    tokens = _candidate_path_tokens(cand_name)
     if not tokens:
         return False
-    hay = (page_text or "").lower()
-    norm = re.sub(r"\s+", " ", (cand_name or "").lower()).strip()
-    if norm and len(norm) > 3 and norm in hay:
+    joined = "/".join(segs)
+    slug = "-".join(tokens)
+    if len(slug) >= 4 and slug in joined:
         return True
-    path = urlparse(url or "").path.lower()
-    if len(tokens) == 1:
-        return tokens[0] in hay or tokens[0] in path
-    longest = max(tokens, key=len)
-    hits = [t for t in tokens if t in hay]
-    if len(hits) >= 2 and longest in hits:
+    last = tokens[-1]
+    if last in _GENERIC_PRICING_PATH_SEGS:
+        return False
+    for seg in segs:
+        if seg in _GENERIC_PRICING_PATH_SEGS:
+            continue
+        parts = re.findall(r"[a-z0-9]+", seg)
+        if last in parts:
+            return True
+    return False
+
+
+def _claim_unit_names_candidate(claim: str, cand_name: str) -> bool:
+    """Path B: the compact evidence unit itself identifies the candidate."""
+    hay = re.sub(r"\s+", " ", (claim or "").lower())
+    norm = _candidate_norm(cand_name)
+    if not hay or not norm:
+        return False
+    if len(norm) > 3 and norm in hay:
         return True
-    return longest in path and len(longest) >= 4
+    tokens = _candidate_path_tokens(cand_name)
+    if len(tokens) == 1 and len(tokens[0]) >= 4:
+        return bool(re.search(rf"\b{re.escape(tokens[0])}\b", hay))
+    return False
+
+
+def _bounded_heading_scopes_claim(page_text: str, claim: str, cand_name: str) -> bool:
+    """Path C: a product heading immediately before the claim, not a nav/list hit."""
+    page = re.sub(r"\s+", " ", page_text or "")
+    unit = re.sub(r"\s+", " ", (claim or "")).strip()
+    norm = _candidate_norm(cand_name)
+    if not page or not unit or not norm or len(norm) < 3:
+        return False
+    idx = page.lower().find(unit.lower())
+    if idx < 0:
+        return False
+    window = page[max(0, idx - _HEADING_SCOPE_CHARS):idx]
+    if re.search(r"[|/]| \u2022 ", window):
+        return False
+    return bool(re.search(
+        rf"{re.escape(norm)}(?:\s+pricing|\s+plans|\s+costs)?\s*[:.\-–—]?\s*$",
+        window,
+        re.I,
+    ))
+
+
+def _pricing_evidence_scoped(page_text: str, claim_unit: str, url: str, cand_name: str) -> bool:
+    """THIS ENTITY + THIS FIELD + THIS CLAIM. Whole-page name hits do not qualify."""
+    if _pricing_url_is_product_specific(url, cand_name):
+        return True
+    if _claim_unit_names_candidate(claim_unit, cand_name):
+        return True
+    if _bounded_heading_scopes_claim(page_text, claim_unit, cand_name):
+        return True
+    return False
 
 
 def extract_first_party_pricing(
@@ -1328,13 +1426,13 @@ def extract_first_party_pricing(
     if base_url:
         canonical_paths = ["/pricing", "/pricing/", "/pricing.html", "/personal.html"]
         plans = []
-        fetched_texts: list[str] = []
+        fetched_pages: list[tuple[str, str]] = []
         for path in canonical_paths:
             url = f"{base_url.rstrip('/')}{path}"
             txt = _fetch_page_text(url)
             if txt and len(txt) > 200:
                 sources.append({"label": f"{cand_name} Official Pricing", "url": url})
-                fetched_texts.append(txt)
+                fetched_pages.append((url, txt))
 
                 if re.search(r"\bfree (?:plan|tier)\b", txt, re.I):
                     plans.append("Free plan")
@@ -1362,15 +1460,18 @@ def extract_first_party_pricing(
                 if "lastpass" not in official_domain and re.search(r"\b(?:business|teams?|enterprise)\b", txt, re.I):
                     plans.append("Business / Enterprise tiers")
 
-                # Grounded price match tied strictly to plans AND to this entity:
-                # parent-platform price figures must not become product pricing.
-                strict_m = re.findall(
-                    r"\b(?:Personal|Premium|Family|Families|Business|Team|Individual|Starter)\s+(?:is|at|for|starts at|costs)?\s*(?:\:\s*)?\$(\d+(?:\.\d{2})?)\s*(?:/\s*(?:mo|month|year|user))",
-                    txt,
-                    re.I,
-                )
-                if strict_m and _pricing_text_names_entity(txt, url, cand_name):
-                    p_str = ", ".join(f"${p}" for p in dict.fromkeys(strict_m[:2]))
+                # Grounded price match tied strictly to this claim unit AND entity.
+                strict_hits = list(_PLAN_PRICE_RE.finditer(txt))
+                scoped_amounts: list[str] = []
+                for hit in strict_hits:
+                    unit = next(
+                        (s for s in _split_evidence_units(txt) if hit.group(0) in s),
+                        hit.group(0),
+                    )
+                    if _pricing_evidence_scoped(txt, unit, url, cand_name):
+                        scoped_amounts.append(hit.group(1))
+                if scoped_amounts:
+                    p_str = ", ".join(f"${p}" for p in dict.fromkeys(scoped_amounts[:2]))
                     evidence_text = f"Official pricing page states: {'; '.join(plans)} starting from {p_str}."
                     return f"{'; '.join(plans)} (starting from {p_str}).", sources, evidence_text
                 break
@@ -1393,7 +1494,7 @@ def extract_first_party_pricing(
                 fb_url = f"{base_url.rstrip('/')}{fb_path}"
                 fb_txt = _fetch_page_text(fb_url)
                 if fb_txt and len(fb_txt) > 200:
-                    fetched_texts.append(fb_txt)
+                    fetched_pages.append((fb_url, fb_txt))
                     sorted_plans = sorted(plans, key=len, reverse=True)
                     for p in sorted_plans:
                         if p in plan_prices:
@@ -1401,35 +1502,32 @@ def extract_first_party_pricing(
                         b = re.escape(p)
                         pat = rf"(?:(?:With\s+(?:[A-Za-z0-9_]+\s+)?{b}|{b}\b)[^\.\n\$]{{0,60}}\$(\d+(?:\.\d{{2}})?)\s*(?:/\s*(?:user/month|user/mo|month|mo|year|user)|per\s+user/month|per\s+user\b))"
                         m = re.search(pat, fb_txt, re.I)
-                        if m:
+                        if m and _pricing_evidence_scoped(fb_txt, m.group(0), fb_url, cand_name):
                             plan_prices[p] = f"${m.group(1)} per user/month"
                             sources.append({"label": f"{cand_name} Official Product ({p})", "url": fb_url})
 
             if plan_prices:
                 formatted_plans = [f"{p} ({plan_prices[p]})" if p in plan_prices else p for p in plans]
                 evidence_text = f"Official pricing and product pages state plan tiers: {', '.join(formatted_plans)}. Live first-party business product page confirms numeric rates; other tier rates are dynamically billed via client portal."
-                if _pricing_text_names_entity("\n".join(fetched_texts), base_url, cand_name):
-                    return f"Tiered plan structure verified: {', '.join(formatted_plans)}; other tier rates are dynamically billed via the live official portal.", sources, evidence_text
+                return f"Tiered plan structure verified: {', '.join(formatted_plans)}; other tier rates are dynamically billed via the live official portal.", sources, evidence_text
 
         # Concrete evidence only from here on. Grandfathered vendor-exact tiers
-        # keep established behavior; otherwise bare plan words (Free/Premium/
-        # Business/Enterprise) without a pricing relation prove nothing.
-        # An explicit usage rate or pricing-model statement may still qualify.
-        # Every accepted statement must name THIS entity: parent-platform
-        # pricing never becomes child-product pricing.
-        fetched_all = "\n".join(fetched_texts)
-        entity_scoped = _pricing_text_names_entity(fetched_all, base_url, cand_name)
-        if vendor_exact_tiers and entity_scoped:
+        # keep established behavior on the identity-scoped vendor domain;
+        # otherwise bare plan words (Free/Premium/Business/Enterprise) without
+        # a pricing relation prove nothing. Usage-rate and model statements
+        # must be scoped to THIS entity + THIS claim (or a product-specific URL).
+        if vendor_exact_tiers:
             evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
             return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
-        usage_rate = _extract_usage_rate(fetched_all)
-        if usage_rate and entity_scoped:
-            evidence_text = f"Official page states usage pricing: {usage_rate}."
-            return f"Usage-based pricing: {usage_rate}.", sources, evidence_text
-        model_stmt = _extract_pricing_model(fetched_all)
-        if model_stmt and entity_scoped:
-            evidence_text = f"Official page describes pricing model: {model_stmt}"
-            return f"Pricing model stated on official page: {model_stmt}", sources, evidence_text
+        for page_url, page_txt in fetched_pages:
+            for usage_rate, usage_unit in _usage_rate_units(page_txt):
+                if _pricing_evidence_scoped(page_txt, usage_unit, page_url, cand_name):
+                    evidence_text = f"Official page states usage pricing: {usage_rate}."
+                    return f"Usage-based pricing: {usage_rate}.", sources, evidence_text
+            for model_stmt in _pricing_model_units(page_txt):
+                if _pricing_evidence_scoped(page_txt, model_stmt, page_url, cand_name):
+                    evidence_text = f"Official page describes pricing model: {model_stmt}"
+                    return f"Pricing model stated on official page: {model_stmt}", sources, evidence_text
 
         evidence_text = "Official pricing pages were retrieved but contain no verifiable prices, usage rates, or pricing-model statement."
         return TRUTHFUL_PRICING_UNAVAILABLE, [], evidence_text
