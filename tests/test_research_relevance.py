@@ -333,9 +333,10 @@ def test_authoritative_resolution_and_field_citations():
     for d in ["pcmag.com", "techradar.com", "g2.com", "capterra.com", "tomsguide.com", "wikipedia.org"]:
         assert d in NON_OFFICIAL_DOMAINS
 
-    # 8 & 9. Truly unavailable data remains truthful
+    # 8 & 9. Truly unavailable data remains truthful (no generic plan template)
     unavail_p, unavail_src, _ = extract_first_party_pricing("UnknownTool", "", "", "")
-    assert unavail_p == "Tiered personal, family, and business subscription plans available; numeric prices are dynamically rendered on official site." or unavail_p == "Not publicly disclosed in the retrieved source."
+    assert unavail_p == "Not publicly disclosed in the retrieved source."
+    assert unavail_src == []
 
 
 def test_field_grounding_and_strict_entailment():

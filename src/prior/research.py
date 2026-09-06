@@ -196,6 +196,51 @@ NON_OFFICIAL_DOMAINS = [
     "businesswire.com", "globenewswire.com", "crunchbase.com", "bloomberg.com"
 ]
 
+# Generalized truthful markers used whenever entity-specific evidence is absent.
+# Category-specific factual defaults must NEVER silently become generic defaults,
+# so every field extractor falls back to one of these instead of a template.
+TRUTHFUL_PRICING_UNAVAILABLE = "Not publicly disclosed in the retrieved source."
+TRUTHFUL_PLATFORMS_UNAVAILABLE = "Could not verify supported platforms from the retrieved sources."
+TRUTHFUL_STRENGTH_UNAVAILABLE = "Could not verify a specific strength from the retrieved sources."
+TRUTHFUL_WEAKNESS_UNAVAILABLE = "Could not verify a specific weakness from the retrieved sources."
+
+_UNAVAILABLE_MARKERS = (
+    "could not verify",
+    "not publicly disclosed",
+    "not verified",
+    "unavailable",
+)
+
+
+def _brand_token(cand_name: str) -> str:
+    """First significant token of the entity name (the brand token).
+
+    Generalized identity anchor: the official domain must belong to THIS
+    entity, so resolution requires this token — not just any generic category
+    token such as 'cloud' or 'storage' — to appear in the host.
+    """
+    for tok in re.findall(r"[a-zA-Z0-9]+", cand_name or ""):
+        if len(tok) > 2:
+            return tok.lower()
+    return ""
+
+
+def _domain_belongs_to_entity(host: str, cand_name: str) -> bool:
+    """Generalized entity<->domain consistency boundary.
+
+    Rejects domains inherited from unrelated vendors (e.g. a host matching only
+    a generic token like 'cloud' must not become the official domain of an
+    entity whose brand token is absent from the host).
+    """
+    brand = _brand_token(cand_name)
+    if not brand or not host:
+        return False
+    return brand in host.lower()
+
+
+def _is_unavailable_value(val: str) -> bool:
+    return any(m in (val or "").lower() for m in _UNAVAILABLE_MARKERS)
+
 
 @dataclass
 class QueryFacets:
@@ -615,6 +660,19 @@ def _validate_candidate_facets(
             return False, "Not an identity protocol/platform", evidence
         evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
 
+    else:
+        # Generalized boundary for categories without a dedicated validator:
+        # require entity-specific evidence (the candidate's brand token must be
+        # mentioned in the retrieved text or discovery URL) so unrelated
+        # entities cannot be selected for a category they were never evidenced
+        # in. Under-count is preferred over false matching.
+        brand = _brand_token(name)
+        haystack = f"{snippet} {summary}".lower()
+        host = urlparse(url).netloc.lower() if url else ""
+        if not brand or (brand not in haystack and brand not in host):
+            return False, "No entity-specific evidence linking candidate to the requested category", evidence
+        evidence["product_domain"] = {"snippet": snippet or summary, "source": url}
+
     # 2. Mandatory Relational Qualifier Validation
     full_text = f"{snippet}\n{summary}"
     for q in facets.mandatory_qualifiers:
@@ -869,8 +927,6 @@ def _extract_candidates_from_text(text: str) -> list[str]:
 
 
 def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: str = "") -> dict[str, Any] | None:
-    c_tokens = [t.lower() for t in re.findall(r"[a-zA-Z0-9]+", cand_name) if len(t) > 2]
-
     # 1. Inspect external links from Wikipedia registry
     if wiki_title:
         extlinks = _get_wiki_extlinks(wiki_title)
@@ -881,15 +937,16 @@ def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: s
                 host = host[4:]
             if any(no in host for no in NON_OFFICIAL_DOMAINS):
                 continue
-            if any(tok in host for tok in c_tokens):
-                scheme = u_parsed.scheme or "https"
-                base_url = f"{scheme}://{u_parsed.netloc}"
-                return {
-                    "domain": host,
-                    "url": base_url,
-                    "title": f"{cand_name} Official Website",
-                    "evidence": f"Authoritative external domain verified: {host}",
-                }
+            if not _domain_belongs_to_entity(host, cand_name):
+                continue
+            scheme = u_parsed.scheme or "https"
+            base_url = f"{scheme}://{u_parsed.netloc}"
+            return {
+                "domain": host,
+                "url": base_url,
+                "title": f"{cand_name} Official Website",
+                "evidence": f"Authoritative external domain verified: {host}",
+            }
 
     # 2. Live search resolver
     hits = _search_ddg(f"{cand_name} official website", limit=6)
@@ -900,15 +957,16 @@ def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: s
             host = host[4:]
         if any(no in host for no in NON_OFFICIAL_DOMAINS):
             continue
-        if any(tok in host for tok in c_tokens):
-            scheme = u_parsed.scheme or "https"
-            base_url = f"{scheme}://{u_parsed.netloc}"
-            return {
-                "domain": host,
-                "url": base_url,
-                "title": h.get("title", f"{cand_name} Official"),
-                "evidence": h.get("snippet", f"Official domain: {host}"),
-            }
+        if not _domain_belongs_to_entity(host, cand_name):
+            continue
+        scheme = u_parsed.scheme or "https"
+        base_url = f"{scheme}://{u_parsed.netloc}"
+        return {
+            "domain": host,
+            "url": base_url,
+            "title": h.get("title", f"{cand_name} Official"),
+            "evidence": h.get("snippet", f"Official domain: {host}"),
+        }
     return None
 
 
@@ -918,9 +976,11 @@ def extract_first_party_pricing(
     sources = []
     evidence_text = ""
 
-    # 1. Check if candidate is free / open source
+    # 1. Check if candidate is free / open source (identity-scoped: KeePass only,
+    # so GPL-adjacent text about another entity can never trigger this branch)
     combined_check = f"{initial_text}"
-    if "keepass" in official_domain or re.search(r"\b(gpl|free software|open-source password manager)\b", combined_check, re.I):
+    is_keepass = "keepass" in official_domain or "keepass" in cand_name.lower()
+    if is_keepass and ("keepass" in official_domain or re.search(r"\b(gpl|free software|open-source password manager)\b", combined_check, re.I)):
         evidence_text = "KeePass Password Safe is free and open-source software under the GPL v2 license with zero subscription fees."
         return (
             "Free and open-source (GPL v2), zero subscription fee or software cost.",
@@ -1003,8 +1063,8 @@ def extract_first_party_pricing(
                 evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
                 return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
 
-    evidence_text = "Live official pricing page was reached but numeric amounts are dynamically rendered via client-side portal."
-    return "Tiered personal, family, and business subscription plans available; numeric prices are dynamically rendered on official site.", [{"label": f"{cand_name} Official Website", "url": base_url}], evidence_text
+    evidence_text = "No verifiable pricing tiers found in the retrieved first-party pages."
+    return TRUTHFUL_PRICING_UNAVAILABLE, [], evidence_text
 
 
 def extract_first_party_platforms(
@@ -1013,7 +1073,8 @@ def extract_first_party_platforms(
     sources = []
     evidence_text = ""
 
-    if "keepass" in official_domain or "mono" in initial_text.lower() or "unofficial" in initial_text.lower():
+    is_keepass = "keepass" in official_domain or "keepass" in cand_name.lower()
+    if is_keepass and ("keepass" in official_domain or "mono" in initial_text.lower() or "unofficial" in initial_text.lower()):
         evidence_text = "Official download documentation states native Windows 7-11 support, Mono/Wine for macOS/Linux, and contributed ports for Android/iOS."
         return (
             "Official: Windows (native 7/8/10/11); macOS & Linux (via Mono/Wine). Contributed/Unofficial Ports: Android (KeePassDroid, KeePass2Android, KeePassDX), iOS (Strongbox, KyPass).",
@@ -1057,8 +1118,8 @@ def extract_first_party_platforms(
                     evidence_text = f"Official download page confirms: {res}"
                     return res, sources, evidence_text
 
-    evidence_text = "Official product downloads include native desktop, mobile, and browser extension apps."
-    return "Official Native: Windows, macOS, Linux, iOS, Android. Browser Extensions: Chrome, Firefox, Safari, Edge.", [{"label": f"{cand_name} Official Website", "url": base_url}], evidence_text
+    evidence_text = "No entity-specific platform support documented in the retrieved first-party sources."
+    return TRUTHFUL_PLATFORMS_UNAVAILABLE, [], evidence_text
 
 
 def extract_first_party_strength(
@@ -1101,10 +1162,13 @@ def extract_first_party_strength(
             evidence_text,
         )
     else:
+        # Generalized boundary: category-specific factual defaults must NEVER
+        # silently become generic defaults. Without entity-specific evidence,
+        # report unavailable truthfully instead of inventing a template.
         return (
-            "Zero-knowledge encrypted password vault, cross-platform synchronization, and secure credential management.",
-            [{"label": f"{cand_name} Official Website", "url": base_url}],
-            f"Official features documentation from {base_url}."
+            TRUTHFUL_STRENGTH_UNAVAILABLE,
+            [],
+            f"No entity-specific strength documented for {cand_name} in the retrieved first-party sources.",
         )
 
 
@@ -1332,32 +1396,33 @@ def _build_finding_object(
             "final_value": pricing_val,
             "type": pricing_type,
             "source": p_sources[0]["url"] if p_sources else (off_url or discovery_url),
-            "supporting_facts": [p_evidence] if p_evidence else ["Official plan structure verified from first-party documentation."],
+            "supporting_facts": [p_evidence] if p_evidence else ["No verifiable pricing found in retrieved sources."],
         },
         "supported_platforms": {
             "final_value": platforms_val,
             "type": platforms_type,
             "source": plat_sources[0]["url"] if plat_sources else (off_url or discovery_url),
-            "supporting_facts": [plat_evidence] if plat_evidence else ["Official download documentation specifies native desktop/mobile and browser extensions."],
+            "supporting_facts": [plat_evidence] if plat_evidence else ["No verifiable platform support found in retrieved sources."],
         },
         "strengths": {
             "final_value": strengths_val,
             "type": strengths_type,
             "source": str_sources[0]["url"] if str_sources else (off_url or discovery_url),
-            "supporting_facts": [str_evidence] if str_evidence else ["Official features documentation specifies core capabilities."],
+            "supporting_facts": [str_evidence] if str_evidence else ["No entity-specific strength found in retrieved sources."],
         },
         "weaknesses": {
             "final_value": weaknesses_val,
             "type": weaknesses_type,
             "source": wk_sources[0]["url"] if wk_sources else (off_url or discovery_url),
-            "supporting_facts": [wk_evidence] if wk_evidence else ["Official product documentation details operational constraints or add-on requirements."],
+            "supporting_facts": [wk_evidence] if wk_evidence else ["No entity-specific weakness found in retrieved sources."],
         },
     }
 
+    _audit_amount = re.search(r"\$\d+(?:\.\d{2})?(?:\s*(?:/\s*(?:user|mo|month|year)|per user/month|per user\b))?", pricing_val)
     pricing_audit = {
         "canonical_page_checked": p_sources[0]["url"] if p_sources else (f"{off_url}/pricing" if off_url else "N/A"),
         "fallback_pages_checked": [s["url"] for s in p_sources[1:]] if len(p_sources) > 1 else [],
-        "numeric_value_found": "$7 per user/month (Business plan)" if "$7" in pricing_val else ("Free / $0 (GPL v2 licensed)" if "gpl" in pricing_val.lower() else "None on static HTML (dynamic client-side portal)"),
+        "numeric_value_found": _audit_amount.group(0) if _audit_amount else ("Free / $0 (GPL v2 licensed)" if "gpl" in pricing_val.lower() else "None on static HTML (dynamic client-side portal)"),
         "historical_sources_ignored": ["Wikipedia historical citations", "Third-party blog comparisons"],
     }
 
@@ -1578,7 +1643,13 @@ def _comparative_summary(findings: list[dict[str, Any]]) -> str:
             val = item.get(key)
             if val:
                 found = True
-            values.append(f"{item.get('name')}: {val or 'n/a'}")
+            # Generalized boundary: unavailable fields stay unavailable.
+            # Never fill them with plausible generic templates just so every
+            # row looks complete.
+            if val and _is_unavailable_value(str(val)):
+                values.append(f"{item.get('name')}: unavailable ({val})")
+            else:
+                values.append(f"{item.get('name')}: {val or 'n/a'}")
         if found:
             seen_labels.add(label)
             lines.append(f"{label} — " + "; ".join(values))
