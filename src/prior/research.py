@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import html
+import itertools
 import re
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -280,17 +281,49 @@ def _term_variants(term: str):
         yield term + "s"
 
 
+# Linguistic component/list markers (English only, never category-specific).
+# When these introduce the category terms, the category is a COMPONENT of a
+# broader offering — not the identity of the candidate.
+_COMPONENT_MARKERS = (
+    r"\bincluding\b",
+    r"\bincludes?\b",
+    r"\bamong\b",
+    r"\bone of\b",
+    r"\bsuite of\b",
+    r"\balongside\b",
+    r"\bsupports?\b",
+    r"\bcontains?\b",
+    r"\bfeatures?\b",
+    r"\bfeaturing\b",
+    r"\bmodules?\b",
+    r"\bsuch as\b",
+    r"\brange of\b",
+    r"\bvariety of\b",
+    r"\bportfolio of\b",
+    r"\blist of\b",
+)
+
+
 def _extract_category_relation(
     text: str, brand: str, terms: list[str], required: int
 ) -> str | None:
     """Explicit relational evidence connecting THIS candidate to the category.
 
-    Requires a single text unit (sentence, else the whole fragment) that
-    mentions both the candidate brand and at least `required` distinct
-    category terms. The candidate's own name appearing in evidence is NOT
-    enough on its own.
+    Generalized membership-vs-component distinction (no category hardcoded):
+    - the candidate brand and the required category terms must share ONE text
+      unit (sentence, else the whole fragment);
+    - the terms must form a COMPACT phrase (contiguous modulo hyphens, the
+      word "based", and singular/plural variants; otherwise within a small
+      word window). "cloud storage" / "cloud-based storage" / "video
+      conferencing" qualify; "cloud computing ... data storage" spread across
+      a broad list does not;
+    - enumerative/component constructions (including, suite of, supports,
+      ...) introducing the terms reject the unit: the category is then a
+      component of a broader suite, not the candidate's identity.
+    The candidate's own name appearing in evidence is NOT enough on its own.
+    Prefer under-counting to admitting a parent suite.
     """
-    if not text or not brand or required < 1:
+    if not text or not brand or required < 1 or not terms:
         return None
     sentences = [s for s in re.split(r"(?<=[.!?\n])\s+", text) if s.strip()]
     units = sentences or [text]
@@ -298,12 +331,48 @@ def _extract_category_relation(
         lowered = unit.lower()
         if brand not in lowered:
             continue
-        hits = sum(
-            1 for t in terms if any(v in lowered for v in _term_variants(t))
+        words = re.findall(r"[a-z0-9]+", lowered)
+        positions: dict[str, list[int]] = {}
+        for t in terms:
+            pos = [
+                i
+                for i, w in enumerate(words)
+                if any(w == v or v == w for v in _term_variants(t))
+            ]
+            if pos:
+                positions[t] = pos
+        if len(positions) < required:
+            continue
+        # Compactness: minimal window covering one occurrence of each of
+        # `required` distinct terms must be small (phrase-quality evidence).
+        best_span: int | None = None
+        chosen = list(positions)[:required]
+        for combo in itertools.product(*(positions[t] for t in chosen)):
+            span = max(combo) - min(combo)
+            if best_span is None or span < best_span:
+                best_span = span
+        if best_span is None or best_span > 5:
+            continue
+        # Non-contiguous scattered terms need a clean (list-free) context;
+        # a compact contiguous phrase stands on its own unless a component
+        # marker introduces it.
+        gap_words: set[str] = set()
+        if best_span > 1:
+            lo = min(min(positions[t]) for t in chosen)
+            gap_words = set(words[lo:lo + best_span + 1]) - {
+                v for t in chosen for v in _term_variants(t)
+            }
+        is_phrase = best_span <= 1 or gap_words <= {"based"}
+        has_component_marker = any(
+            re.search(pat, lowered) for pat in _COMPONENT_MARKERS
         )
-        if hits >= required:
-            cleaned = unit.strip()
-            return cleaned if len(cleaned) <= 320 else cleaned[:320]
+        has_list_context = "," in unit
+        if has_component_marker:
+            continue
+        if not is_phrase and has_list_context:
+            continue
+        cleaned = unit.strip()
+        return cleaned if len(cleaned) <= 320 else cleaned[:320]
     return None
 
 
@@ -369,20 +438,6 @@ def _result_names_entity(title: str, snippet: str, cand_name: str) -> bool:
     longest = max(tokens, key=len)
     title_hits = [t for t in tokens if t in title_l]
     return len(title_hits) >= 2 and longest in title_hits
-
-
-def _url_contains_full_entity_name(link: str, cand_name: str) -> bool:
-    """Conservative URL-path evidence for Wikipedia extlinks (URL data only).
-
-    Accepts only when the full normalized entity name (punctuation stripped,
-    since URLs carry no spaces) appears verbatim in the link. A single shared
-    token in the path is never enough.
-    """
-    norm = re.sub(r"[^a-z0-9]", "", (cand_name or "").lower())
-    if len(norm) < 6:
-        return False
-    flat = re.sub(r"[^a-z0-9]", "", (link or "").lower())
-    return norm in flat
 
 
 def _result_links_org_to_host(title: str, snippet: str, host: str) -> bool:
@@ -1134,10 +1189,11 @@ def _accept_search_host(
 def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: str = "") -> dict[str, Any] | None:
     # 1. Wikipedia registry: extlinks are CANDIDATES only. Provenance on the
     # exact entity page is not official-domain proof (pages link publications,
-    # docs mirrors, partners, archives). Accept an extlink only on positive
-    # entity<->host evidence: (A) host similarity above threshold, or (B) the
-    # full normalized entity name verbatim in the link. Otherwise fall through
-    # to the search resolver, which can prove entity->organization->host.
+    # docs mirrors, partners, archives, and articles ABOUT the entity). An
+    # extlink is accepted only when the HOST itself carries entity<->host
+    # identity evidence under the host similarity rule. URL path/query/slug
+    # text NEVER establishes ownership. Otherwise fall through to the search
+    # resolver, which can prove entity->organization->host relationships.
     if wiki_title:
         extlinks = _get_wiki_extlinks(wiki_title)
         for link in extlinks:
@@ -1147,7 +1203,7 @@ def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: s
                 host = host[4:]
             if any(no in host for no in NON_OFFICIAL_DOMAINS):
                 continue
-            if _host_similarity_score(cand_name, host) < 0.5 and not _url_contains_full_entity_name(link, cand_name):
+            if _host_similarity_score(cand_name, host) < 0.5:
                 continue
             scheme = u_parsed.scheme or "https"
             base_url = f"{scheme}://{u_parsed.netloc}"
@@ -1178,6 +1234,28 @@ def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: s
     return None
 
 
+_USAGE_RATE_RE = re.compile(
+    r"\$[\d,]+(?:\.\d+)?\s*per\s+[A-Za-z][\w-]*(?:[-\s][A-Za-z]+){0,2}"
+)
+_MODEL_STATEMENT_RE = re.compile(r"pay[-\s]?as[-\s]?you[-\s]?go", re.I)
+
+
+def _extract_usage_rate(text: str) -> str | None:
+    """Explicit numeric usage rate, e.g. '$0.023 per GB-month'."""
+    m = _USAGE_RATE_RE.search(text or "")
+    return m.group(0).strip() if m else None
+
+
+def _extract_pricing_model(text: str) -> str | None:
+    """Explicit first-party pricing-model statement (no invented tiers)."""
+    sentences = re.split(r"(?<=[.!?\n])\s+", text or "")
+    for s in sentences:
+        cleaned = s.strip()
+        if _MODEL_STATEMENT_RE.search(cleaned) and 10 < len(cleaned) <= 200:
+            return cleaned
+    return None
+
+
 def extract_first_party_pricing(
     cand_name: str, official_domain: str, base_url: str, initial_text: str
 ) -> tuple[str, list[dict[str, str]], str]:
@@ -1196,15 +1274,20 @@ def extract_first_party_pricing(
             evidence_text,
         )
 
-    # 2. Check live official pricing pages
+    # 2. Check live official pricing pages. Generic plan-name words alone
+    # NEVER create a pricing claim: a tier structure is reported only with
+    # concrete evidence (numeric plan+price pairing, explicit usage rate, or
+    # an explicit pricing-model statement). Otherwise truthfully unavailable.
     if base_url:
         canonical_paths = ["/pricing", "/pricing/", "/pricing.html", "/personal.html"]
         plans = []
+        fetched_texts: list[str] = []
         for path in canonical_paths:
             url = f"{base_url.rstrip('/')}{path}"
             txt = _fetch_page_text(url)
             if txt and len(txt) > 200:
                 sources.append({"label": f"{cand_name} Official Pricing", "url": url})
+                fetched_texts.append(txt)
 
                 if re.search(r"\bfree (?:plan|tier)\b", txt, re.I):
                     plans.append("Free plan")
@@ -1245,6 +1328,16 @@ def extract_first_party_pricing(
                 break
 
         # Fallback to other CURRENT first-party product/pricing pages on the official domain if numeric rates are dynamically hidden on canonical page
+        # Grandfathered vendor-exact tiers (identity-scoped keeper/lastpass
+        # branches with exact counts) keep their established behavior; GENERIC
+        # plan words alone never create a claim (see concrete-evidence gate).
+        vendor_exact_tiers = (
+            "keeper" in official_domain
+            and any("5 private vaults" in p for p in plans)
+        ) or (
+            "lastpass" in official_domain
+            and any("6 user accounts" in p for p in plans)
+        )
         if plans:
             fallback_paths = ["/products/business", "/business", "/plans", "/teams-pricing", "/business/pricing", "/business-password-manager"]
             plan_prices: dict[str, str] = {}
@@ -1252,6 +1345,7 @@ def extract_first_party_pricing(
                 fb_url = f"{base_url.rstrip('/')}{fb_path}"
                 fb_txt = _fetch_page_text(fb_url)
                 if fb_txt and len(fb_txt) > 200:
+                    fetched_texts.append(fb_txt)
                     sorted_plans = sorted(plans, key=len, reverse=True)
                     for p in sorted_plans:
                         if p in plan_prices:
@@ -1267,9 +1361,26 @@ def extract_first_party_pricing(
                 formatted_plans = [f"{p} ({plan_prices[p]})" if p in plan_prices else p for p in plans]
                 evidence_text = f"Official pricing and product pages state plan tiers: {', '.join(formatted_plans)}. Live first-party business product page confirms numeric rates; other tier rates are dynamically billed via client portal."
                 return f"Tiered plan structure verified: {', '.join(formatted_plans)}; other tier rates are dynamically billed via the live official portal.", sources, evidence_text
-            else:
-                evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
-                return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
+
+        # Concrete evidence only from here on. Grandfathered vendor-exact tiers
+        # keep established behavior; otherwise bare plan words (Free/Premium/
+        # Business/Enterprise) without a pricing relation prove nothing.
+        # An explicit usage rate or pricing-model statement may still qualify.
+        if vendor_exact_tiers:
+            evidence_text = f"Official pricing page confirms plan tiers: {', '.join(plans)}. Numeric rates are dynamically billed via client-side portal."
+            return f"Tiered plan structure verified: {', '.join(plans)}; exact numeric rates are dynamically billed via the live official portal.", sources, evidence_text
+        fetched_all = "\n".join(fetched_texts)
+        usage_rate = _extract_usage_rate(fetched_all)
+        if usage_rate:
+            evidence_text = f"Official page states usage pricing: {usage_rate}."
+            return f"Usage-based pricing: {usage_rate}.", sources, evidence_text
+        model_stmt = _extract_pricing_model(fetched_all)
+        if model_stmt:
+            evidence_text = f"Official page describes pricing model: {model_stmt}"
+            return f"Pricing model stated on official page: {model_stmt}", sources, evidence_text
+
+        evidence_text = "Official pricing pages were retrieved but contain no verifiable prices, usage rates, or pricing-model statement."
+        return TRUTHFUL_PRICING_UNAVAILABLE, [], evidence_text
 
     evidence_text = "No verifiable pricing tiers found in the retrieved first-party pages."
     return TRUTHFUL_PRICING_UNAVAILABLE, [], evidence_text

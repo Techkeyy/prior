@@ -334,3 +334,203 @@ def test_ambiguous_evidence_yields_no_domain():
         ],
     ):
         assert resolve_official_domain("Nimbus Drive", "") is None
+
+
+# ---------------- UAT 76624 real-failure regressions ----------------
+# These reproduce the exact production failure classes: URL-path bait domains,
+# suite-component category admission, and plan-word pricing fabrication.
+
+def test_76624_cloudberry_path_bait_rejected_valid_host_wins():
+    """Real case: GCS wiki extlinks list the cloudberrylab article URL first.
+    Path text must not confer ownership; cloud.google.com must win."""
+    with patch(
+        "prior.research._get_wiki_extlinks",
+        return_value=[
+            "http://www.cloudberrylab.com/blog/choosing-online-backup-storage-google-cloud-storage-vs-google-drive/",
+            "https://cloud.google.com/storage/",
+        ],
+    ):
+        info = resolve_official_domain("Google Cloud Storage", "Google_Cloud_Storage")
+        assert info is not None
+        assert info["domain"] == "cloud.google.com"
+
+
+def test_76624_datacenterknowledge_path_bait_rejected():
+    """Real case: Amazon_S3 extlinks list the datacenterknowledge article
+    before aws.amazon.com/s3. The article host must not win."""
+    with patch(
+        "prior.research._get_wiki_extlinks",
+        return_value=[
+            "http://www.datacenterknowledge.com/archives/2010/03/09/amazon-s3-now-hosts-100-billion-objects/",
+            "http://aws.amazon.com/s3/",
+        ],
+    ):
+        info = resolve_official_domain("Amazon S3", "Amazon_S3")
+        assert info is not None
+        assert info["domain"] == "aws.amazon.com"
+
+
+def test_76624_entity_in_query_string_confirms_nothing():
+    with patch(
+        "prior.research._get_wiki_extlinks",
+        return_value=["https://example.com/search?q=Amazon+S3"],
+    ), patch("prior.research._search_ddg", return_value=[]):
+        assert resolve_official_domain("Amazon S3", "Amazon_S3") is None
+
+
+def test_76624_exact_entity_slug_confirms_nothing():
+    with patch(
+        "prior.research._get_wiki_extlinks",
+        return_value=["https://example.com/docs/amazon-s3"],
+    ), patch("prior.research._search_ddg", return_value=[]):
+        assert resolve_official_domain("Amazon S3", "Amazon_S3") is None
+
+
+def test_76624_suite_component_sentence_rejected():
+    """Real GCP admission case: storage as one component of a broad suite."""
+    facets = _cloud_facets()
+    ok, reason, _ = _validate_candidate_facets(
+        "Google Cloud Platform",
+        "Google Cloud is a suite of cloud computing services.",
+        "Google Cloud Platform provides modular cloud services including computing, data storage, data analytics, and machine learning.",
+        "https://en.wikipedia.org/wiki/Google_Cloud_Platform",
+        facets,
+    )
+    assert not ok
+    assert "relational" in reason.lower() or "category" in reason.lower()
+
+
+def test_76624_scattered_feature_list_rejected():
+    facets = _cloud_facets()
+    ok, _, _ = _validate_candidate_facets(
+        "Acme Cloud",
+        "Acme Cloud is a platform for compute, databases, cloud backups and storage.",
+        "Acme Cloud offers virtual machines, databases, and cloud backup storage options.",
+        "https://acme.example.com",
+        facets,
+    )
+    assert not ok
+
+
+def test_76624_compact_identity_relation_passes():
+    facets = _cloud_facets()
+    ok, reason, _ = _validate_candidate_facets(
+        "Dropbox",
+        "Dropbox is a cloud storage service for teams.",
+        "Dropbox offers file synchronization.",
+        "https://dropbox.com",
+        facets,
+    )
+    assert ok, reason
+
+
+def test_76624_cloud_based_storage_relation_passes():
+    facets = _cloud_facets()
+    ok, reason, _ = _validate_candidate_facets(
+        "Nimbus",
+        "Nimbus provides cloud-based storage for teams.",
+        "Nimbus offers file synchronization.",
+        "https://nimbus.example.com",
+        facets,
+    )
+    assert ok, reason
+
+
+def test_76624_second_category_component_rejected():
+    facets = _vc_facets()
+    ok, _, _ = _validate_candidate_facets(
+        "OmniCorp",
+        "OmniCorp offers a suite of tools.",
+        "OmniCorp offers a suite of tools including video, messaging, and conferencing for enterprises.",
+        "https://omnicorp.example.com",
+        facets,
+    )
+    assert not ok
+
+
+def test_76624_unrelated_clauses_rejected():
+    facets = _cloud_facets()
+    ok, _, _ = _validate_candidate_facets(
+        "Acme",
+        "Acme was founded in 2020.",
+        "Its cloud division handles storage for a few clients.",
+        "https://acme.example.com",
+        facets,
+    )
+    assert not ok
+
+
+def _pricing_with_mocked_fetch(monkeypatch, pages: dict):
+    from prior.research import extract_first_party_pricing
+
+    def mock_fetch(url):
+        for key, body in pages.items():
+            if key in url:
+                return body
+        return ""
+
+    monkeypatch.setattr("prior.research._fetch_page_text", mock_fetch)
+    return extract_first_party_pricing
+
+
+def test_76624_plan_words_without_price_are_truthful(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "Our plans include Free plan, Premium plan, Business and Enterprise tiers with great features. " * 12 + "</body></html>"},
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Platform", "cloud.google.com", "https://cloud.google.com", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+    assert "Free plan" not in val
+    assert "Business / Enterprise" not in val
+
+
+def test_76624_nav_footer_plan_words_not_pricing(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "Home Products Free Trial Premium Support Business Contact Enterprise Login Status. " * 12 + "</body></html>"},
+    )
+    val, _, _ = extract_first_party_pricing(
+        "MysteryBox", "mysterybox.example", "https://mysterybox.example", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert "Premium" not in val
+
+
+def test_76624_explicit_plan_price_pairing_passes(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "Our Business costs $10 per user/month with annual billing and admin controls. " * 8 + "</body></html>"},
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Acme Store", "acmestore.example", "https://acmestore.example", ""
+    )
+    assert "$10" in val
+    assert len(sources) > 0
+
+
+def test_76624_usage_rate_passes(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "Simple storage pricing at $0.023 per GB-month with no minimum fees ever. " * 8 + "</body></html>"},
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Acme Store", "acmestore.example", "https://acmestore.example", ""
+    )
+    assert "$0.023 per GB-month" in val
+    assert len(sources) > 0
+
+
+def test_76624_payg_model_statement_without_tiers(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {"/pricing": "<html><body>" + "Our service uses pay-as-you-go pricing based on usage across all regions worldwide. " * 8 + "</body></html>"},
+    )
+    val, _, _ = extract_first_party_pricing(
+        "Acme Store", "acmestore.example", "https://acmestore.example", ""
+    )
+    assert "pay-as-you-go" in val.lower()
+    assert "Free plan" not in val
+    assert "Business / Enterprise" not in val
