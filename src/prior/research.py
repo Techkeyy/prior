@@ -342,15 +342,47 @@ def _host_similarity_score(cand_name: str, host: str) -> float:
 
 
 def _result_names_entity(title: str, snippet: str, cand_name: str) -> bool:
-    """Positive identity evidence: the search result explicitly names THIS entity."""
-    brand = _brand_token(cand_name)
-    text = f"{title or ''} {snippet or ''}".lower()
-    if brand and brand in text:
-        return True
+    """Positive identity evidence: the search result explicitly names THIS entity.
+
+    Generalized, no vendor exceptions:
+    - single-token entity: that token appearing establishes the name;
+    - multi-token entity: first-token-only appearance is NOT enough. Require
+      the normalized full name OR meaningful multi-token overlap: at least two
+      distinct entity tokens including the longest (most distinctive) token.
+      ("Google Drive ..." therefore never names "Google Cloud Storage", and
+      "Google Cloud Platform ..." does not either.)
+    """
+    tokens = _entity_tokens(cand_name)
+    if not tokens:
+        return False
+    title_l = (title or "").lower()
+    snip_l = (snippet or "").lower()
+    if len(tokens) == 1:
+        return tokens[0] in f"{title_l} {snip_l}"
     norm_name = re.sub(r"\s+", " ", (cand_name or "").lower()).strip()
-    if norm_name and len(norm_name) > 3 and norm_name in text:
+    # A full phrase match anywhere (title or snippet) names the entity.
+    if norm_name and len(norm_name) > 3 and norm_name in f"{title_l} {snip_l}":
         return True
-    return False
+    # Otherwise the TITLE itself must carry meaningful overlap: scattered
+    # words across a snippet ("... cloud storage from Google" inside a Drive
+    # result) never name "Google Cloud Storage".
+    longest = max(tokens, key=len)
+    title_hits = [t for t in tokens if t in title_l]
+    return len(title_hits) >= 2 and longest in title_hits
+
+
+def _url_contains_full_entity_name(link: str, cand_name: str) -> bool:
+    """Conservative URL-path evidence for Wikipedia extlinks (URL data only).
+
+    Accepts only when the full normalized entity name (punctuation stripped,
+    since URLs carry no spaces) appears verbatim in the link. A single shared
+    token in the path is never enough.
+    """
+    norm = re.sub(r"[^a-z0-9]", "", (cand_name or "").lower())
+    if len(norm) < 6:
+        return False
+    flat = re.sub(r"[^a-z0-9]", "", (link or "").lower())
+    return norm in flat
 
 
 def _result_links_org_to_host(title: str, snippet: str, host: str) -> bool:
@@ -1100,13 +1132,14 @@ def _accept_search_host(
 
 
 def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: str = "") -> dict[str, Any] | None:
-    # 1. Inspect external links from Wikipedia registry (exact entity page =
-    # authoritative provenance). Prefer hosts with positive lexical connection
-    # to the entity; fall back to the first non-excluded host only when no
-    # connected host exists.
+    # 1. Wikipedia registry: extlinks are CANDIDATES only. Provenance on the
+    # exact entity page is not official-domain proof (pages link publications,
+    # docs mirrors, partners, archives). Accept an extlink only on positive
+    # entity<->host evidence: (A) host similarity above threshold, or (B) the
+    # full normalized entity name verbatim in the link. Otherwise fall through
+    # to the search resolver, which can prove entity->organization->host.
     if wiki_title:
         extlinks = _get_wiki_extlinks(wiki_title)
-        first_provenance: dict[str, Any] | None = None
         for link in extlinks:
             u_parsed = urlparse(link)
             host = u_parsed.netloc.lower()
@@ -1114,24 +1147,16 @@ def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: s
                 host = host[4:]
             if any(no in host for no in NON_OFFICIAL_DOMAINS):
                 continue
+            if _host_similarity_score(cand_name, host) < 0.5 and not _url_contains_full_entity_name(link, cand_name):
+                continue
             scheme = u_parsed.scheme or "https"
             base_url = f"{scheme}://{u_parsed.netloc}"
-            if first_provenance is None:
-                first_provenance = {
-                    "domain": host,
-                    "url": base_url,
-                    "title": f"{cand_name} Official Website",
-                    "evidence": f"Authoritative external domain verified: {host}",
-                }
-            if _host_similarity_score(cand_name, host) >= 0.5:
-                return {
-                    "domain": host,
-                    "url": base_url,
-                    "title": f"{cand_name} Official Website",
-                    "evidence": f"Authoritative external domain verified: {host}",
-                }
-        if first_provenance is not None:
-            return first_provenance
+            return {
+                "domain": host,
+                "url": base_url,
+                "title": f"{cand_name} Official Website",
+                "evidence": f"Authoritative external domain verified: {host}",
+            }
 
     # 2. Live search resolver with evidence-scored acceptance.
     hits = _search_ddg(f"{cand_name} official website", limit=6)

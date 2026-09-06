@@ -256,16 +256,70 @@ def test_unrelated_shared_generic_token_domain_fails():
         assert resolve_official_domain("Google Cloud Storage", "") is None
 
 
-def test_wiki_provenance_covers_token_absent_legitimate_host():
-    """Exact entity page provenance must not auto-fail when the first token
-    is absent from a legitimate hostname."""
+def test_wiki_token_absent_extlink_alone_is_not_official():
+    """Provenance is not proof: a token-absent extlink must NOT become the
+    official domain merely by appearing on the entity's Wikipedia page."""
     with patch(
         "prior.research._get_wiki_extlinks",
         return_value=["https://store.google.com/pixel"],
+    ), patch("prior.research._search_ddg", return_value=[]):
+        assert resolve_official_domain("Pixel 8", "Pixel_8") is None
+
+
+def test_wiki_unrelated_first_extlink_is_skipped_for_valid_one():
+    """First non-excluded extlink unrelated -> skipped; later similar host wins."""
+    with patch(
+        "prior.research._get_wiki_extlinks",
+        return_value=[
+            "https://partner.example.org/about",
+            "https://bitwarden.com/",
+        ],
     ):
-        info = resolve_official_domain("Pixel 8", "Pixel_8")
+        info = resolve_official_domain("Bitwarden", "Bitwarden")
         assert info is not None
-        assert info["domain"] == "store.google.com"
+        assert info["domain"] == "bitwarden.com"
+
+
+def test_wiki_high_similarity_extlink_passes():
+    with patch(
+        "prior.research._get_wiki_extlinks",
+        return_value=["https://keepersecurity.com/"],
+    ):
+        info = resolve_official_domain("Keeper", "Keeper_(password_manager)")
+        assert info is not None
+        assert "keepersecurity.com" in info["domain"]
+
+
+def test_multi_token_first_token_only_is_not_naming():
+    from prior.research import _result_names_entity
+
+    assert not _result_names_entity(
+        "Google Drive", "Official Google product", "Google Cloud Storage"
+    )
+    assert not _result_names_entity(
+        "Google Cloud Platform", "Cloud computing by Google", "Google Cloud Storage"
+    )
+    # Genuine full naming still counts.
+    assert _result_names_entity(
+        "Google Cloud Storage", "Object storage pricing", "Google Cloud Storage"
+    )
+    # Parent-domain case genuinely naming the product still counts.
+    assert _result_names_entity("Pixel 8 - Google Store", "Buy Pixel 8", "Pixel 8")
+
+
+def test_gcs_rejects_google_drive_result():
+    """Same-brand different product must not resolve via token coincidence."""
+    with patch("prior.research._get_wiki_extlinks", return_value=[]), patch(
+        "prior.research._search_ddg",
+        return_value=[
+            {
+                "title": "Google Drive - Official Google product",
+                "snippet": "Personal cloud storage from Google.",
+                "url": "https://drive.google.com/",
+            }
+        ],
+    ):
+        assert resolve_official_domain("Google Cloud Storage", "") is None
 
 
 def test_ambiguous_evidence_yields_no_domain():
