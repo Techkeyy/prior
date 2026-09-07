@@ -124,6 +124,150 @@ CONCEPT_SUMMARY_INDICATORS = [
     r"\bis a mathematical\b",
 ]
 
+# --- Entity-instance gate (Q2): category relation (Q1) is necessary but NOT
+# sufficient. For requests seeking concrete services/products/providers, the
+# evidence must ALSO identify the candidate as a concrete instance — never a
+# category, concept, technology class, list, or comparison. Generalized
+# linguistic patterns only; no candidate or vendor is hardcoded. ---
+_CONCEPT_KIND_RE = re.compile(
+    r"\b(technolog(?:y|ies)|categor(?:y|ies)|concepts?|models?|protocols?|"
+    r"architectures?|paradigms?|standards?|specifications?)\b",
+    re.I,
+)
+
+# Evidence defining the candidate as a concept/category rather than an
+# instance. Checked first per identifying sentence: a positive-looking
+# fragment elsewhere never overrides an explicit definitional statement, and
+# a definitional sentence about something else ("It is an Infrastructure as
+# a Service") says nothing about THIS entity.
+_CONCEPT_DEFINITION_RE = re.compile(
+    r"\b(is|are)\s+(?:a|an|the)\s+"
+    r"(form|type|kind|categor(?:y|ies)|class(?:es)?|concepts?|"
+    r"technolog(?:y|ies)|models?|methods?|practices?|fields?|disciplines?|"
+    r"examples?|terms?)\s+of\b"
+    r"|\b(is|are)\s+(?:a|an|the)\s+(?:[\w-]+\s+){0,3}?"
+    r"(architecture|paradigm|framework|infrastructure)\b"
+    r"(?!\s+as\s+a\s+service\b)"
+    r"(?!\s+(?:compan(?:y|ies)|provider\w*|firm\w*|business\w*|service\w*|"
+    r"product\w*|platform\w*|solution\w*|vendor\w*|tools?\b|software\b))"
+    r"|\brefers to\b|\bgeneric term\b|\boverview of\b",
+    re.I,
+)
+
+# Nouns that inherently denote a concrete offering or vendor.
+_INSTANCE_HEAD_NOUNS = (
+    r"products?|software|applications?|apps?|tools?|compan(?:y|ies)|"
+    r"providers?|vendors?|business(?:es)?|startups?|subsidiar(?:y|ies)|"
+    r"divisions?|brands?|services?|platforms?|solutions?|offerings?|"
+    r"programs?|suites?|managers?|wallets?|exchanges?|engines?|browsers?|"
+    r"networks?|clients?"
+)
+
+# A positive instance sentence that merely re-defines the term cannot count.
+_DEFINITIONAL_CONTEXT_RE = re.compile(
+    r"\b(form|type|kind|categor(?:y|ies)|class(?:es)?|concept|technology|"
+    r"model|method|practice|field|discipline|architecture|paradigm|framework|"
+    r"infrastructure)\s+of\b"
+    r"|\balso known as\b|\balso called\b|\bknown as\b|\bdefined as\b|"
+    r"\brefers to\b|\bgeneric term\b",
+    re.I,
+)
+
+_BY_CLAUSE_RE = re.compile(
+    rf"\b(?:{_INSTANCE_HEAD_NOUNS})\s+"
+    r"(offered|provided|operated|developed|owned|maintained|managed|run|"
+    r"launched|built|created|founded|distributed|sold)\s+by\b",
+    re.I,
+)
+
+_VENDOR_VERBS = (
+    "provides", "offers", "sells", "develops", "operates", "launched",
+    "released", "founded", "headquartered", "employs",
+)
+_GAP_PLURAL_NOUNS = re.compile(r"\b(providers?|compan(?:y|ies)|vendors?|firms?)\b", re.I)
+
+
+def _request_allows_concepts(facets: QueryFacets) -> bool:
+    """Request-type awareness: an explicit ask for technologies, categories,
+    concepts, models, protocols, etc. permits concept-kind candidates. A
+    request for services/products/providers does not."""
+    text = f"{facets.raw_query or ''} {facets.subject or ''}"
+    return bool(_CONCEPT_KIND_RE.search(text))
+
+
+def _sentence_identifies(slow: str, cand_name: str) -> bool:
+    return _relation_identifies_candidate(slow, cand_name)
+
+
+def _validate_entity_instance(
+    name: str, snippet: str, summary: str, facets: QueryFacets
+) -> tuple[bool, str]:
+    """Q2 gate: is THIS candidate itself a concrete instance of the requested
+    entity class? Positive evidence is required — absence of concept language
+    alone never suffices. Bounded to the candidate title/summary/relation
+    evidence; request-aware (concept-seeking requests skip this gate)."""
+    if _request_allows_concepts(facets):
+        return True, "Request explicitly allows concept/technology kinds"
+    evidence_text = f"{name}\n{snippet}\n{summary}"
+    sentences = [
+        s.strip()
+        for s in re.split(r"(?<=[.!?\n])\s+", evidence_text)
+        if s.strip()
+    ]
+    for s in sentences:
+        if _sentence_identifies(s.lower(), name) and _CONCEPT_DEFINITION_RE.search(s):
+            return False, "Evidence defines the candidate as a category/concept rather than a concrete entity instance"
+    norm = _candidate_norm(name)
+    brand = _brand_token(name)
+    anchored_re = (
+        re.compile(
+            rf"{re.escape(norm)}\s+(is|are)\s+(?:a|an|the)\s+"
+            rf"(?:[\w-]+\s+){{0,5}}?(?:{_INSTANCE_HEAD_NOUNS})\b",
+            re.I,
+        )
+        if norm else None
+    )
+    brand_re = (
+        re.compile(
+            rf"\b{re.escape(brand)}\b[\w\s(),.-]{{0,60}}?\b(is|are)\s+"
+            rf"(?:a|an|the)\s+(?:[\w-]+\s+){{0,5}}?(?:{_INSTANCE_HEAD_NOUNS})\b",
+            re.I,
+        )
+        if brand else None
+    )
+    verb_re = (
+        re.compile(rf"{re.escape(norm)}\s+(?:{'|'.join(_VENDOR_VERBS)})\b", re.I)
+        if norm else None
+    )
+    brand_verb_re = (
+        re.compile(
+            rf"\b{re.escape(brand)}\b((?:\s+[\w-]+){{1,3}}?)\s+"
+            rf"(?:{'|'.join(_VENDOR_VERBS)})\b",
+            re.I,
+        )
+        if brand else None
+    )
+    for s in sentences:
+        slow = s.lower()
+        if _DEFINITIONAL_CONTEXT_RE.search(s):
+            continue
+        if anchored_re and anchored_re.search(s):
+            return True, "Concrete instance evidence"
+        if brand_re and brand_re.search(s):
+            return True, "Concrete instance evidence"
+        if _sentence_identifies(slow, name) and _BY_CLAUSE_RE.search(s):
+            return True, "Concrete instance evidence"
+        if verb_re and verb_re.search(s):
+            return True, "Concrete instance evidence"
+        if brand_verb_re:
+            bm = brand_verb_re.search(s)
+            if bm and not _GAP_PLURAL_NOUNS.search(bm.group(1) or ""):
+                return True, "Concrete instance evidence"
+    return False, (
+        "No entity-specific evidence that the candidate is a concrete instance "
+        "of the requested entity type (category relation alone is not enough)"
+    )
+
 GENERIC_CONCEPT_PATTERNS = [
     r"^password strength.*$",
     r"^password policy.*$",
@@ -944,6 +1088,17 @@ def _validate_candidate_facets(
                 evidence,
             )
         evidence["qualifiers"][q] = {"evidence": rel_evidence, "source": url}
+
+    # 3. Entity-Instance Validation (Q2): category relation (Q1) is necessary
+    # but NOT sufficient. The evidence must ALSO identify the candidate as a
+    # concrete instance of the requested entity class — never a category,
+    # concept, technology class, list, or comparison. Placed last so every
+    # pre-existing rejection reason is preserved.
+    instance_ok, instance_reason = _validate_entity_instance(
+        name, snippet, summary, facets
+    )
+    if not instance_ok:
+        return False, instance_reason, evidence
 
     return True, "Valid", evidence
 

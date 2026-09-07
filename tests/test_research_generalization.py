@@ -19,7 +19,9 @@ from prior.research import (
     _category_terms,
     _extract_category_relation,
     _host_similarity_score,
+    _notes,
     _validate_candidate_facets,
+    _validate_entity_instance,
     extract_facets,
     resolve_official_domain,
 )
@@ -1328,3 +1330,188 @@ def test_scope_sku_is_not_a_place(monkeypatch):
     assert "$0.022 per GB per month" in val
     assert "SKU" not in val
     assert "us-central1" in val
+
+
+# ---------------- Entity-instance gate (Q2) ----------------
+
+PM_RAW = (
+    "Research three password managers and compare their pricing, "
+    "supported platforms, strengths, and weaknesses."
+)
+TECH_RAW = "Research three cloud storage technologies and compare them."
+
+
+def _pm_facets():
+    return extract_facets(parse_job(PM_RAW))
+
+
+def _tech_facets():
+    return extract_facets(parse_job(TECH_RAW))
+
+
+def test_instance_mobile_cloud_storage_concept_rejected():
+    """Live UAT 77224 shape: 'is a form of cloud storage' proves category
+    membership but must FAIL entity-instance for a services request."""
+    ok, reason, _ = _validate_candidate_facets(
+        "Mobile cloud storage",
+        "Mobile cloud storage is a form of cloud storage that is accessible on mobile devices.",
+        "Mobile cloud storage providers offer services that allow the user to create files.",
+        "https://en.wikipedia.org/wiki/Mobile_cloud_storage",
+        _cloud_facets(),
+    )
+    assert not ok
+    assert "instance" in reason.lower() or "concept" in reason.lower() or "categor" in reason.lower()
+
+
+def test_instance_generic_cloud_storage_concept_rejected():
+    ok, _, _ = _validate_candidate_facets(
+        "Cloud storage",
+        "Cloud storage is a model of computer data storage in which data is stored.",
+        "",
+        "https://en.wikipedia.org/wiki/Cloud_storage",
+        _cloud_facets(),
+    )
+    assert not ok
+
+
+def test_instance_object_storage_concept_rejected():
+    ok, reason, _ = _validate_candidate_facets(
+        "Object storage",
+        "Object storage is a cloud data storage architecture.",
+        "Providers sell object storage capacity to enterprise customers.",
+        "https://en.wikipedia.org/wiki/Object_storage",
+        _cloud_facets(),
+    )
+    assert not ok
+    assert "instance" in reason.lower() or "concept" in reason.lower()
+
+
+def test_instance_dropbox_like_service_passes():
+    ok, reason, _ = _validate_candidate_facets(
+        "Dropbox",
+        "Dropbox is a file hosting service that offers cloud storage.",
+        "Dropbox provides cloud storage and file synchronization for teams.",
+        "https://dropbox.com",
+        _cloud_facets(),
+    )
+    assert ok, reason
+
+
+def test_instance_s3_like_service_passes():
+    ok, reason, _ = _validate_candidate_facets(
+        "Amazon S3",
+        "Amazon Simple Storage Service (S3) is a service offered by Amazon Web Services.",
+        "Amazon S3 provides scalable cloud object storage through a web service interface.",
+        "https://en.wikipedia.org/wiki/Amazon_S3",
+        _cloud_facets(),
+    )
+    assert ok, reason
+
+
+def test_instance_gcs_like_service_passes():
+    ok, reason, _ = _validate_candidate_facets(
+        "Google Cloud Storage",
+        "Google Cloud Storage is an online file storage web service for storing data.",
+        "",
+        "https://en.wikipedia.org/wiki/Google_Cloud_Storage",
+        _cloud_facets(),
+    )
+    assert ok, reason
+
+
+def test_instance_password_concept_rejected_product_passes():
+    ok, _, _ = _validate_candidate_facets(
+        "Password security",
+        "Password security is the practice of protecting passwords from disclosure.",
+        "",
+        "https://en.wikipedia.org/wiki/Password_security",
+        _pm_facets(),
+    )
+    assert not ok
+
+    ok, reason, _ = _validate_candidate_facets(
+        "Bitwarden",
+        "Bitwarden is a free and open-source password management service.",
+        "",
+        "https://bitwarden.com",
+        _pm_facets(),
+    )
+    assert ok, reason
+
+
+def test_instance_concept_allowed_for_technology_request():
+    """Request-type awareness: a technologies request may admit concepts."""
+    facets = _tech_facets()
+    ok, _, _ = _validate_candidate_facets(
+        "Mobile cloud storage",
+        "Mobile cloud storage is a form of cloud storage that is accessible on mobile devices.",
+        "",
+        "https://en.wikipedia.org/wiki/Mobile_cloud_storage",
+        facets,
+    )
+    assert ok
+
+
+def test_instance_list_comparison_titles_rejected():
+    for title in (
+        "Comparison of file hosting services",
+        "List of password managers",
+    ):
+        facets = _cloud_facets() if "hosting" in title else _pm_facets()
+        ok, _, _ = _validate_candidate_facets(
+            title,
+            "A roundup article describing several options.",
+            "",
+            "https://en.wikipedia.org/wiki/X",
+            facets,
+        )
+        assert not ok, title
+
+
+def test_instance_no_hardcoded_concept_exclusions():
+    import prior.research as research_mod
+
+    src = open(research_mod.__file__, encoding="utf-8").read().lower()
+    assert "mobile cloud storage" not in src
+
+
+def test_count_partial_result_is_truthful():
+    """Under-count preferred: 2 verified findings produce an 'Only 2 ...'
+    statement, never a generic filler entity."""
+    spec = parse_job(CLOUD_RAW)
+    notes = _notes(
+        spec,
+        [{"name": "Google Cloud Storage"}, {"name": "Amazon S3"}],
+        False,
+        False,
+        3,
+    )
+    assert any("Only 2 qualifying" in n for n in notes)
+    assert not any(n.startswith("3 qualifying") for n in notes)
+
+
+def test_gcp_broad_suite_still_rejected():
+    """Prior broad-suite regression: the parent suite never counts as a
+    storage service, before or after the instance gate."""
+    facets = _cloud_facets()
+    ok, _, _ = _validate_candidate_facets(
+        "Google Cloud Platform",
+        "Google Cloud is a suite of cloud computing services offered by Google that provides storage.",
+        "Google Cloud Platform provides modular cloud services including computing and data storage.",
+        "https://en.wikipedia.org/wiki/Google_Cloud_Platform",
+        facets,
+    )
+    assert not ok
+
+
+def test_instance_iaas_sentence_without_candidate_ignored():
+    """Live GCS shape: 'It is an Infrastructure as a Service' in a sentence
+    that never identifies the candidate must not define the candidate."""
+    ok, reason, _ = _validate_candidate_facets(
+        "Google Cloud Storage",
+        "Google Cloud Storage is an online file storage web service for storing data.",
+        "It is an Infrastructure as a Service (IaaS), comparable to Amazon S3.",
+        "https://en.wikipedia.org/wiki/Google_Cloud_Storage",
+        _cloud_facets(),
+    )
+    assert ok, reason
