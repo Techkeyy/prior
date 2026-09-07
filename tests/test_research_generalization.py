@@ -461,7 +461,7 @@ def test_76624_unrelated_clauses_rejected():
     assert not ok
 
 
-def _pricing_with_mocked_fetch(monkeypatch, pages: dict):
+def _pricing_with_mocked_fetch(monkeypatch, pages: dict, search_hits: list | None = None):
     from prior.research import extract_first_party_pricing
 
     def mock_fetch(url):
@@ -470,7 +470,13 @@ def _pricing_with_mocked_fetch(monkeypatch, pages: dict):
                 return body
         return ""
 
+    def mock_search(query, limit=15):
+        return list(search_hits) if search_hits is not None else []
+
     monkeypatch.setattr("prior.research._fetch_page_text", mock_fetch)
+    # Isolate claim-scope assertions from the retrieval bridge: no live
+    # discovery search unless a test explicitly supplies search_hits.
+    monkeypatch.setattr("prior.research._search_ddg", mock_search)
     return extract_first_party_pricing
 
 
@@ -801,3 +807,203 @@ def test_76668_live_gcp_storage_block_rejected():
     )
     assert not ok
     assert "relational" in reason.lower() or "category" in reason.lower()
+
+
+def _bridge_hit(title, snippet, url):
+    return {"title": title, "snippet": snippet, "url": url, "source": "Web Search"}
+
+
+def test_bridge_generic_root_pricing_without_discovery_is_unavailable(monkeypatch):
+    """Generic root /pricing with only parent-company pricing stays rejected
+    when discovery search yields nothing."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Nimbus Cloud uses pay-as-you-go pricing for the services you use. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_bridge_official_product_page_discovered_and_passes(monkeypatch):
+    """Targeted search finds the official product-specific pricing URL; the
+    scoped price on that page passes."""
+    queries = []
+
+    def mock_search(query, limit=15):
+        queries.append((query, limit))
+        return [
+            _bridge_hit(
+                "Nimbus Storage Pricing",
+                "Nimbus Storage object pricing per GB-month.",
+                "https://nimbus.example/storage/pricing",
+            )
+        ]
+
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            # Product-specific key first: "/pricing" is a substring of the
+            # product URL, so ordering matters for the substring mock only.
+            "/storage/pricing": _pad_pricing_html(
+                "Nimbus Storage Standard storage costs $0.023 per GB-month in all regions. ",
+            ),
+            "/pricing": _pad_pricing_html(
+                "Nimbus Cloud uses pay-as-you-go pricing for the services you use. ",
+            ),
+        },
+    )
+    monkeypatch.setattr("prior.research._search_ddg", mock_search)
+    val, sources, _ = extract_first_party_pricing(
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
+    )
+    assert queries and queries[0][0] == "Nimbus Storage pricing"
+    assert queries[0][1] <= 6
+    assert "$0.023 per GB-month" in val
+    assert any(s["url"] == "https://nimbus.example/storage/pricing" for s in sources)
+
+
+def test_bridge_third_party_result_skipped_for_official(monkeypatch):
+    """A third-party pricing article ranked first is rejected; the official
+    product-specific hit is used instead. Ranking is never evidence."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/storage/pricing": _pad_pricing_html(
+                "Nimbus Storage Standard storage costs $0.023 per GB-month in all regions. ",
+            ),
+            "/pricing": _pad_pricing_html(
+                "Nimbus Cloud uses pay-as-you-go pricing for the services you use. ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Nimbus Storage Pricing Compared",
+                "Nimbus Storage costs reviewed and compared.",
+                "https://techblog.example/nimbus-storage-pricing",
+            ),
+            _bridge_hit(
+                "Nimbus Storage Pricing",
+                "Official Nimbus Storage pricing.",
+                "https://nimbus.example/storage/pricing",
+            ),
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
+    )
+    assert "$0.023 per GB-month" in val
+    assert all("techblog.example" not in s["url"] for s in sources)
+    assert any(s["url"] == "https://nimbus.example/storage/pricing" for s in sources)
+
+
+def test_bridge_official_generic_pricing_url_rejected(monkeypatch):
+    """A search hit on the official domain that is NOT product-specific
+    (/pricing leaf) is rejected even when its title names the candidate."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Nimbus Cloud uses pay-as-you-go pricing for the services you use. ",
+            )
+        },
+        search_hits=[
+            _bridge_hit(
+                "Nimbus Storage Pricing",
+                "Official pricing for Nimbus Storage.",
+                "https://nimbus.example/pricing",
+            )
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_bridge_wrong_host_candidate_result_rejected(monkeypatch):
+    """A result whose title names the candidate but whose host is not the
+    verified official domain is rejected."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/storage/pricing": _pad_pricing_html(
+                "Nimbus Storage Standard storage costs $0.023 per GB-month in all regions. ",
+            ),
+            "/pricing": _pad_pricing_html(
+                "Nimbus Cloud uses pay-as-you-go pricing for the services you use. ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Nimbus Storage Pricing",
+                "Nimbus Storage pricing details.",
+                "https://rival.example/storage/pricing",
+            )
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_bridge_parent_domain_product_path_passes(monkeypatch):
+    """Child product on a parent-company domain passes via the product-specific
+    path alone, even when the claim sentence itself never names the candidate."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/s3/pricing": _pad_pricing_html(
+                "Standard storage costs $0.023 per GB-month in the selected region. ",
+            ),
+            "/pricing": _pad_pricing_html(
+                "Nimbus Cloud uses pay-as-you-go pricing for the services you use. ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Nimbus S3 Pricing",
+                "Object storage pricing per GB-month.",
+                "https://cloud.example/s3/pricing",
+            )
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Nimbus S3", "cloud.example", "https://cloud.example", ""
+    )
+    assert "$0.023 per GB-month" in val
+    assert any(s["url"] == "https://cloud.example/s3/pricing" for s in sources)
+
+
+def test_bridge_no_suitable_result_is_truthful(monkeypatch):
+    """Discovery hits that are official but not product-specific (blog/news)
+    yield truthful unavailable, not a manufactured claim."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Nimbus Cloud uses pay-as-you-go pricing for the services you use. ",
+            )
+        },
+        search_hits=[
+            _bridge_hit(
+                "Nimbus Storage News",
+                "Nimbus Storage announces a new region.",
+                "https://nimbus.example/blog/storage-news",
+            )
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []

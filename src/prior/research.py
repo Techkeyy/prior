@@ -1401,6 +1401,95 @@ def _pricing_evidence_scoped(page_text: str, claim_unit: str, url: str, cand_nam
     return False
 
 
+_PRODUCT_PRICING_SEARCH_LIMIT = 6
+
+
+def _official_host_or_subdomain(host: str, official_domain: str) -> bool:
+    h = (host or "").lower()
+    if h.startswith("www."):
+        h = h[4:]
+    off = (official_domain or "").lower()
+    if off.startswith("www."):
+        off = off[4:]
+    if not h or not off:
+        return False
+    return h == off or h.endswith("." + off)
+
+
+def _scoped_pricing_claim_from_page(
+    page_url: str, page_txt: str, cand_name: str
+) -> tuple[str, str] | None:
+    """Extract ONE scoped pricing claim from an already-fetched page using the
+    EXISTING claim-scope gate. Strict amounts first, then usage rates, then
+    model statements. Returns (value, evidence) or None."""
+    scoped_amounts: list[str] = []
+    for hit in _PLAN_PRICE_RE.finditer(page_txt):
+        unit = next(
+            (s for s in _split_evidence_units(page_txt) if hit.group(0) in s),
+            hit.group(0),
+        )
+        if _pricing_evidence_scoped(page_txt, unit, page_url, cand_name):
+            scoped_amounts.append(hit.group(1))
+    if scoped_amounts:
+        p_str = ", ".join(f"${p}" for p in dict.fromkeys(scoped_amounts[:2]))
+        return (
+            f"Starting from {p_str} (official product pricing page).",
+            f"Official product-specific pricing page states prices starting from {p_str}.",
+        )
+    for usage_rate, usage_unit in _usage_rate_units(page_txt):
+        if _pricing_evidence_scoped(page_txt, usage_unit, page_url, cand_name):
+            return (
+                f"Usage-based pricing: {usage_rate}.",
+                f"Official page states usage pricing: {usage_rate}.",
+            )
+    for model_stmt in _pricing_model_units(page_txt):
+        if _pricing_evidence_scoped(page_txt, model_stmt, page_url, cand_name):
+            return (
+                f"Pricing model stated on official page: {model_stmt}",
+                f"Official page describes pricing model: {model_stmt}",
+            )
+    return None
+
+
+def _discover_product_pricing_page(
+    cand_name: str, official_domain: str
+) -> tuple[str, list[dict[str, str]], str] | None:
+    """RETRIEVAL bridge (not an evidence relaxation): ONE bounded targeted
+    search for THIS candidate's pricing page. A hit is accepted only when ALL
+    hold: host is the verified official domain (or subdomain), the result
+    names the candidate, the URL passes the EXISTING product-specific check,
+    the page is retrievable, and the extracted claim passes the EXISTING
+    claim-scope gate. Search ranking itself is never evidence."""
+    if not cand_name or not official_domain:
+        return None
+    try:
+        hits = _search_ddg(f"{cand_name} pricing", limit=_PRODUCT_PRICING_SEARCH_LIMIT)
+    except Exception:
+        return None
+    for h in hits or []:
+        url = h.get("url", "")
+        host = urlparse(url).netloc.lower()
+        if not _official_host_or_subdomain(host, official_domain):
+            continue
+        if not _result_names_entity(h.get("title", ""), h.get("snippet", ""), cand_name):
+            continue
+        if not _pricing_url_is_product_specific(url, cand_name):
+            continue
+        txt = _fetch_page_text(url)
+        if not txt or len(txt) <= 200:
+            continue
+        claim = _scoped_pricing_claim_from_page(url, txt, cand_name)
+        if claim is None:
+            continue
+        value, evidence_text = claim
+        return (
+            value,
+            [{"label": f"{cand_name} Official Product Pricing", "url": url}],
+            evidence_text,
+        )
+    return None
+
+
 def extract_first_party_pricing(
     cand_name: str, official_domain: str, base_url: str, initial_text: str
 ) -> tuple[str, list[dict[str, str]], str]:
@@ -1530,6 +1619,9 @@ def extract_first_party_pricing(
                     return f"Pricing model stated on official page: {model_stmt}", sources, evidence_text
 
         evidence_text = "Official pricing pages were retrieved but contain no verifiable prices, usage rates, or pricing-model statement."
+        bridged = _discover_product_pricing_page(cand_name, official_domain)
+        if bridged is not None:
+            return bridged
         return TRUTHFUL_PRICING_UNAVAILABLE, [], evidence_text
 
     evidence_text = "No verifiable pricing tiers found in the retrieved first-party pages."
