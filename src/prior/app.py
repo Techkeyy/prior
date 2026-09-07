@@ -351,10 +351,8 @@ def auth_email_verify(payload: EmailVerifyIn, request: Request, response: Respon
 
 @app.post("/api/auth/logout")
 def auth_logout(request: Request, response: Response) -> dict:
-    token = request.cookies.get(auth.SESSION_COOKIE)
     store = auth.get_store()
-    if token:
-        store.revoke_session(token)
+    auth.revoke_presented_sessions(request, store)
     _clear_session(response)
     current = request.cookies.get(auth.WORKSPACE_COOKIE)
     if current and store.workspace_owner(current) is not None:

@@ -717,3 +717,97 @@ def test_rate_limiting_enforced(monkeypatch):
         assert resp.status_code == 200
     limited = client.post("/api/auth/email/start", json={"email": "flood@example.com"})
     assert limited.status_code == 429
+
+
+# ---- final gate: logout revokes EVERY presented same-name session ----
+
+def _presented_logout(client: TestClient, raw_cookie: str) -> dict:
+    resp = client.post("/api/auth/logout", headers={"cookie": raw_cookie})
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def test_logout_revokes_all_presented_same_name_sessions(monkeypatch):
+    from prior import settings as settings_mod
+
+    client = make_client()
+    ws = guest_ws(client)
+    seed_history(client, ws)
+    google_login(client, monkeypatch)
+    account_id = client.get("/api/auth/me").json()["account"]["account_id"]
+    store = IdentityStore(settings_mod.identity_db_path())
+    s1 = client.cookies.get("prior_session")
+    assert s1 and store.lookup_session(s1) is not None
+    s2 = store.create_session(account_id, ttl_s=3600)
+    assert store.lookup_session(s2) is not None
+    assert _presented_logout(
+        client, f"prior_session={s1}; prior_session={s2}; prior_workspace={ws}"
+    ) == {"ok": True}
+    assert store.lookup_session(s1) is None
+    assert store.lookup_session(s2) is None
+
+
+def test_logout_revokes_mixed_valid_and_invalid_candidates(monkeypatch):
+    from prior import settings as settings_mod
+
+    client = make_client()
+    ws = guest_ws(client)
+    seed_history(client, ws)
+    google_login(client, monkeypatch)
+    account_id = client.get("/api/auth/me").json()["account"]["account_id"]
+    store = IdentityStore(settings_mod.identity_db_path())
+    s1 = client.cookies.get("prior_session")
+    s2 = store.create_session(account_id, ttl_s=3600)
+    assert _presented_logout(
+        client,
+        f"prior_session=bogus-token; prior_session={s1}; prior_session={s2}"
+        f"; prior_workspace={ws}",
+    ) == {"ok": True}
+    assert store.lookup_session(s1) is None
+    assert store.lookup_session(s2) is None
+
+
+def test_former_presented_sessions_cannot_authenticate_afterward(monkeypatch):
+    from prior import settings as settings_mod
+
+    client = make_client()
+    ws = guest_ws(client)
+    job_id, _ = seed_history(client, ws)
+    google_login(client, monkeypatch)
+    account_id = client.get("/api/auth/me").json()["account"]["account_id"]
+    store = IdentityStore(settings_mod.identity_db_path())
+    s1 = client.cookies.get("prior_session")
+    s2 = store.create_session(account_id, ttl_s=3600)
+    _presented_logout(client, f"prior_session={s1}; prior_session={s2}; prior_workspace={ws}")
+    for stale in (s1, s2):
+        probe = make_client()
+        probe.cookies.set("prior_session", stale)
+        probe.cookies.set("prior_workspace", ws)
+        me = probe.get("/api/auth/me").json()
+        assert me["authenticated"] is False
+        assert me["workspace_id"] != ws
+        assert probe.get(f"/api/jobs/{job_id}").status_code == 404
+
+
+def test_logout_preserves_unpresented_cross_device_session(monkeypatch):
+    from prior import settings as settings_mod
+
+    client = make_client()
+    ws = guest_ws(client)
+    seed_history(client, ws)
+    google_login(client, monkeypatch)
+    account_id = client.get("/api/auth/me").json()["account"]["account_id"]
+    store = IdentityStore(settings_mod.identity_db_path())
+    s1 = client.cookies.get("prior_session")
+    s2 = store.create_session(account_id, ttl_s=3600)
+    device_b = store.create_session(account_id, ttl_s=3600)
+    _presented_logout(client, f"prior_session={s1}; prior_session={s2}; prior_workspace={ws}")
+    assert store.lookup_session(s1) is None
+    assert store.lookup_session(s2) is None
+    # Same account, other device, never presented here: still valid.
+    assert store.lookup_session(device_b) is not None
+    other = make_client()
+    other.cookies.set("prior_session", device_b)
+    me = other.get("/api/auth/me").json()
+    assert me["authenticated"] is True
+    assert me["workspace_id"] == ws

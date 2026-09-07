@@ -102,6 +102,29 @@ def _session_candidates(request) -> list[str]:
     return seen
 
 
+def session_candidates(request) -> list[str]:
+    """Public alias: every session bearer the request presents.
+
+    Same parsing semantics as authentication. Logout must revoke all of
+    these, not just `request.cookies.get()`, because stale domain variants
+    can present several same-name cookies at once."""
+    return _session_candidates(request)
+
+
+def revoke_presented_sessions(request, store: IdentityStore) -> int:
+    """Revoke each PRIOR session token presented by this request.
+
+    Only presented bearers are revoked — never the account's other
+    (cross-device) sessions."""
+    revoked = 0
+    for token in _session_candidates(request):
+        before = store.lookup_session(token)
+        store.revoke_session(token)
+        if before is not None:
+            revoked += 1
+    return revoked
+
+
 def mint_guest_workspace(store: IdentityStore, response) -> str:
     guest_ws = "ws_" + secrets.token_hex(8)
     store.ensure_workspace_row(guest_ws)
