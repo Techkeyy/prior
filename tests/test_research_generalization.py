@@ -486,10 +486,158 @@ def test_76624_plan_words_without_price_are_truthful(monkeypatch):
         {"/pricing": "<html><body>" + "Our plans include Free plan, Premium plan, Business and Enterprise tiers with great features. " * 12 + "</body></html>"},
     )
     val, sources, _ = extract_first_party_pricing(
-        "Google Cloud Platform", "cloud.google.com", "https://cloud.google.com", ""
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
     )
     assert val == "Not publicly disclosed in the retrieved source."
     assert sources == []
+
+
+def test_rate_gcs_per_gb_per_month_passes():
+    from prior.research import _extract_usage_rate
+
+    assert (
+        _extract_usage_rate("billed at $0.022 per GB per month for the region")
+        == "$0.022 per GB per month"
+    )
+
+
+def test_rate_gb_month_passes():
+    from prior.research import _extract_usage_rate
+
+    assert (
+        _extract_usage_rate("storage pricing at $0.023 per GB-month with no minimum")
+        == "$0.023 per GB-month"
+    )
+
+
+def test_rate_user_slash_month_passes():
+    from prior.research import _extract_usage_rate
+
+    assert _extract_usage_rate("Business costs $5 per user/month billed annually") == "$5 per user/month"
+
+
+def test_rate_request_quantity_passes():
+    from prior.research import _extract_usage_rate
+
+    assert (
+        _extract_usage_rate("PUT request price is $10 per 1,000 requests per day")
+        == "$10 per 1,000 requests per day"
+    )
+    assert (
+        _extract_usage_rate("PUT request price is $10 per 1,000 requests")
+        == "$10 per 1,000 requests"
+    )
+
+
+def test_rate_dangling_for_the_rejected():
+    from prior.research import _extract_usage_rate
+
+    assert (
+        _extract_usage_rate(
+            "S3 Tables - Standard storage price is $0.0265 per GB for the first 50 TB per month"
+        )
+        is None
+    )
+
+
+def test_rate_dangling_for_rejected():
+    from prior.research import _extract_usage_rate
+
+    assert _extract_usage_rate("Business costs $5 per user for annual plans") is None
+    assert _extract_usage_rate("$0.02 per storage in multiple regions") is None
+    assert _extract_usage_rate("$10 per month with annual billing") is None
+    assert _extract_usage_rate("$0.04 per GB charge applies") is None
+    assert _extract_usage_rate("$0.02 per GB Since you are transferring") is None
+
+
+def test_rate_trailing_prose_returns_only_rate():
+    from prior.research import _extract_usage_rate
+
+    assert (
+        _extract_usage_rate("Acme Store costs $0.023 per GB-month with no minimum fees ever.")
+        == "$0.023 per GB-month"
+    )
+    assert (
+        _extract_usage_rate("PUT request price is $0.005 per 1,000 requests Since you add files")
+        == "$0.005 per 1,000 requests"
+    )
+
+
+def test_rate_s3_malformed_shape_never_returned(monkeypatch):
+    """Replayed UAT 77095 evidence shape: the dangling storage-price fragment
+    must not become pricing; the valid PUT rate on the same page passes."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/s3/pricing": _pad_pricing_html(
+                "S3 Tables - Standard storage price is $0.0265 per GB for the first 50 TB per month ",
+                "S3 Tables - Standard PUT request price is $0.005 per 1,000 requests ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Amazon S3 Pricing",
+                "Amazon S3 object storage pricing.",
+                "https://aws.example/s3/pricing",
+            )
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.example", "https://aws.example", ""
+    )
+    assert "for the" not in val
+    assert "$0.0265" not in val
+    assert "$0.005 per 1,000 requests" in val
+    assert any(s["url"] == "https://aws.example/s3/pricing" for s in sources)
+
+
+def test_rate_s3_malformed_only_is_truthful(monkeypatch):
+    """A product page with only the dangling fragment yields truthful
+    unavailable, never a truncated rate."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/s3/pricing": _pad_pricing_html(
+                "S3 Tables - Standard storage price is $0.0265 per GB for the first 50 TB per month ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Amazon S3 Pricing",
+                "Amazon S3 object storage pricing.",
+                "https://aws.example/s3/pricing",
+            )
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.example", "https://aws.example", ""
+    )
+    assert val == "Not publicly disclosed in the retrieved source."
+    assert sources == []
+
+
+def test_rate_gcs_production_shape_passes(monkeypatch):
+    """Replayed GCS production evidence shape keeps passing end to end."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/storage/pricing": _pad_pricing_html(
+                "Standard storage will be billed at $0.022 per GB per month for the region ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Google Cloud Storage Pricing",
+                "Google Cloud Storage object pricing.",
+                "https://cloud.example/storage/pricing",
+            )
+        ],
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.example", "https://cloud.example", ""
+    )
+    assert "$0.022 per GB per month" in val
+    assert any(s["url"] == "https://cloud.example/storage/pricing" for s in sources)
     assert "Free plan" not in val
     assert "Business / Enterprise" not in val
 

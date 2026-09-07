@@ -1255,15 +1255,71 @@ def resolve_official_domain(cand_name: str, wiki_title: str = "", domain_hint: s
 
 
 _USAGE_RATE_RE = re.compile(
-    r"\$[\d,]+(?:\.\d+)?\s*per\s+[A-Za-z][\w-]*(?:[-\s][A-Za-z]+){0,2}"
+    r"\$(?P<amount>[\d,]+(?:\.\d+)?)"
+    r"\s*per\s+"
+    r"(?:(?P<det>one|a|an|each|every)\s+)?"
+    r"(?:(?P<qty>\d[\d,]*(?:\.\d+)?|million|billion|thousand)\s+)?"
+    r"(?P<noun1>[A-Za-z][\w-]*)"
+    # A literal second "per" belongs to the per-clause tail below, never to
+    # the noun position ("per GB per month" must not parse noun2="per").
+    r"(?:\s+(?![Pp][Ee][Rr]\b)(?P<noun2>[A-Za-z][\w-]*))?"
+    r"(?P<denom>/[A-Za-z][\w-]*)?"
+    r"(?:\s+per\s+(?P<perunit>[A-Za-z][\w-]*))?"
 )
 _MODEL_STATEMENT_RE = re.compile(r"pay[-\s]?as[-\s]?you[-\s]?go", re.I)
+
+# Second unit nouns that genuinely continue a quantity rate
+# ("10,000 write requests", "1,000 data files"). Anything else in that
+# position is trailing prose, never part of the rate.
+_UNIT_CONTINUATION_NOUNS = frozenset({
+    "request", "requests", "user", "users", "object", "objects",
+    "file", "files", "write", "writes", "read", "reads", "data",
+    "metadata", "operation", "operations", "call", "calls", "event",
+    "events", "message", "messages", "task", "tasks", "transaction",
+    "transactions", "credit", "credits", "unit", "units", "device",
+    "devices", "account", "accounts", "row", "rows", "byte", "bytes",
+    "gb", "tb", "mb", "kb", "pb", "eb", "seat", "seats", "license",
+    "licenses", "member", "members", "project", "projects", "record",
+    "records", "query", "queries", "token", "tokens", "character",
+    "characters", "page", "pages", "scan", "scans", "build", "builds",
+    "backup", "backups", "snapshot", "snapshots",
+})
+
+
+def _complete_usage_rate(m: "re.Match[str]") -> str | None:
+    """Generalized unit boundary: a usage rate is complete only with a
+    quantity core ("per 1,000 requests"), a hyphenated compound
+    ("per GB-month"), a slash denominator ("per user/month"), or a second
+    "per ..." clause ("per GB per month"). A bare noun ("per GB", "per user",
+    "per month") is not a defensible rate. A non-unit second word is
+    trailing prose: slice back to the provable unit ("per 1,000 requests
+    Since..." -> "per 1,000 requests") or reject when nothing complete
+    remains ("per GB for the" -> None)."""
+    text = m.string
+    end = m.end()
+    noun2 = m.group("noun2")
+    if noun2 and noun2.lower() not in _UNIT_CONTINUATION_NOUNS:
+        end = m.start("noun2")
+    rate = text[m.start():end].rstrip()
+    if m.group("qty") or m.group("denom") or m.group("perunit"):
+        return rate
+    if "-" in (m.group("noun1") or ""):
+        return rate
+    return None
+
+
+def _iter_usage_rates(text: str):
+    for m in _USAGE_RATE_RE.finditer(text or ""):
+        rate = _complete_usage_rate(m)
+        if rate:
+            yield m, rate
 
 
 def _extract_usage_rate(text: str) -> str | None:
     """Explicit numeric usage rate, e.g. '$0.023 per GB-month'."""
-    m = _USAGE_RATE_RE.search(text or "")
-    return m.group(0).strip() if m else None
+    for _, rate in _iter_usage_rates(text or ""):
+        return rate
+    return None
 
 
 def _extract_pricing_model(text: str) -> str | None:
@@ -1295,14 +1351,13 @@ def _pricing_model_units(text: str) -> list[str]:
 def _usage_rate_units(text: str) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     for cleaned in _split_evidence_units(text):
-        m = _USAGE_RATE_RE.search(cleaned)
-        if m:
-            out.append((m.group(0).strip(), cleaned))
+        for _, rate in _iter_usage_rates(cleaned):
+            out.append((rate, cleaned))
+            break
     if out:
         return out
-    m = _USAGE_RATE_RE.search(text or "")
-    if m:
-        return [(m.group(0).strip(), (text or "")[max(0, m.start() - 80): m.end() + 80].strip())]
+    for m, rate in _iter_usage_rates(text or ""):
+        return [(rate, (text or "")[max(0, m.start() - 80): m.end() + 80].strip())]
     return []
 
 
