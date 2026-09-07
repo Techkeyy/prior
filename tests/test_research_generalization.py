@@ -610,10 +610,130 @@ def test_rate_s3_malformed_only_is_truthful(monkeypatch):
         ],
     )
     val, sources, _ = extract_first_party_pricing(
-        "Amazon S3", "aws.example", "https://aws.example", ""
+        "Nimbus Storage", "nimbus.example", "https://nimbus.example", ""
     )
     assert val == "Not publicly disclosed in the retrieved source."
     assert sources == []
+
+
+def test_scope_subproduct_operation_retained():
+    """S3-Tables-like sub-product/operation rate keeps its context and can
+    never read as whole-product pricing."""
+    from prior.research import _qualified_usage_claim, _extract_usage_rate
+
+    unit = "S3 Tables - Standard PUT request price is $0.005 per 1,000 requests Since you add files"
+    rate = _extract_usage_rate(unit)
+    assert rate == "$0.005 per 1,000 requests"
+    val, ev = _qualified_usage_claim(rate, unit, "Amazon S3")
+    assert "S3 Tables" in val and "PUT request" in val
+    assert rate in val
+    assert "S3 Tables" in ev
+    assert val != f"Usage-based pricing: {rate}."
+
+
+def test_scope_operation_rate_cannot_become_generic(monkeypatch):
+    """A request-type-specific rate on a product page must carry its
+    operation context end to end."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/s3/pricing": _pad_pricing_html(
+                "S3 Tables - Standard PUT request price is $0.005 per 1,000 requests with daily billing. ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Amazon S3 Pricing",
+                "Amazon S3 object storage pricing.",
+                "https://aws.example/s3/pricing",
+            )
+        ],
+    )
+    val, _, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.example", "https://aws.example", ""
+    )
+    assert "PUT request" in val
+    assert "$0.005 per 1,000 requests" in val
+
+
+def test_scope_region_storage_class_example_retained():
+    from prior.research import _qualified_usage_claim, _extract_usage_rate
+
+    unit = "For example, Standard storage in a dual-region comprised of Iowa and Oregon will be billed at $0.022 per GB per month for the region"
+    rate = _extract_usage_rate(unit)
+    assert rate == "$0.022 per GB per month"
+    val, _ = _qualified_usage_claim(rate, unit, "Google Cloud Storage")
+    assert "Standard storage" in val
+    assert "Iowa and Oregon" in val
+    assert "example" in val.lower()
+
+
+def test_scope_plan_rate_retains_plan(monkeypatch):
+    """Plan-specific numeric rate keeps the plan name (strict plan-price path)."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Our Acme Store Business costs $10 per user/month with annual billing and admin controls. ",
+            )
+        },
+    )
+    val, sources, _ = extract_first_party_pricing(
+        "Acme Store", "acmestore.example", "https://acmestore.example", ""
+    )
+    assert "$10" in val and "Business" in val
+    assert len(sources) > 0
+
+
+def test_scope_usage_band_preserved_when_material():
+    from prior.research import _qualified_usage_claim, _extract_usage_rate
+
+    unit = "Nimbus Standard storage is $0.023 per GB-month for the first 50 TB per month always"
+    rate = _extract_usage_rate(unit)
+    assert rate == "$0.023 per GB-month"
+    val, _ = _qualified_usage_claim(rate, unit, "Nimbus")
+    assert "first 50 TB" in val
+    assert "Standard storage" in val
+
+
+def test_scope_product_wide_rate_stays_concise():
+    from prior.research import _qualified_usage_claim, _extract_usage_rate
+
+    unit = "Acme Cloud storage is $0.02 per GB per month for all customers everywhere"
+    rate = _extract_usage_rate(unit)
+    assert rate == "$0.02 per GB per month"
+    val, _ = _qualified_usage_claim(rate, unit, "Acme Cloud")
+    assert val == f"Usage-based pricing: {rate}."
+
+
+def test_scope_model_only_pricing_unchanged(monkeypatch):
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/pricing": _pad_pricing_html(
+                "Acme Store uses pay-as-you-go pricing based on usage across all regions worldwide. ",
+            )
+        },
+    )
+    val, _, _ = extract_first_party_pricing(
+        "Acme Store", "acmestore.example", "https://acmestore.example", ""
+    )
+    assert "pay-as-you-go" in val.lower()
+    assert "$" not in val
+
+
+def test_scope_comparison_uses_qualified_finding():
+    """No second simplification layer: the comparison shows the SAME
+    qualified pricing claim as the product card."""
+    from prior.research import _comparative_summary
+
+    findings = [
+        {"name": "Amazon S3", "pricing": "Amazon S3 S3 Tables - Standard PUT request: $0.005 per 1,000 requests."},
+        {"name": "Other", "pricing": "Not publicly disclosed in the retrieved source."},
+    ]
+    summary = _comparative_summary(findings)
+    assert "Amazon S3 S3 Tables - Standard PUT request: $0.005 per 1,000 requests." in summary
+    assert "Other: unavailable (Not publicly disclosed in the retrieved source.)" in summary
 
 
 def test_rate_gcs_production_shape_passes(monkeypatch):
@@ -1155,3 +1275,56 @@ def test_bridge_no_suitable_result_is_truthful(monkeypatch):
     )
     assert val == "Not publicly disclosed in the retrieved source."
     assert sources == []
+
+
+def test_scope_distant_band_does_not_attach_to_rate(monkeypatch):
+    """A usage band belonging to a far-away rate in the same run-on unit
+    must not attach to this rate (live S3 shape)."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/s3/pricing": _pad_pricing_html(
+                "Storage price is $0.0265 per GB for the first 50 TB per month ",
+                ("Unrelated billing paragraph. " * 12),
+                "Standard PUT request price is $0.005 per 1,000 requests with daily billing. ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Amazon S3 Pricing",
+                "Amazon S3 object storage pricing.",
+                "https://aws.example/s3/pricing",
+            )
+        ],
+    )
+    val, _, _ = extract_first_party_pricing(
+        "Amazon S3", "aws.example", "https://aws.example", ""
+    )
+    assert "$0.005 per 1,000 requests" in val
+    assert "first 50 TB" not in val
+
+
+def test_scope_sku_is_not_a_place(monkeypatch):
+    """'dual-region SKU' must not produce a place qualifier; real region
+    codes still qualify (live GCS shape)."""
+    extract_first_party_pricing = _pricing_with_mocked_fetch(
+        monkeypatch,
+        {
+            "/storage/pricing": _pad_pricing_html(
+                "Standard storage will be billed at $0.022 per GB per month for the us-central1 dual-region SKU. ",
+            ),
+        },
+        search_hits=[
+            _bridge_hit(
+                "Google Cloud Storage Pricing",
+                "Google Cloud Storage object pricing.",
+                "https://cloud.example/storage/pricing",
+            )
+        ],
+    )
+    val, _, _ = extract_first_party_pricing(
+        "Google Cloud Storage", "cloud.example", "https://cloud.example", ""
+    )
+    assert "$0.022 per GB per month" in val
+    assert "SKU" not in val
+    assert "us-central1" in val

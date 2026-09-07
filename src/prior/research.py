@@ -1361,6 +1361,99 @@ def _usage_rate_units(text: str) -> list[tuple[str, str]]:
     return []
 
 
+# Material pricing qualifiers live in the SAME evidence unit as the rate.
+# Generalized, no vendor branches: whatever the source calls the priced
+# thing ("<X> price/charge/fee is $R"), plus tier/class, region, usage-band,
+# and example markers. Scope never exceeds the evidence unit.
+_PRICE_PHRASE_RE = re.compile(
+    r"([A-Za-z0-9][\w\s.,-]{0,64}?)\b(price|pricing|charge|costs?|fees?|rates?)\b\s*(?:is|of|:|at)?\s*$"
+)
+_CLASS_PHRASE_RE = re.compile(
+    r"\b(Standard|Premium|Basic|Business|Free|Advanced|Infrequent)\s+(storage|tier|plan|class|access|requests?)\b",
+    re.I,
+)
+_REGION_NAME_RE = re.compile(
+    r"\b(dual-region|dual region|region|location|zone)\b(?:[^.,;:]*?\bof\b)?\s+([A-Z][a-z]+(?:\s+and\s+[A-Z][a-z]+)?)"
+)
+_REGION_CODE_RE = re.compile(
+    r"\b([A-Z]{2,}-[A-Za-z]+\s*\([^)]*\)|[a-z]{2,}-[a-z]+[0-9](?:\s*\([^)]*\))?)\b"
+)
+_BAND_RE = re.compile(
+    r"\bfirst\s+[\d,]+\s*[A-Za-z][\w-]*(?:\s+per\s+[A-Za-z][\w-]*)?"
+)
+_EXAMPLE_RE = re.compile(r"\bfor example\b|\bfor instance\b|\be\.g\.", re.I)
+_GENERIC_SCOPE_CORES = frozenset({
+    "", "storage", "pricing", "price", "service", "product", "plan", "cost",
+})
+
+
+def _usage_claim_scope(rate: str, unit: str, cand_name: str) -> str:
+    """Bounded qualifier extraction for a usage rate. Returns "" when the
+    unit genuinely states a product-wide rate (concise output stays valid).
+
+    Context scope is the evidence unit, but each qualifier must sit NEAR the
+    rate span: run-on page text can pack several unrelated rates into one
+    unit, so a band/region belonging to a distant rate must never attach to
+    this one. The price-phrase is additionally anchored immediately left of
+    the rate."""
+    start = unit.find(rate)
+    if start < 0:
+        return ""
+    window = unit[max(0, start - _QUALIFIER_WINDOW):start + len(rate) + _QUALIFIER_WINDOW]
+    left, _, _ = unit.partition(rate)
+    parts: list[str] = []
+    head = ""
+    pm = _PRICE_PHRASE_RE.search(left[-90:])
+    if pm:
+        words = re.sub(r"\s+", " ", pm.group(1)).strip(" -–—:,.")
+        head = " ".join(words.split()[-6:])
+    else:
+        cm = _CLASS_PHRASE_RE.search(window)
+        if cm:
+            head = f"{cm.group(1)} {cm.group(2)}"
+    if head:
+        cn = _candidate_norm(cand_name)
+        low = head.lower()
+        if low.startswith(cn):
+            head = head[len(cn):].lstrip(" -–—:,.")
+        if head.lower().replace(cn, "").strip(" -–—:,._") not in _GENERIC_SCOPE_CORES:
+            parts.append(head)
+    regions = []
+    for rm in _REGION_NAME_RE.finditer(window):
+        regions.append(f"{rm.group(1)} ({rm.group(2)})")
+        if len(regions) >= 2:
+            break
+    regions.extend(
+        m.group(1) for m in _REGION_CODE_RE.finditer(window) if len(regions) < 2
+    )
+    if regions:
+        parts.append(", ".join(dict.fromkeys(regions)))
+    bm = _BAND_RE.search(window)
+    if bm:
+        parts.append(bm.group(0))
+    if _EXAMPLE_RE.search(window):
+        parts.append("cited example")
+    return ", ".join(parts)
+
+
+def _qualified_usage_claim(rate: str, unit: str, cand_name: str) -> tuple[str, str]:
+    """Semantically complete usage claim: narrow/sub-product/example rates
+    keep their material qualifiers; truly product-wide rates stay concise."""
+    scope = _usage_claim_scope(rate, unit, cand_name)
+    if scope:
+        excerpt = re.sub(r"\s+", " ", unit).strip()
+        if len(excerpt) > 220:
+            excerpt = excerpt[:220].rstrip() + "…"
+        return (
+            f"{cand_name} {scope}: {rate}.",
+            f"Official page states {scope} at {rate}; source unit: {excerpt}",
+        )
+    return (
+        f"Usage-based pricing: {rate}.",
+        f"Official page states usage pricing: {rate}.",
+    )
+
+
 _GENERIC_PRICING_PATH_SEGS = frozenset({
     "pricing", "plans", "plan", "products", "product", "docs", "documentation",
     "index", "html", "htm", "www", "home", "about", "buy", "shop", "support",
@@ -1368,6 +1461,7 @@ _GENERIC_PRICING_PATH_SEGS = frozenset({
     "enterprise", "teams", "family", "premium", "free", "official", "en", "us",
 })
 _HEADING_SCOPE_CHARS = 80
+_QUALIFIER_WINDOW = 150
 _PLAN_PRICE_RE = re.compile(
     r"\b(?:Personal|Premium|Family|Families|Business|Team|Individual|Starter)\s+(?:is|at|for|starts at|costs)?\s*(?:\:\s*)?\$(\d+(?:\.\d{2})?)\s*(?:/\s*(?:mo|month|year|user))",
     re.I,
@@ -1493,10 +1587,7 @@ def _scoped_pricing_claim_from_page(
         )
     for usage_rate, usage_unit in _usage_rate_units(page_txt):
         if _pricing_evidence_scoped(page_txt, usage_unit, page_url, cand_name):
-            return (
-                f"Usage-based pricing: {usage_rate}.",
-                f"Official page states usage pricing: {usage_rate}.",
-            )
+            return _qualified_usage_claim(usage_rate, usage_unit, cand_name)
     for model_stmt in _pricing_model_units(page_txt):
         if _pricing_evidence_scoped(page_txt, model_stmt, page_url, cand_name):
             return (
@@ -1666,8 +1757,10 @@ def extract_first_party_pricing(
         for page_url, page_txt in fetched_pages:
             for usage_rate, usage_unit in _usage_rate_units(page_txt):
                 if _pricing_evidence_scoped(page_txt, usage_unit, page_url, cand_name):
-                    evidence_text = f"Official page states usage pricing: {usage_rate}."
-                    return f"Usage-based pricing: {usage_rate}.", sources, evidence_text
+                    value, evidence_text = _qualified_usage_claim(
+                        usage_rate, usage_unit, cand_name
+                    )
+                    return value, sources, evidence_text
             for model_stmt in _pricing_model_units(page_txt):
                 if _pricing_evidence_scoped(page_txt, model_stmt, page_url, cand_name):
                     evidence_text = f"Official page describes pricing model: {model_stmt}"
