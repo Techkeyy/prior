@@ -5,14 +5,21 @@ import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from prior import service
+from prior import auth, service
+from prior.auth import AuthError
 from prior.memory import MEMORY_UNAVAILABLE, MemoryUnavailable
 from prior.providers.base import ProviderError
-from prior.settings import acp_enabled, local_provider_enabled, missing_virtuals_credentials
+from prior.settings import (
+    acp_enabled,
+    email_configured,
+    google_configured,
+    local_provider_enabled,
+    missing_virtuals_credentials,
+)
 
 STATIC = Path(__file__).resolve().parent / "static"
 COOKIE = "prior_workspace"
@@ -34,6 +41,15 @@ class LessonIn(BaseModel):
     issue: str | None = None
 
 
+class EmailStartIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class EmailVerifyIn(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=4, max_length=32)
+
+
 def _workspace(request: Request, response: Response) -> str:
     current = request.cookies.get(COOKIE)
     if current and WORKSPACE_PATTERN.fullmatch(current):
@@ -42,11 +58,15 @@ def _workspace(request: Request, response: Response) -> str:
     response.set_cookie(
         COOKIE,
         workspace_id,
-        httponly=True,
-        samesite="lax",
-        max_age=60 * 60 * 24 * 400,
+        **auth.workspace_cookie_kwargs(),
     )
     return workspace_id
+
+
+def _identity(request: Request, response: Response) -> tuple[str, dict | None]:
+    """Effective workspace + account (if authenticated). Guest behavior is
+    byte-for-byte identical to the historical workspace-cookie path."""
+    return auth.resolve_effective_workspace(request, response, _workspace)
 
 
 @app.get("/healthz")
@@ -60,14 +80,14 @@ def health() -> dict:
 
 @app.post("/api/jobs")
 def specify_job(payload: SpecifyIn, request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     record = service.specify(workspace_id, payload.text)
     return record.to_dict()
 
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str, request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     try:
         return service.refresh(workspace_id, job_id).to_dict()
     except ProviderError as exc:
@@ -78,7 +98,7 @@ def get_job(job_id: str, request: Request, response: Response) -> dict:
 
 @app.post("/api/jobs/{job_id}/hire")
 def hire_job(job_id: str, request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     try:
         return service.hire(workspace_id, job_id).to_dict()
     except MemoryUnavailable as exc:
@@ -91,7 +111,7 @@ def hire_job(job_id: str, request: Request, response: Response) -> dict:
 
 @app.post("/api/jobs/{job_id}/accept")
 def accept_job(job_id: str, request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     try:
         return service.accept(workspace_id, job_id).to_dict()
     except ProviderError as exc:
@@ -102,7 +122,7 @@ def accept_job(job_id: str, request: Request, response: Response) -> dict:
 
 @app.post("/api/jobs/{job_id}/reject")
 def reject_job(payload: RejectIn, job_id: str, request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     try:
         return service.reject(workspace_id, job_id, payload.reason).to_dict()
     except ProviderError as exc:
@@ -113,7 +133,7 @@ def reject_job(payload: RejectIn, job_id: str, request: Request, response: Respo
 
 @app.post("/api/jobs/{job_id}/lessons")
 def lesson_decision(payload: LessonIn, job_id: str, request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     try:
         return service.decide_lesson(
             workspace_id,
@@ -130,13 +150,13 @@ def lesson_decision(payload: LessonIn, job_id: str, request: Request, response: 
 
 @app.get("/api/memory")
 def memory(request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     return service.memory_view(workspace_id)
 
 
 @app.post("/api/memory/{lesson_id}/disable")
 def disable_memory(lesson_id: str, request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, _ = _identity(request, response)
     try:
         return service.retire_lesson(workspace_id, lesson_id)
     except MemoryUnavailable as exc:
@@ -160,7 +180,7 @@ def verify_base(network: str = "mainnet") -> dict:
 
 @app.get("/api/workspace")
 def workspace(request: Request, response: Response) -> dict:
-    workspace_id = _workspace(request, response)
+    workspace_id, account = _identity(request, response)
     local = local_provider_enabled() and not acp_enabled()
     virtuals = acp_enabled()
     if virtuals:
@@ -184,7 +204,145 @@ def workspace(request: Request, response: Response) -> dict:
         "acp_enabled": virtuals,
         "virtuals_credentials_missing": missing_virtuals_credentials(),
         "memory_unavailable_copy": MEMORY_UNAVAILABLE,
+        "account": auth.account_view(account) if account else None,
+        "pending_guest_workspace": _pending_guest(request, workspace_id, account),
+        "google_configured": google_configured(),
+        "email_configured": email_configured(),
     }
+
+
+def _pending_guest(request: Request, workspace_id: str, account: dict | None) -> str | None:
+    """An unrelated guest workspace preserved for a future explicit decision.
+    Never merged automatically."""
+    if not account:
+        return None
+    guest = request.cookies.get(auth.WORKSPACE_COOKIE)
+    if guest and guest != workspace_id and WORKSPACE_PATTERN.fullmatch(guest):
+        return guest
+    return None
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    client = request.client
+    return str(getattr(client, "host", "unknown"))[:64]
+
+
+def _set_session(response: Response, token: str) -> None:
+    response.set_cookie(auth.SESSION_COOKIE, token, **auth.session_cookie_kwargs())
+
+
+def _clear_session(response: Response) -> None:
+    response.delete_cookie(auth.SESSION_COOKIE, path="/")
+
+
+def _login_response(
+    response: Response, result: dict, request: Request
+) -> dict:
+    from prior import settings as settings_mod
+
+    store = auth.get_store()
+    account = result["account"]
+    guest_cookie = request.cookies.get(auth.WORKSPACE_COOKIE)
+    guest_ws = (
+        guest_cookie
+        if guest_cookie and WORKSPACE_PATTERN.fullmatch(guest_cookie)
+        else str(result["guest_workspace"])
+    )
+    effective_ws, claimed, preserved = auth.claim_or_resolve(
+        store, str(account["id"]), guest_ws
+    )
+    token = store.create_session(str(account["id"]), settings_mod.session_ttl_seconds())
+    _set_session(response, token)
+    body = {
+        "authenticated": True,
+        "account": auth.account_view(account),
+        "workspace_id": effective_ws,
+        "claimed": claimed,
+        "provider": result["provider"],
+    }
+    if preserved:
+        body["pending_guest_workspace"] = preserved
+    return body
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request, response: Response) -> dict:
+    workspace_id, account = _identity(request, response)
+    body: dict = {
+        "authenticated": account is not None,
+        "workspace_id": workspace_id,
+        "account": auth.account_view(account) if account else None,
+        "google_configured": google_configured(),
+        "email_configured": email_configured(),
+    }
+    pending = _pending_guest(request, workspace_id, account)
+    if pending:
+        body["pending_guest_workspace"] = pending
+    return body
+
+
+@app.get("/api/auth/google/start")
+def auth_google_start(request: Request, response: Response):
+    guest = request.cookies.get(auth.WORKSPACE_COOKIE)
+    new_guest: str | None = None
+    if not (guest and WORKSPACE_PATTERN.fullmatch(guest)):
+        new_guest = "ws_" + secrets.token_hex(8)
+        guest = new_guest
+    try:
+        target = auth.start_google_login(guest, _client_ip(request))
+    except AuthError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    redirect = RedirectResponse(target, status_code=307)
+    if new_guest:
+        redirect.set_cookie(COOKIE, new_guest, **auth.workspace_cookie_kwargs())
+    return redirect
+
+
+@app.get("/api/auth/google/callback")
+def auth_google_callback(
+    request: Request, response: Response, code: str = "", state: str = ""
+) -> Response:
+    if request.query_params.get("error"):
+        return RedirectResponse("/app?auth=cancelled", status_code=302)
+    try:
+        result = auth.finish_google_login(code, state)
+    except AuthError as exc:
+        reason = "expired" if exc.status == 400 else "provider"
+        return RedirectResponse(f"/app?auth=error&reason={reason}", status_code=302)
+    redirect = RedirectResponse("/app?auth=signed-in", status_code=302)
+    _login_response(redirect, result, request)
+    return redirect
+
+
+@app.post("/api/auth/email/start")
+def auth_email_start(payload: EmailStartIn, request: Request, response: Response) -> dict:
+    _workspace(request, response)
+    guest = request.cookies.get(auth.WORKSPACE_COOKIE) or ""
+    try:
+        return auth.start_email_login(payload.email, guest, _client_ip(request))
+    except AuthError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+@app.post("/api/auth/email/verify")
+def auth_email_verify(payload: EmailVerifyIn, request: Request, response: Response) -> dict:
+    try:
+        result = auth.verify_email_code(payload.email, payload.code)
+    except AuthError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    return _login_response(response, result, request)
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, response: Response) -> dict:
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    if token:
+        auth.get_store().revoke_session(token)
+    _clear_session(response)
+    return {"ok": True}
 
 
 if STATIC.exists():

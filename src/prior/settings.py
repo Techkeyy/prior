@@ -45,6 +45,88 @@ def jobs_path() -> Path:
     return data_dir() / "jobs.json"
 
 
+def identity_db_path() -> Path:
+    raw = os.getenv("PRIOR_IDENTITY_DB", str(data_dir() / "identity.db"))
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def public_url() -> str:
+    raw = (os.getenv("PRIOR_PUBLIC_URL", "") or "").strip().rstrip("/")
+    if raw:
+        return raw
+    return f"http://127.0.0.1:{port()}"
+
+
+def cookie_secure() -> bool:
+    explicit = (os.getenv("PRIOR_COOKIE_SECURE", "") or "").strip().lower()
+    if explicit in {"1", "true", "yes", "on"}:
+        return True
+    if explicit in {"0", "false", "no", "off"}:
+        return False
+    return public_url().lower().startswith("https://")
+
+
+def session_ttl_seconds() -> int:
+    try:
+        return max(3600, int(os.getenv("PRIOR_SESSION_TTL_S", str(90 * 24 * 3600))))
+    except ValueError:
+        return 90 * 24 * 3600
+
+
+def google_client_id() -> str:
+    return (os.getenv("GOOGLE_CLIENT_ID", "") or "").strip()
+
+
+def google_client_secret() -> str:
+    return (os.getenv("GOOGLE_CLIENT_SECRET", "") or "").strip()
+
+
+def google_configured() -> bool:
+    return bool(google_client_id() and google_client_secret())
+
+
+def email_provider() -> str:
+    return (os.getenv("EMAIL_PROVIDER", "") or "").strip().lower()
+
+
+def email_configured() -> bool:
+    return email_provider() == "smtp" and bool(
+        (os.getenv("EMAIL_SMTP_HOST", "") or "").strip()
+        and (os.getenv("EMAIL_FROM", "") or "").strip()
+    )
+
+
+def email_smtp_host() -> str:
+    return (os.getenv("EMAIL_SMTP_HOST", "") or "").strip()
+
+
+def email_smtp_port() -> int:
+    try:
+        return int(os.getenv("EMAIL_SMTP_PORT", "465"))
+    except ValueError:
+        return 465
+
+
+def email_smtp_user() -> str:
+    return (os.getenv("EMAIL_SMTP_USER", "") or "").strip()
+
+
+def email_smtp_password() -> str:
+    return os.getenv("EMAIL_SMTP_PASSWORD", "") or ""
+
+
+def email_smtp_tls() -> str:
+    return (os.getenv("EMAIL_SMTP_TLS", "ssl") or "").strip().lower()
+
+
+def email_from() -> str:
+    return (os.getenv("EMAIL_FROM", "") or "").strip()
+
+
 def host() -> str:
     return os.getenv("PRIOR_HOST", "127.0.0.1")
 

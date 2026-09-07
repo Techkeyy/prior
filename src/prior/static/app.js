@@ -1093,6 +1093,103 @@ async function boot() {
   }
   updateWorkspaceBadge();
   render();
+  loadIdentity();
+}
+
+function identitySlot() {
+  return document.getElementById("identity-state");
+}
+
+async function loadIdentity() {
+  const slot = identitySlot();
+  if (!slot) return;
+  let me;
+  try {
+    me = await api("/api/auth/me");
+  } catch (err) {
+    slot.textContent = "";
+    return;
+  }
+  state.identity = me;
+  if (me && me.authenticated && me.account) {
+    slot.innerHTML = `
+      <span class="id-signed" title="Signed in">Signed in as ${escapeHtml(me.account.email || me.account.display_name || "account")}</span>
+      <button class="button button-secondary button-small" data-signout type="button">Sign out</button>`;
+    const out = slot.querySelector("[data-signout]");
+    if (out) out.addEventListener("click", async () => {
+      try { await api("/api/auth/logout", { method: "POST" }); } catch (err) { /* stay signed in on failure */ }
+      loadIdentity();
+      try { state.workspace = await api("/api/workspace"); } catch (err) { /* keep */ }
+      updateWorkspaceBadge();
+      render();
+    });
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  const authNotice = params.get("auth") === "signed-in"
+    ? `<span class="id-note">Signed in. Your PRIOR memory follows you, not your browser.</span>`
+    : (params.get("auth") === "error" || params.get("auth") === "cancelled"
+      ? `<span class="id-note">Sign in did not complete. Guest mode still works.</span>` : "");
+  const googleBtn = me && me.google_configured
+    ? `<a class="button button-primary button-small" href="/api/auth/google/start">Continue with Google</a>`
+    : `<span class="id-note" title="Server not configured yet">Google sign in unavailable</span>`;
+  const emailBtn = me && me.email_configured
+    ? `<button class="button button-secondary button-small" data-email-toggle type="button">Continue with email</button>`
+    : ``;
+  slot.innerHTML = `
+    <span class="id-save">Save your PRIOR memory</span>
+    <span class="id-tag">Your PRIOR memory follows you, not your browser.</span>
+    ${googleBtn}${emailBtn}${authNotice}
+    <form class="id-email-form" data-email-form hidden>
+      <input type="email" name="email" placeholder="you@example.com" required autocomplete="email" />
+      <button class="button button-secondary button-small" type="submit">Send code</button>
+      <span class="id-note" data-email-status></span>
+    </form>
+    <form class="id-email-form" data-code-form hidden>
+      <input type="text" name="code" inputmode="numeric" placeholder="6 digit code" required autocomplete="one-time-code" />
+      <button class="button button-secondary button-small" type="submit">Verify</button>
+      <span class="id-note" data-code-status></span>
+    </form>`;
+  const toggle = slot.querySelector("[data-email-toggle]");
+  const emailForm = slot.querySelector("[data-email-form]");
+  const codeForm = slot.querySelector("[data-code-form]");
+  if (toggle && emailForm) toggle.addEventListener("click", () => {
+    emailForm.hidden = !emailForm.hidden;
+    if (codeForm) codeForm.hidden = true;
+  });
+  if (emailForm) emailForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const status = slot.querySelector("[data-email-status]");
+    const address = new FormData(emailForm).get("email");
+    try {
+      await api("/api/auth/email/start", { method: "POST", body: JSON.stringify({ email: address }) });
+      if (status) status.textContent = "Code sent if delivery is configured. Check your inbox.";
+      emailForm.hidden = true;
+      if (codeForm) {
+        codeForm.hidden = false;
+        codeForm.dataset.email = String(address || "");
+      }
+    } catch (err) {
+      if (status) status.textContent = String(err.message || err);
+    }
+  });
+  if (codeForm) codeForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const status = slot.querySelector("[data-code-status]");
+    const form = new FormData(codeForm);
+    try {
+      await api("/api/auth/email/verify", {
+        method: "POST",
+        body: JSON.stringify({ email: codeForm.dataset.email || form.get("email") || "", code: form.get("code") }),
+      });
+      loadIdentity();
+      try { state.workspace = await api("/api/workspace"); } catch (err) { /* keep */ }
+      updateWorkspaceBadge();
+      render();
+    } catch (err) {
+      if (status) status.textContent = String(err.message || err);
+    }
+  });
 }
 
 window.addEventListener("popstate", render);

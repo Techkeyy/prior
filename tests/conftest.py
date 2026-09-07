@@ -23,7 +23,9 @@ def isolate_env(monkeypatch):
 def isolate_stores(tmp_path, monkeypatch):
     db = tmp_path / "sibyl-memory.db"
     jobfile = tmp_path / "jobs.json"
+    identity_db = tmp_path / "identity.db"
     monkeypatch.setattr(settings, "memory_db_path", lambda: db)
     monkeypatch.setattr(settings, "jobs_path", lambda: jobfile)
+    monkeypatch.setattr(settings, "identity_db_path", lambda: identity_db)
     monkeypatch.setattr(memory, "memory_db_path", lambda: db)
     monkeypatch.setattr(jobs, "jobs_path", lambda: jobfile)
