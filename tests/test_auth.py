@@ -33,40 +33,92 @@ def guest_ws(client: TestClient) -> str:
     return data["workspace_id"]
 
 
-def mock_google(monkeypatch, sub="google-sub-1", email="user@example.com", name="User One"):
+def mock_google(
+    monkeypatch,
+    sub="google-sub-1",
+    email="user@example.com",
+    name="User One",
+    *,
+    nonce_mode: str = "captured",
+    iss: str = "https://accounts.google.com",
+    aud: str | None = None,
+    exp_offset: int = 3600,
+    include_sub: bool = True,
+):
+    """nonce_mode: captured (use the authorization nonce), omit, or a literal wrong value."""
     monkeypatch.setenv("GOOGLE_CLIENT_ID", GOOGLE_ID)
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-secret")
-    monkeypatch.setattr(
-        "prior.auth.google_token_exchange",
-        lambda code, uri, verifier: {"id_token": "stub-id-token"},
-    )
+    captured = {"nonce": None, "verifier": None}
 
-    def fake_tokeninfo(token):
+    def fake_exchange(code, uri, verifier):
+        captured["verifier"] = verifier
+        assert verifier, "PKCE verifier must be sent on the token exchange"
+        return {"id_token": "stub-id-token"}
+
+    monkeypatch.setattr("prior.auth.google_token_exchange", fake_exchange)
+
+    def fake_verify(token):
         assert token == "stub-id-token"
-        return {
-            "iss": "https://accounts.google.com",
-            "aud": GOOGLE_ID,
-            "sub": sub,
-            "exp": int(time.time()) + 3600,
+        info = {
+            "iss": iss,
+            "aud": GOOGLE_ID if aud is None else aud,
+            "exp": int(time.time()) + exp_offset,
             "email": email,
             "email_verified": "true",
             "name": name,
         }
+        if include_sub:
+            info["sub"] = sub
+        if nonce_mode == "captured":
+            info["nonce"] = captured["nonce"]
+        elif nonce_mode == "omit":
+            pass
+        else:
+            info["nonce"] = nonce_mode
+        return info
 
-    monkeypatch.setattr("prior.auth.google_tokeninfo", fake_tokeninfo)
+    # Production path uses verify_google_id_token (google-auth library);
+    # google_tokeninfo remains as a deprecated alias.
+    monkeypatch.setattr("prior.auth.verify_google_id_token", fake_verify)
+    monkeypatch.setattr("prior.auth.google_tokeninfo", fake_verify)
+    return captured
+
+
+def google_callback(client: TestClient, monkeypatch, *, follow_redirects=False, **claims):
+    """Run one Google start->callback round with controllable claims.
+
+    Returns (callback_response, captured). Raises nothing; caller asserts
+    on the redirect location.
+    """
+    captured = mock_google(monkeypatch, **claims)
+    start = client.get("/api/auth/google/start", follow_redirects=False)
+    assert start.status_code in (302, 307)
+    qs = parse_qs(urlparse(start.headers["location"]).query)
+    captured["nonce"] = qs["nonce"][0]
+    state = qs["state"][0]
+    done = client.get(
+        f"/api/auth/google/callback?code=authcode&state={state}",
+        follow_redirects=follow_redirects,
+    )
+    return done, captured
 
 
 def google_login(client: TestClient, monkeypatch, **claims) -> dict:
-    mock_google(monkeypatch, **claims)
+    captured = mock_google(monkeypatch, **claims)
     start = client.get("/api/auth/google/start", follow_redirects=False)
     assert start.status_code in (302, 307)
-    state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+    qs = parse_qs(urlparse(start.headers["location"]).query)
+    assert qs.get("code_challenge") and qs.get("code_challenge_method") == ["S256"]
+    assert qs.get("nonce") and qs.get("state")
+    captured["nonce"] = qs["nonce"][0]
+    state = qs["state"][0]
     done = client.get(
         f"/api/auth/google/callback?code=authcode&state={state}",
         follow_redirects=False,
     )
     assert done.status_code == 302
     assert "signed-in" in done.headers["location"]
+    assert "prior_session=" in (done.headers.get("set-cookie") or "")
     me = client.get("/api/auth/me").json()
     assert me["authenticated"] is True
     return me
@@ -217,19 +269,30 @@ def test_anonymous_workspaces_remain_isolated():
     assert ws_a != ws_b
 
 
-# 13. logout does not delete workspace/memory
-def test_logout_preserves_everything(monkeypatch):
+# 13. logout preserves data server-side but denies anonymous access to owned WS
+def test_logout_preserves_data_but_denies_anonymous_access(monkeypatch):
+    from prior import settings as settings_mod
+
     client = make_client()
     ws = guest_ws(client)
     job_id, requirement = seed_history(client, ws)
     google_login(client, monkeypatch)
+    store = IdentityStore(settings_mod.identity_db_path())
+    assert store.workspace_owner(ws) is not None
     assert client.post("/api/auth/logout").json() == {"ok": True}
     me = client.get("/api/auth/me").json()
     assert me["authenticated"] is False
-    assert client.get(f"/api/jobs/{job_id}").status_code == 200
+    # Owned workspace must NOT resolve anonymously: safe guest issued.
+    assert me["workspace_id"] != ws
+    assert WS_PATTERN.fullmatch(me["workspace_id"])
+    # Direct owned-job GET denied after logout.
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+    # Owned memory not exposed after logout.
     mem = client.get("/api/memory").json()
-    assert mem["count"] == 1
-    assert mem["lessons"][0]["requirement"] == requirement
+    assert mem["count"] == 0
+    assert all(l["workspace_id"] != ws for l in mem["lessons"])
+    # Data itself is preserved server-side (owner can get it back).
+    assert jobs.get(job_id, ws) is not None
 
 
 # 14. login again restores same workspace
@@ -326,8 +389,12 @@ def test_oauth_state_mismatch_and_replay_rejected(monkeypatch):
     assert bad.status_code == 302
     assert "reason=expired" in bad.headers["location"]
 
+    # Manual round so the stubbed verifier echoes the real authorization nonce.
+    captured = mock_google(monkeypatch)
     start = client.get("/api/auth/google/start", follow_redirects=False)
-    state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+    qs = parse_qs(urlparse(start.headers["location"]).query)
+    captured["nonce"] = qs["nonce"][0]
+    state = qs["state"][0]
     first = client.get(
         f"/api/auth/google/callback?code=x&state={state}", follow_redirects=False
     )
@@ -376,3 +443,277 @@ def test_email_and_google_same_address_do_not_merge(monkeypatch):
     google_login(browser, monkeypatch, sub="google-sub-x", email="same@example.com")
     acct_google = browser.get("/api/auth/me").json()["account"]["account_id"]
     assert acct_email != acct_google
+
+
+# ---- security gate: owned workspace anonymous denial ----
+
+def test_safe_guest_issued_after_logout(monkeypatch):
+    from prior import settings as settings_mod
+
+    client = make_client()
+    ws = guest_ws(client)
+    seed_history(client, ws)
+    google_login(client, monkeypatch)
+    client.post("/api/auth/logout")
+    me = client.get("/api/auth/me").json()
+    assert me["authenticated"] is False
+    assert me["workspace_id"] != ws
+    assert WS_PATTERN.fullmatch(me["workspace_id"])
+    store = IdentityStore(settings_mod.identity_db_path())
+    assert store.workspace_owner(me["workspace_id"]) is None
+
+
+def test_stale_copied_owned_cookie_cannot_access(monkeypatch):
+    owner = make_client()
+    ws = guest_ws(owner)
+    job_id, _ = seed_history(owner, ws)
+    google_login(owner, monkeypatch)
+
+    thief = make_client()
+    guest_ws(thief)
+    # Attacker copies the stale pre-claim workspace cookie value.
+    thief.cookies.set("prior_workspace", ws)
+    me = thief.get("/api/auth/me").json()
+    assert me["authenticated"] is False
+    assert me["workspace_id"] != ws
+    assert thief.get(f"/api/jobs/{job_id}").status_code == 404
+    mem = thief.get("/api/memory").json()
+    assert mem["count"] == 0
+
+
+def test_invalid_session_plus_owned_cookie_denied(monkeypatch):
+    client = make_client()
+    ws = guest_ws(client)
+    job_id, _ = seed_history(client, ws)
+    google_login(client, monkeypatch)
+    client.post("/api/auth/logout")
+    # Browser retains/copies owned workspace cookie with a bogus session.
+    client.cookies.set("prior_session", "bogus-token")
+    client.cookies.set("prior_workspace", ws)
+    me = client.get("/api/auth/me").json()
+    assert me["authenticated"] is False
+    assert me["workspace_id"] != ws
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+
+
+def test_expired_session_plus_owned_cookie_denied(monkeypatch):
+    from prior import settings as settings_mod
+
+    client = make_client()
+    ws = guest_ws(client)
+    job_id, _ = seed_history(client, ws)
+    google_login(client, monkeypatch)
+    me_now = client.get("/api/auth/me").json()
+    account_id = me_now["account"]["account_id"]
+    store = IdentityStore(settings_mod.identity_db_path())
+    expired = store.create_session(account_id, ttl_s=-1)
+    client.post("/api/auth/logout")
+    client.cookies.set("prior_session", expired)
+    client.cookies.set("prior_workspace", ws)
+    me = client.get("/api/auth/me").json()
+    assert me["authenticated"] is False
+    assert me["workspace_id"] != ws
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+
+
+def test_logout_revokes_actual_server_session(monkeypatch):
+    from prior import settings as settings_mod
+
+    client = make_client()
+    guest_ws(client)
+    google_login(client, monkeypatch)
+    raw_cookie = client.cookies.get("prior_session")
+    assert raw_cookie
+    store = IdentityStore(settings_mod.identity_db_path())
+    assert store.lookup_session(raw_cookie) is not None
+    client.post("/api/auth/logout")
+    assert store.lookup_session(raw_cookie) is None
+    assert client.get("/api/auth/me").json()["authenticated"] is False
+
+
+def test_returning_account_preserves_guest_across_logout(monkeypatch):
+    first = make_client()
+    ws_owned = guest_ws(first)
+    seed_history(first, ws_owned)
+    google_login(first, monkeypatch)
+
+    second = make_client()
+    ws_guest = guest_ws(second)
+    guest_job = second.post("/api/jobs", json={"text": "Research cloud storage services."}).json()
+    assert guest_job["workspace_id"] == ws_guest
+    me = google_login(second, monkeypatch)
+    assert me["workspace_id"] == ws_owned
+    # While signed in, the unrelated guest cookie is preserved, not merged.
+    assert second.cookies.get("prior_workspace") == ws_guest
+    second.post("/api/auth/logout")
+    me_after = second.get("/api/auth/me").json()
+    assert me_after["authenticated"] is False
+    assert me_after["workspace_id"] == ws_guest
+    # Guest work survived; owned work is no longer visible anonymously.
+    assert second.get(f"/api/jobs/{guest_job['id']}").status_code == 200
+    assert jobs.get(guest_job["id"], ws_guest) is not None
+
+
+def test_claim_never_steals_foreign_owned_workspace(monkeypatch):
+    from prior import auth as auth_mod
+    from prior import settings as settings_mod
+
+    a = make_client()
+    ws_a = guest_ws(a)
+    google_login(a, monkeypatch, sub="google-sub-a", email="a@example.com")
+    store = IdentityStore(settings_mod.identity_db_path())
+    acct_a = store.find_account_by_identity("google", "google-sub-a")
+    assert acct_a and store.owned_workspace(str(acct_a["id"])) == ws_a
+
+    # A second account presenting A's owned workspace cookie must NOT steal it.
+    acct_b, _ = auth_mod.find_or_create_account(store, "google", "google-sub-b", "b@example.com", "B")
+    effective, claimed, preserved = auth_mod.claim_or_resolve(store, str(acct_b["id"]), ws_a)
+    assert effective != ws_a
+    assert store.workspace_owner(ws_a) == str(acct_a["id"])
+    assert preserved is None  # foreign owned cookie is not surfaced as mergeable
+
+
+# ---- security gate: strict OIDC validation ----
+
+def test_google_wrong_nonce_fails(monkeypatch):
+    client = make_client()
+    guest_ws(client)
+    done, _ = google_callback(client, monkeypatch, nonce_mode="wrong-nonce-value")
+    assert done.status_code == 302
+    assert "reason=provider" in done.headers["location"]
+    assert client.get("/api/auth/me").json()["authenticated"] is False
+
+
+def test_google_missing_nonce_fails(monkeypatch):
+    client = make_client()
+    guest_ws(client)
+    done, _ = google_callback(client, monkeypatch, nonce_mode="omit")
+    assert done.status_code == 302
+    assert "reason=provider" in done.headers["location"]
+    assert client.get("/api/auth/me").json()["authenticated"] is False
+
+
+def test_google_invalid_issuer_fails(monkeypatch):
+    client = make_client()
+    guest_ws(client)
+    done, _ = google_callback(client, monkeypatch, iss="https://evil.example.com")
+    assert "reason=provider" in done.headers["location"]
+    assert client.get("/api/auth/me").json()["authenticated"] is False
+
+
+def test_google_invalid_audience_fails(monkeypatch):
+    client = make_client()
+    guest_ws(client)
+    done, _ = google_callback(client, monkeypatch, aud="some-other-client-id")
+    assert "reason=provider" in done.headers["location"]
+    assert client.get("/api/auth/me").json()["authenticated"] is False
+
+
+def test_google_expired_token_fails(monkeypatch):
+    client = make_client()
+    guest_ws(client)
+    done, _ = google_callback(client, monkeypatch, exp_offset=-3600)
+    assert "reason=" in done.headers["location"]
+    assert client.get("/api/auth/me").json()["authenticated"] is False
+
+
+def test_google_missing_subject_fails(monkeypatch):
+    client = make_client()
+    guest_ws(client)
+    done, _ = google_callback(client, monkeypatch, include_sub=False)
+    assert "reason=provider" in done.headers["location"]
+    assert client.get("/api/auth/me").json()["authenticated"] is False
+
+
+def test_verify_google_id_token_uses_official_library(monkeypatch):
+    """Production verifier delegates signature/issuer/audience/expiry to
+    google-auth (not tokeninfo, not hand-rolled crypto)."""
+    import prior.auth as auth_mod
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", GOOGLE_ID)
+    calls = {}
+
+    class FakeRequest:
+        pass
+
+    def fake_verify(token, request, audience=None, clock_skew_in_seconds=0):
+        calls["token"] = token
+        calls["audience"] = audience
+        assert isinstance(request, FakeRequest)
+        return {"sub": "s", "aud": audience, "iss": "https://accounts.google.com",
+                "exp": 9999999999, "nonce": "n"}
+
+    monkeypatch.setattr("google.auth.transport.requests.Request", FakeRequest)
+    monkeypatch.setattr("google.oauth2.id_token.verify_oauth2_token", fake_verify)
+    out = auth_mod.verify_google_id_token("raw-token")
+    assert out["sub"] == "s"
+    assert calls == {"token": "raw-token", "audience": GOOGLE_ID}
+
+    def fake_verify_bad(token, request, audience=None, clock_skew_in_seconds=0):
+        raise ValueError("bad signature")
+
+    monkeypatch.setattr("google.oauth2.id_token.verify_oauth2_token", fake_verify_bad)
+    with pytest.raises(auth_mod.AuthError):
+        auth_mod.verify_google_id_token("bad-token")
+
+
+# ---- security gate: email OTP invariants ----
+
+def test_email_claim_obeys_owned_workspace_invariant(monkeypatch):
+    client = make_client()
+    ws = guest_ws(client)
+    job_id, _ = seed_history(client, ws)
+    email_login(client, monkeypatch, email="user@example.com")
+    client.post("/api/auth/logout")
+    me = client.get("/api/auth/me").json()
+    assert me["authenticated"] is False
+    assert me["workspace_id"] != ws
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+    mem = client.get("/api/memory").json()
+    assert mem["count"] == 0
+
+
+def test_email_token_single_use(monkeypatch):
+    from prior import auth as auth_mod
+
+    client = make_client()
+    guest_ws(client)
+    mock_email_code(monkeypatch, "123456")
+    assert client.post("/api/auth/email/start", json={"email": "once@example.com"}).status_code == 200
+    first = client.post("/api/auth/email/verify", json={"email": "once@example.com", "code": "123456"})
+    assert first.status_code == 200
+    client.post("/api/auth/logout")
+    # Replaying the same code must fail (token already consumed).
+    with pytest.raises(auth_mod.AuthError):
+        auth_mod.verify_email_code("once@example.com", "123456")
+
+
+def test_email_token_expiry(monkeypatch):
+    from prior import auth as auth_mod
+    from prior import settings as settings_mod
+
+    store = IdentityStore(settings_mod.identity_db_path())
+    token_hash = hash_token("aged@example.com:654321")
+    store.create_email_token(token_hash, "aged@example.com", "ws_deadbeefdeadbeef", -1)
+    with pytest.raises(auth_mod.AuthError):
+        auth_mod.verify_email_code("aged@example.com", "654321")
+
+
+def test_rate_limiting_enforced(monkeypatch):
+    from prior import settings as settings_mod
+
+    store = IdentityStore(settings_mod.identity_db_path())
+    key = "test-rate-limit-key"
+    for _ in range(3):
+        assert store.check_rate(key, limit=3, window_s=60) is True
+    assert store.check_rate(key, limit=3, window_s=60) is False
+
+    # Email send path is rate-limited per address (5/hour).
+    client = make_client()
+    guest_ws(client)
+    mock_email_code(monkeypatch, "123456")
+    for _ in range(5):
+        resp = client.post("/api/auth/email/start", json={"email": "flood@example.com"})
+        assert resp.status_code == 200
+    limited = client.post("/api/auth/email/start", json={"email": "flood@example.com"})
+    assert limited.status_code == 429

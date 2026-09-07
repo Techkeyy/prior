@@ -10,9 +10,11 @@ Rules enforced here:
   workspaces are never merged; they are preserved and surfaced.
 - PRIOR sessions are random bearer tokens (sha256-stored). Provider OAuth
   tokens are used once at login and never stored.
-- Google ID tokens are verified server-side via Google's tokeninfo endpoint
-  (issuer, audience, expiry) over the existing httpx dependency — no new
-  crypto packages, no custom cryptography.
+- Google ID tokens are verified server-side with Google's official
+  `google-auth` library (`verify_oauth2_token`: signature via Google certs,
+  issuer, audience, expiry) plus an explicit strict nonce comparison.
+  No custom cryptography. The `tokeninfo` endpoint is NOT used in
+  production (Google documents it as debugging-only).
 """
 
 from __future__ import annotations
@@ -100,11 +102,30 @@ def _session_candidates(request) -> list[str]:
     return seen
 
 
+def mint_guest_workspace(store: IdentityStore, response) -> str:
+    guest_ws = "ws_" + secrets.token_hex(8)
+    store.ensure_workspace_row(guest_ws)
+    response.set_cookie(
+        WORKSPACE_COOKIE, guest_ws, **workspace_cookie_kwargs()
+    )
+    return guest_ws
+
+
+def reject_owned_guest_cookie(store: IdentityStore, workspace_id: str, response) -> str:
+    """Central invariant: an unauthenticated guest cookie MUST NOT resolve
+    a workspace that already has an owner. Rotate to a fresh unowned guest."""
+    if workspace_id and store.workspace_owner(workspace_id) is None:
+        store.ensure_workspace_row(workspace_id)
+        return workspace_id
+    return mint_guest_workspace(store, response)
+
+
 def resolve_effective_workspace(
     request, response, issue_guest_fn
 ) -> tuple[str, dict[str, Any] | None]:
     """Return (workspace_id, account|None). Authenticated sessions resolve to
-    the owned workspace; otherwise the guest cookie path runs unchanged."""
+    the owned workspace. The anonymous cookie path never opens an owned
+    workspace: ownership is checked here, not only at logout."""
     store = get_store()
     for token in _session_candidates(request):
         data = store.lookup_session(token)
@@ -118,22 +139,33 @@ def resolve_effective_workspace(
         if owned:
             return owned, account
     guest_ws = issue_guest_fn(request, response)
-    store.ensure_workspace_row(guest_ws)
-    return guest_ws, None
+    return reject_owned_guest_cookie(store, guest_ws, response), None
 
 
 def claim_or_resolve(
     store: IdentityStore, account_id: str, guest_ws: str
 ) -> tuple[str, bool, str | None]:
-    """Returns (effective_workspace, claimed_now, preserved_guest_or_None)."""
-    store.ensure_workspace_row(guest_ws)
+    """Returns (effective_workspace, claimed_now, preserved_guest_or_None).
+
+    Never steals a workspace already owned by another account. Unowned guest
+    workspaces are claimed on first login or preserved (not merged) when the
+    account already owns a workspace."""
+    if guest_ws:
+        store.ensure_workspace_row(guest_ws)
     owned = store.owned_workspace(account_id)
+    guest_owner = store.workspace_owner(guest_ws) if guest_ws else None
+    guest_is_free = bool(guest_ws) and guest_owner is None
     if owned is None:
-        store.claim_workspace(guest_ws, account_id)
-        return guest_ws, True, None
+        if guest_is_free:
+            store.claim_workspace(guest_ws, account_id)
+            return guest_ws, True, None
+        fresh = "ws_" + secrets.token_hex(8)
+        store.claim_workspace(fresh, account_id)
+        return fresh, True, None
     if owned == guest_ws:
         return guest_ws, False, None
-    return owned, False, guest_ws
+    preserved = guest_ws if guest_is_free else None
+    return owned, False, preserved
 
 
 def find_or_create_account(
@@ -217,19 +249,42 @@ def google_token_exchange(code: str, redirect_uri: str, verifier: str) -> dict[s
         raise AuthError("Login failed at the provider. Try again.", status=502) from exc
 
 
-def google_tokeninfo(id_token: str) -> dict[str, Any]:
+def verify_google_id_token(id_token_str: str) -> dict[str, Any]:
+    """Verify a Google ID token with Google's official auth library.
+
+    Per https://developers.google.com/identity/sign-in/web/backend-auth and
+    https://developers.google.com/identity/gsi/web/guides/verify-google-id-token:
+    production verification must check the JWT signature against Google's
+    public keys plus aud/iss/exp — via a Google API client library — and the
+    `tokeninfo` endpoint is debugging-only (throttled, unsuitable for
+    production). `verify_oauth2_token` performs signature + issuer + audience
+    + expiry verification. Nonce is bound explicitly by the caller in
+    `finish_google_login` (strict: missing or mismatched nonce fails).
+    """
     try:
-        resp = httpx.get(
-            GOOGLE_TOKENINFO_URL, params={"id_token": id_token}, timeout=15.0
-        )
-    except Exception as exc:
-        raise AuthError("Login verification is unreachable. Try again.", status=502) from exc
-    if resp.status_code != 200:
-        raise AuthError("Login verification failed. Try again.", status=502)
-    try:
-        return dict(resp.json())
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token as google_id_token
     except Exception as exc:
         raise AuthError("Login verification failed. Try again.", status=502) from exc
+    try:
+        request = google_requests.Request()
+        info = google_id_token.verify_oauth2_token(
+            id_token_str,
+            request,
+            audience=settings.google_client_id(),
+            clock_skew_in_seconds=30,
+        )
+    except Exception as exc:
+        raise AuthError("Login verification failed. Try again.", status=502) from exc
+    try:
+        return dict(info)
+    except Exception as exc:
+        raise AuthError("Login verification failed. Try again.", status=502) from exc
+
+
+def google_tokeninfo(id_token: str) -> dict[str, Any]:
+    """Deprecated alias. Production path is `verify_google_id_token`."""
+    return verify_google_id_token(id_token)
 
 
 def finish_google_login(code: str, state: str) -> dict[str, Any]:
@@ -241,7 +296,7 @@ def finish_google_login(code: str, state: str) -> dict[str, Any]:
     id_token = str(tokens.get("id_token") or "")
     if not id_token:
         raise AuthError("Login failed at the provider. Try again.", status=502)
-    info = google_tokeninfo(id_token)
+    info = verify_google_id_token(id_token)
     if str(info.get("iss") or "") not in GOOGLE_ISSUERS:
         raise AuthError("Login verification failed. Try again.", status=502)
     if str(info.get("aud") or "") != settings.google_client_id():
@@ -253,7 +308,8 @@ def finish_google_login(code: str, state: str) -> dict[str, Any]:
     if exp <= int(time.time()) + 30:
         raise AuthError("Login session expired. Start again.", status=400)
     echoed_nonce = str(info.get("nonce") or "")
-    if echoed_nonce and echoed_nonce != str(saved["nonce"]):
+    expected_nonce = str(saved["nonce"] or "")
+    if not echoed_nonce or not expected_nonce or echoed_nonce != expected_nonce:
         raise AuthError("Login verification failed. Try again.", status=502)
     subject = str(info.get("sub") or "")
     if not subject:

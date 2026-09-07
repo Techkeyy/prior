@@ -53,7 +53,8 @@ class EmailVerifyIn(BaseModel):
 def _workspace(request: Request, response: Response) -> str:
     current = request.cookies.get(COOKIE)
     if current and WORKSPACE_PATTERN.fullmatch(current):
-        return current
+        if auth.get_store().workspace_owner(current) is None:
+            return current
     workspace_id = "ws_" + secrets.token_hex(8)
     response.set_cookie(
         COOKIE,
@@ -256,6 +257,12 @@ def _login_response(
     )
     token = store.create_session(str(account["id"]), settings_mod.session_ttl_seconds())
     _set_session(response, token)
+    if preserved:
+        response.set_cookie(
+            COOKIE, preserved, **auth.workspace_cookie_kwargs()
+        )
+    else:
+        auth.mint_guest_workspace(store, response)
     body = {
         "authenticated": True,
         "account": auth.account_view(account),
@@ -287,17 +294,23 @@ def auth_me(request: Request, response: Response) -> dict:
 @app.get("/api/auth/google/start")
 def auth_google_start(request: Request, response: Response):
     guest = request.cookies.get(auth.WORKSPACE_COOKIE)
-    new_guest: str | None = None
-    if not (guest and WORKSPACE_PATTERN.fullmatch(guest)):
-        new_guest = "ws_" + secrets.token_hex(8)
-        guest = new_guest
+    minted: str | None = None
+    store = auth.get_store()
+    if not (
+        guest
+        and WORKSPACE_PATTERN.fullmatch(guest)
+        and store.workspace_owner(guest) is None
+    ):
+        minted = "ws_" + secrets.token_hex(8)
+        guest = minted
+        store.ensure_workspace_row(guest)
     try:
         target = auth.start_google_login(guest, _client_ip(request))
     except AuthError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
     redirect = RedirectResponse(target, status_code=307)
-    if new_guest:
-        redirect.set_cookie(COOKIE, new_guest, **auth.workspace_cookie_kwargs())
+    if minted:
+        redirect.set_cookie(COOKIE, minted, **auth.workspace_cookie_kwargs())
     return redirect
 
 
@@ -339,9 +352,13 @@ def auth_email_verify(payload: EmailVerifyIn, request: Request, response: Respon
 @app.post("/api/auth/logout")
 def auth_logout(request: Request, response: Response) -> dict:
     token = request.cookies.get(auth.SESSION_COOKIE)
+    store = auth.get_store()
     if token:
-        auth.get_store().revoke_session(token)
+        store.revoke_session(token)
     _clear_session(response)
+    current = request.cookies.get(auth.WORKSPACE_COOKIE)
+    if current and store.workspace_owner(current) is not None:
+        auth.mint_guest_workspace(store, response)
     return {"ok": True}
 
 
