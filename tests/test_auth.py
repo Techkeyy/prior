@@ -414,7 +414,10 @@ def test_subject_not_display_name_controls_identity(monkeypatch):
     assert me_a["account"]["account_id"] != me_b["account"]["account_id"]
 
 
-def test_google_start_unconfigured_returns_503():
+def test_google_start_unconfigured_returns_503(monkeypatch):
+    # Pin the precondition: developer .env may hold real Google creds.
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
     client = make_client()
     guest_ws(client)
     resp = client.get("/api/auth/google/start", follow_redirects=False)
