@@ -48,10 +48,17 @@ def test_signed_in_banner_logic_via_real_bundle(tmp_path):
 
 def test_bundle_has_no_unconsumed_signed_in_source():
     src = APP_JS.read_text(encoding="utf-8")
-    # The success copy may only be emitted through the consumed-notice path.
-    assert "Signed in. Your PRIOR memory follows you" in src
-    assert "consumeAuthQueryParam" in src
-    # Backend emits the one-time signal exactly once (Google callback).
+    # The query-driven "Signed in" success copy must be gone entirely: a URL
+    # parameter alone can never suffice for a signed-in claim.
+    assert "Signed in. Your PRIOR memory follows you" not in src
+    # The authoritative account success UI remains the sole signed-in claim.
+    assert "Signed in as " in src
+    # Consumption precedes the authenticated-branch return (no bypass).
+    load_start = src.index("async function loadIdentity()")
+    auth_branch = src.index("if (me && me.authenticated && me.account)")
+    first_consume = src.index("consumeAuthQueryParam();", load_start)
+    assert load_start < first_consume < auth_branch
+    # The backend still emits the one-time signal exactly once (callback).
     assert src.count("auth=signed-in") == 0  # frontend never fabricates it
 
 

@@ -1100,13 +1100,13 @@ function identitySlot() {
   return document.getElementById("identity-state");
 }
 
-// Authoritative signed-in truth is /api/auth/me. The ?auth=... query value
-// is only a one-time post-redirect signal: it must be consumed (removed from
-// the URL) so a later signed-out render can never show a stale banner.
+// Authentication truth comes ONLY from /api/auth/me. The ?auth=... query
+// value is a transient navigation signal, never proof of authentication: a
+// logged-out browser presenting a stale signed-in query must never see a "Signed in"
+// claim. The account branch ("Signed in as <...>") is the sole success UI.
 function authStatusNotice(isAuthenticated, authParam) {
   if (isAuthenticated) return "";
-  if (authParam === "signed-in") return "signed-in";
-  if (authParam === "error" || authParam === "cancelled") return "auth-incomplete";
+  if (authParam === "error" || authParam === "cancelled" || authParam === "signed-in") return "auth-incomplete";
   return "";
 }
 
@@ -1125,6 +1125,10 @@ function consumeAuthQueryParam() {
 async function loadIdentity() {
   const slot = identitySlot();
   if (!slot) return;
+  // Capture the one-time navigation signal, then consume it on EVERY load:
+  // authenticated and signed-out alike. The URL must never retain auth state.
+  const authParam = new URLSearchParams(location.search).get("auth");
+  consumeAuthQueryParam();
   let me;
   try {
     me = await api("/api/auth/me");
@@ -1148,13 +1152,9 @@ async function loadIdentity() {
     });
     return;
   }
-  const params = new URLSearchParams(location.search);
-  const notice = authStatusNotice(Boolean(me && me.authenticated), params.get("auth"));
-  consumeAuthQueryParam();
-  const authNotice = notice === "signed-in"
-    ? `<span class="id-note">Signed in. Your PRIOR memory follows you, not your browser.</span>`
-    : (notice === "auth-incomplete"
-      ? `<span class="id-note">Sign in did not complete. Guest mode still works.</span>` : "");
+  const notice = authStatusNotice(Boolean(me && me.authenticated), authParam);
+  const authNotice = notice === "auth-incomplete"
+    ? `<span class="id-note">Sign in did not complete. Guest mode still works.</span>` : "";
   const googleBtn = me && me.google_configured
     ? `<a class="button button-primary button-small" href="/api/auth/google/start">Continue with Google</a>`
     : `<span class="id-note" title="Server not configured yet">Google sign in unavailable</span>`;
