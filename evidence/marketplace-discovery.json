@@ -6,111 +6,11 @@
     {
       "name": "A generic research, live discovery",
       "request": "Research the top five AI wallet companies and compare their features, pricing, strengths, and weaknesses.",
-      "selected": true,
-      "marketplace_query": {
-        "primary_keyword": "ai wallets",
-        "task_capabilities": [
-          "research",
-          "compare"
-        ],
-        "subject_terms": [
-          "wallet",
-          "companies",
-          "features",
-          "pricing",
-          "strengths",
-          "weaknesses",
-          "wallets"
-        ],
-        "deliverable_capabilities": [],
-        "useful_terms": [
-          "products",
-          "cover",
-          "requested",
-          "subject",
-          "named",
-          "deliverables",
-          "separate",
-          "facts",
-          "speculation",
-          "current",
-          "public",
-          "available"
-        ],
-        "job_type": "research",
-        "deliverable_hints": [
-          "5 AI wallet companies",
-          "products",
-          "pricing",
-          "strengths",
-          "weaknesses"
-        ]
-      },
+      "selected": false,
+      "truthful_no_match": true,
+      "message": "No compatible Virtuals agent was found for this job.",
       "agents_seen": 25,
-      "compatible_total": 3,
-      "rejected_count": 268,
-      "rejected_sample": [
-        {
-          "candidate": "Chainward",
-          "reason": "offering shows no evidence it performs the requested task"
-        },
-        {
-          "candidate": "Chainward",
-          "reason": "offering shows no evidence it performs the requested task"
-        },
-        {
-          "candidate": "RoysClaw",
-          "reason": "offering shows no evidence it performs the requested task"
-        },
-        {
-          "candidate": "RoysClaw",
-          "reason": "offering shows no evidence it performs the requested task"
-        },
-        {
-          "candidate": "RoysClaw",
-          "reason": "offering shows no evidence it performs the requested task"
-        },
-        {
-          "candidate": "RoysClaw",
-          "reason": "offering shows no subject relevance to the requested job"
-        },
-        {
-          "candidate": "RoysClaw",
-          "reason": "offering shows no evidence it performs the requested task"
-        },
-        {
-          "candidate": "RoysClaw",
-          "reason": "offering shows no evidence it performs the requested task"
-        }
-      ],
-      "selected_provider": "BitsAndBytesBack",
-      "selected_wallet": "0x436f...cec1",
-      "selected_offering": "research",
-      "task_evidence": [
-        {
-          "capability": "research",
-          "source": "offering_name",
-          "text": "research"
-        }
-      ],
-      "score": 9.0,
-      "score_breakdown": {
-        "task_hits": 1,
-        "task_evidence": [
-          {
-            "capability": "research",
-            "source": "offering_name",
-            "text": "research"
-          }
-        ],
-        "subject_overlap": 0,
-        "subject_evidence": null,
-        "offering_name_term_hit": false,
-        "rating": 5.0,
-        "recency_note": "suspicious future timestamp, ignored",
-        "score": 9.0,
-        "semantic_overlap": 0
-      }
+      "rejected_count": 262
     },
     {
       "name": "B learned clause propagation",
@@ -119,25 +19,16 @@
       "clause_recalled_for_wallet": true,
       "live_attempt": {
         "attempted": true,
-        "selected": true,
-        "selected_provider": "ZeroAgent",
-        "selected_offering": "deep_research",
-        "task_evidence": [
-          {
-            "capability": "research",
-            "source": "offering_name",
-            "text": "deep_research"
-          }
-        ],
-        "clause_in_executable_input": true
+        "selected": false,
+        "truthful_no_match": true,
+        "message": "No compatible Virtuals agent was found for this job.",
+        "agents_seen": 25
       },
       "replay": {
         "replayed": true,
-        "lesson_replay_on_live_snapshot": true,
-        "selected_provider": "BitsAndBytesBack",
-        "selected_offering": "research",
-        "clause_in_executable_input": true,
-        "clause_in_payload": true
+        "selected": false,
+        "truthful_no_match": true,
+        "message": "No compatible Virtuals agent was found for this job."
       }
     },
     {
@@ -151,6 +42,57 @@
           "reason": "offering is hidden or private"
         }
       ]
+    },
+    {
+      "name": "F live selection probe",
+      "request": "Research Base wallet security practices and compare the leading approaches.",
+      "clause_recalled": true,
+      "selected": true,
+      "selected_provider": "ZeroAgent",
+      "selected_wallet": "0x8c95...160e",
+      "selected_offering": "deep_research",
+      "task_evidence": [
+        {
+          "capability": "research",
+          "source": "offering_name",
+          "text": "deep_research"
+        }
+      ],
+      "subject_evidence": [
+        {
+          "term": "security",
+          "source": "offering_description",
+          "text": "nal, and TokenSniffer. Includes security audit (honeypot, tax an"
+        }
+      ],
+      "schema_notes": [
+        "task brief placed in schema field 'topic'"
+      ],
+      "score_breakdown": {
+        "task_hits": 1,
+        "task_evidence": [
+          {
+            "capability": "research",
+            "source": "offering_name",
+            "text": "deep_research"
+          }
+        ],
+        "subject_overlap": 1,
+        "subject_evidence": [
+          {
+            "term": "security",
+            "source": "offering_description",
+            "text": "nal, and TokenSniffer. Includes security audit (honeypot, tax an"
+          }
+        ],
+        "offering_name_term_hit": false,
+        "rating": 4.0,
+        "recency_note": "suspicious future timestamp, ignored",
+        "score": 10.0,
+        "semantic_overlap": 1
+      },
+      "clause_in_executable_input": true,
+      "clause_in_payload": true
     }
   ],
   "acp_job_created": false,

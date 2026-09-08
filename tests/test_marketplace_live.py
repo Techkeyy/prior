@@ -188,13 +188,13 @@ def test_live_case_b_monitoring_differs_from_research(tmp_path, monkeypatch):
         assert exc.candidates_seen >= 1 and exc.rejections
         return
     assert sel.candidate.task_evidence, "selected monitoring provider must show task evidence"
-    evidence_blob = " ".join(
-        [item["capability"] for item in sel.candidate.task_evidence] + [
-            sel.candidate.offering_name or "", sel.candidate.agent_name or ""]).lower()
-    assert any(tok in evidence_blob for tok in (
-        "monitor", "track", "report", "scan", "detect", "screen",
-        "watch", "alert", "ranking", "flow", "movements", "activity")), (
-        f"monitoring selection lacks monitoring evidence: {sel.candidate.task_evidence}")
+    from prior.marketplace import MONITOR_FAMILY_NOUNS, MONITOR_TASK_VERBS
+    allowed = set(MONITOR_TASK_VERBS) | set(MONITOR_FAMILY_NOUNS)
+    for item in sel.candidate.task_evidence:
+        assert item["capability"] in allowed, (
+            f"monitoring selection must evidence monitoring, not another task: {item}")
+        assert item["source"] in ("offering_name", "offering_description", "deliverable"), (
+            f"monitoring evidence must be offering-level: {item}")
 
 
 def test_live_case_c_lesson_recall_and_live_attempt(tmp_path, monkeypatch):

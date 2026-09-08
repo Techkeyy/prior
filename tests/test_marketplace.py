@@ -16,6 +16,7 @@ from prior.marketplace import (
     check_compatibility,
     check_task_fit,
     normalize_agents,
+    offering_task_evidence,
     rank_candidates,
     schema_required_fields,
     select_provider_for_spec,
@@ -340,16 +341,70 @@ def test_clause_survives_into_executable_requirement_data(no_bridge):
     assert clause in sel.requirement_preview["learned_requirements"]
 
 
-def test_offering_named_for_open_ended_research_is_generalist(no_bridge):
+def _brief_schema():
+    return {"type": "object", "required": ["query"],
+            "properties": {"query": {"type": "string"}}}
+
+
+def test_bare_research_name_rejected_for_subject(no_bridge):
+    """CASE 1: bare 'research' name is task evidence only, not subject proof."""
     spec, contract, query = _research()
     agents = [_agent("Narrow Vendor", "0x" + "cc" * 20, [
         _offering("research",
                   description="Autonomous research and intelligence gathering with structured reports.",
-                  requirements={"type": "object", "required": ["query"],
-                                "properties": {"query": {"type": "string"}}})],
-        description="Token analytics infrastructure.")]
+                  requirements=_brief_schema())])]
+    cands, _, _ = normalize_agents(agents)
+    assert any(item["capability"] == "research" for item in offering_task_evidence(cands[0]))
+    with pytest.raises(NoCompatibleProvider) as exc:
+        select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert any("subject" in reason for _, reason in exc.value.rejections)
+
+
+def test_explicit_generalist_description_passes(no_bridge):
+    """CASE 2: the offering itself declares any-topic scope."""
+    spec, contract, _ = _research()
+    agents = [_agent("Narrow Vendor", "0x" + "cc" * 20, [
+        _offering("research",
+                  description="Autonomous research on any topic with structured reports.",
+                  requirements=_brief_schema())])]
     sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
     assert sel.candidate.offering_name == "research"
+
+
+def test_explicit_generalist_name_passes(no_bridge):
+    """CASE 3: the offering NAME itself declares general scope."""
+    spec, contract, _ = _research()
+    agents = [_agent("Plain Vendor", "0x" + "dd" * 20, [
+        _offering("general research",
+                  description="Structured research reports.",
+                  requirements=_brief_schema())])]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "general research"
+
+
+def test_narrow_research_rejected_for_unrelated_subject(no_bridge):
+    """CASE 4: narrow token research must not serve a wallet request."""
+    spec, contract, _ = _research()
+    agents = [_agent("Token Vendor", "0x" + "ee" * 20, [
+        _offering("research",
+                  description="Specialized Base token and on-chain liquidity research.",
+                  requirements=_brief_schema())])]
+    with pytest.raises(NoCompatibleProvider) as exc:
+        select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert any("subject" in reason for _, reason in exc.value.rejections)
+
+
+def test_subject_match_passes_on_offering_evidence(no_bridge):
+    """CASE 5: real offering-level subject words pass without generalism."""
+    spec, contract, _ = _research()
+    agents = [_agent("Wallet Vendor", "0x" + "ff" * 20, [
+        _offering("research",
+                  description="Research reports on AI wallets and wallet infrastructure.",
+                  requirements=_brief_schema())])]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "research"
+    assert any(item["source"] == "offering_description"
+               for item in sel.candidate.subject_evidence)
 
 
 def test_news_brief_without_subject_or_generalism_rejected(no_bridge):

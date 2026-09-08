@@ -504,18 +504,15 @@ def validate_against_schema(value: Any, schema: Any, path: str = "input") -> lis
 
 
 # Offerings that explicitly declare broad scope are subject-compatible with
-# any requested subject. Generalism is read ONLY from the offering's own
-# fields, never inferred from the parent agent description. An offering
-# NAMED exactly for open-ended research (the task itself, unmodified)
-# likewise declares it takes any subject through its brief slot.
+# any requested subject. Generalism is read ONLY from explicit broad-scope
+# wording in the offering's own fields, never inferred from the parent agent
+# description, and never from a bare task name: an offering called
+# "research" proves it performs research (task evidence), not that it
+# accepts arbitrary subjects.
 GENERALIST_MARKERS = frozenset({
     "any topic", "any subject", "all topics", "wide range",
     "various topics", "diverse topics", "any domain", "all domains",
     "general research", "open-ended research", "arbitrary topic",
-})
-GENERALIST_OFFERING_NAMES = frozenset({
-    "research", "deepresearch", "generalresearch", "openresearch",
-    "researchassistant",
 })
 
 
@@ -530,10 +527,7 @@ def _offering_blob(candidate: "MarketplaceCandidate") -> str:
 
 def offering_generalist_markers(candidate: "MarketplaceCandidate") -> list[str]:
     blob = _offering_blob(candidate).lower()
-    markers = sorted({marker for marker in GENERALIST_MARKERS if marker in blob})
-    if _norm_name(candidate.offering_name or "") in GENERALIST_OFFERING_NAMES:
-        markers = sorted(set(markers) | {"offering named for open-ended research"})
-    return markers
+    return sorted({marker for marker in GENERALIST_MARKERS if marker in blob})
 
 
 def is_subject_general(candidate: "MarketplaceCandidate") -> bool:

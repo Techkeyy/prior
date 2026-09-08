@@ -99,6 +99,9 @@ complete, or reject call exists in the marketplace layer. Hard gates read
 the SPECIFIC offering only (name, description, deliverable, schema):
 task verbs, subject terms, and generalist declarations carry per-field
 provenance, and parent-agent metadata alone can never satisfy a gate.
+A bare offering name such as "research" is task evidence only, never
+subject-generalism: broad scope requires explicit wording ("any topic",
+"general research", "open-ended research", …) in the offering itself.
 Evidence:
 `evidence/marketplace-discovery.json`, `scripts/verify_marketplace_discovery.py`.
 

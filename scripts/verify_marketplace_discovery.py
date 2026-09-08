@@ -215,6 +215,35 @@ def main() -> int:
                                  for label, reason in exc.rejections[:5]]}
     evidence["cases"].append({"name": "E truthful no-match", **case_e})
 
+    # Case F: live end-to-end propagation probe on a security-research
+    # request. The market decides: selection proves clause survival live,
+    # no-match is recorded truthfully. Every probed request is reported.
+    text_f = "Research Base wallet security practices and compare the leading approaches."
+    job_f = service.specify(ws, text_f)
+    applied_f = [lesson.requirement for lesson in job_f.contract.applied_lessons]
+    case_f: dict = {"request": text_f, "clause_recalled": clause in applied_f}
+    try:
+        sel_f = select_provider_for_spec(job_f.spec, job_f.contract)
+        blob_f = " ".join(
+            str(value) for value in sel_f.requirement_preview["requirement_data"].values()
+            if isinstance(value, str))
+        case_f.update({
+            "selected": True,
+            "selected_provider": sel_f.candidate.agent_name,
+            "selected_wallet": trunc(sel_f.candidate.wallet_address),
+            "selected_offering": sel_f.candidate.offering_name,
+            "task_evidence": sel_f.candidate.task_evidence,
+            "subject_evidence": sel_f.candidate.subject_evidence,
+            "schema_notes": sel_f.candidate.schema_notes,
+            "score_breakdown": sel_f.score_breakdown,
+            "clause_in_executable_input": clause in blob_f,
+            "clause_in_payload": clause in (sel_f.requirement_preview.get("learned_requirements") or []),
+        })
+    except NoCompatibleProvider as exc:
+        case_f.update({"selected": False, "truthful_no_match": True,
+                       "agents_seen": exc.candidates_seen})
+    evidence["cases"].append({"name": "F live selection probe", **case_f})
+
     evidence["bridge_commands"] = sorted(set(bridge_commands))
     writes = sorted(set(bridge_commands) & WRITE_COMMANDS)
     evidence["acp_job_created"] = False
@@ -239,6 +268,13 @@ def main() -> int:
     else:
         print(f"request B live truthful no-match; clause recalled: {case_b.get('clause_recalled_for_dex')}")
     print(f"replay on live snapshot: {replay}")
+    if case_f.get("selected"):
+        print(f"request F live selected: {case_f['selected_provider']} / {case_f['selected_offering']}")
+        print(f"request F task evidence: {case_f['task_evidence']}")
+        print(f"request F subject evidence: {case_f['subject_evidence']}")
+        print(f"request F clause in executable input: {case_f['clause_in_executable_input']}")
+    else:
+        print("request F live truthful no-match")
     print(f"no-match truthful: {case_e.get('no_match')}")
     print(f"bridge commands used: {sorted(set(bridge_commands))}")
     print(f"ACP write commands issued: {writes if writes else 'NONE'}")
@@ -254,8 +290,12 @@ def main() -> int:
     if case_b.get("live_attempt", {}).get("selected"):
         propagation_ok = propagation_ok or (
             case_b["live_attempt"].get("clause_in_executable_input") is True)
+    if case_f.get("selected"):
+        propagation_ok = propagation_ok or (
+            case_f.get("clause_in_executable_input") is True)
     ok = (case_b.get("clause_recalled_for_dex", False)
           and case_b.get("clause_recalled_for_wallet", False)
+          and case_f.get("clause_recalled", False)
           and propagation_ok
           and case_e.get("no_match") is True and not writes)
     return 0 if ok else 1
