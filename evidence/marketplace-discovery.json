@@ -1,0 +1,123 @@
+{
+  "bridge_commands": [
+    "discover"
+  ],
+  "cases": [
+    {
+      "name": "A generic research, live discovery",
+      "request": "Research the top five AI wallet companies and compare their features, pricing, strengths, and weaknesses.",
+      "marketplace_query": {
+        "primary_keyword": "ai wallets",
+        "required_terms": [
+          "wallet",
+          "companies",
+          "wallets",
+          "features",
+          "pricing",
+          "strengths",
+          "weaknesses"
+        ],
+        "useful_terms": [
+          "products",
+          "current",
+          "public",
+          "available",
+          "cover",
+          "requested",
+          "subject",
+          "named",
+          "deliverables",
+          "separate",
+          "facts",
+          "speculation"
+        ],
+        "job_type": "research",
+        "deliverable_hints": [
+          "5 AI wallet companies",
+          "products",
+          "pricing",
+          "strengths",
+          "weaknesses"
+        ]
+      },
+      "agents_seen": 25,
+      "compatible_total": 79,
+      "rejected_count": 245,
+      "rejected_sample": [
+        {
+          "candidate": "Chainward",
+          "reason": "offering requires fields PRIOR cannot supply: target"
+        },
+        {
+          "candidate": "Chainward",
+          "reason": "offering requires fields PRIOR cannot supply: target"
+        },
+        {
+          "candidate": "Nansen Agent",
+          "reason": "offering requires fields PRIOR cannot supply: query"
+        },
+        {
+          "candidate": "Nansen Agent",
+          "reason": "offering requires fields PRIOR cannot supply: query"
+        },
+        {
+          "candidate": "Nansen Agent",
+          "reason": "offering requires fields PRIOR cannot supply: address"
+        },
+        {
+          "candidate": "Nansen Agent",
+          "reason": "offering requires fields PRIOR cannot supply: market_name"
+        },
+        {
+          "candidate": "Nansen Agent",
+          "reason": "offering requires fields PRIOR cannot supply: token_name, chain"
+        },
+        {
+          "candidate": "Nansen Agent",
+          "reason": "offering requires fields PRIOR cannot supply: chains, timeframe"
+        }
+      ],
+      "selected_provider": "Einstein",
+      "selected_wallet": "0xa691...9eda",
+      "selected_offering": "smartMoneyTracking",
+      "score": 12.0,
+      "score_breakdown": {
+        "semantic_overlap": 2,
+        "offering_name_term_hit": false,
+        "rating": 5.0,
+        "recency_note": "active within 7 days",
+        "score": 12.0
+      }
+    },
+    {
+      "name": "B learned clause propagation",
+      "request": "Research the top five decentralized exchanges and compare their features and pricing.",
+      "contract_clauses": [
+        "Include an explicit side-by-side comparison whenever multiple products are requested."
+      ],
+      "payload_learned": [
+        "Include an explicit side-by-side comparison whenever multiple products are requested."
+      ],
+      "clause_in_contract": true,
+      "clause_in_payload": true,
+      "clause_in_job_description": true,
+      "selected_provider": "Athena",
+      "selected_wallet": "0x308d...2e5d",
+      "selected_offering": "athena_wisdom_rankings"
+    },
+    {
+      "name": "E truthful no-match",
+      "no_match": true,
+      "message": "No compatible Virtuals agent was found for this job.",
+      "candidates_seen": 1,
+      "rejections": [
+        {
+          "candidate": "Ghost Agent / Hidden Research",
+          "reason": "offering is hidden or private"
+        }
+      ]
+    }
+  ],
+  "acp_job_created": false,
+  "write_commands_issued": []
+}

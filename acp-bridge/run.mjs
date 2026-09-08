@@ -50,6 +50,25 @@ async function main() {
     process.exit(0);
   }
 
+  if (cmd === "discover") {
+    // READ-ONLY live marketplace discovery. Unlike "browse", this never
+    // short-circuits to SELLER_WALLET_ADDRESS and returns full agent and
+    // offering objects (public registry data only, no credentials).
+    const keyword = args[0] || "research";
+    const topK = Math.min(Math.max(parseInt(args[1] || "25", 10) || 25, 1), 50);
+    let extra = {};
+    if (args[2]) {
+      try { extra = JSON.parse(args.slice(2).join(" ")); } catch { extra = {}; }
+      if (typeof extra !== "object" || extra === null) extra = {};
+    }
+    const params = { topK, ...extra };
+    const mod = await loadSdk();
+    const { agent } = await createAgent(mod, "buyer");
+    const agents = (await agent.browseAgents(keyword, params)) || [];
+    console.log(JSON.stringify({ ok: true, keyword, params, count: agents.length, agents }));
+    process.exit(0);
+  }
+
   if (cmd === "create-job") {
     const providerAddress = args[0];
     const offeringName = args[1] || "research";

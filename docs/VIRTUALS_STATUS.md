@@ -75,6 +75,29 @@ Also off until explicitly enabled: `ACP_ENABLED`
 
 v2 signer key (from official `.env.example`): Privy authorization key, base64 PKCS#8 P-256, typically starts with `MIGH`. Not an EOA hex key.
 
+## Marketplace discovery (read-only gate, no hire)
+
+`src/prior/marketplace.py` implements live read-only discovery plus
+deterministic provider selection. It uses one new bridge command,
+`node acp-bridge/run.mjs discover <keyword> [topK] [paramsJSON]`, which calls
+the official `browseAgents(keyword, params)` with `topK`, `sortBy`
+(`AgentSort`), `isOnline` (`OnlineStatus`), and `browseMode` passthrough.
+Unlike the legacy `browse` command it never short-circuits to
+`SELLER_WALLET_ADDRESS`.
+
+Verified against installed `@virtuals-protocol/acp-node-v2` source
+(`dist/events/types.d.ts`, `dist/acpAgent.d.ts`) and
+https://os.virtuals.io/acp/sdk/getting-started: `browseAgents`,
+`getAgentByWalletAddress`, `createJobFromOffering`,
+`createJobByOfferingName` all confirmed present. Per-agent success counts
+are NOT returned by the registry, so the ranker documents its weights and
+uses only returned fields (semantic overlap, offering-name relevance,
+rating, recency, price tiebreak).
+
+Gate scope is discovery plus selection only. No `create-job`, fund,
+complete, or reject call exists in the marketplace layer. Evidence:
+`evidence/marketplace-discovery.json`, `scripts/verify_marketplace_discovery.py`.
+
 ## Honest failure
 
 If ACP is selected and those buyer vars are empty, PRIOR raises:

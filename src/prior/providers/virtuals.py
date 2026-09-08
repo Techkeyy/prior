@@ -136,18 +136,20 @@ def _bridge(args: list[str]) -> dict[str, Any]:
         [node, str(BRIDGE), *args],
         cwd=str(BRIDGE.parent),
         capture_output=True,
-        text=True,
+        text=False,
         env=env,
         timeout=180,
         check=False,
     )
+    stdout = proc.stdout.decode("utf-8", errors="replace")
+    stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
     if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "ACP bridge failed").strip()
+        detail = (stderr or stdout or "ACP bridge failed").strip()
         raise ProviderError(detail)
     try:
-        return json.loads(proc.stdout)
+        return json.loads(stdout)
     except json.JSONDecodeError as exc:
-        raise ProviderError(f"ACP bridge returned non-JSON: {proc.stdout[:500]}") from exc
+        raise ProviderError(f"ACP bridge returned non-JSON: {stdout[:500]}") from exc
 
 
 def _decode_deliverable(value: Any) -> dict[str, Any]:
