@@ -101,7 +101,15 @@ def test_live_case_a_and_c_selection_plus_clause(tmp_path, monkeypatch):
         assert set(seen) == {"discover"}
         return
     winner = sel.candidate
-    assert any(verb in RESEARCH_TASK_VERBS for verb in winner.task_evidence)
+    winner_caps = [item["capability"] for item in winner.task_evidence]
+    assert any(verb in RESEARCH_TASK_VERBS for verb in winner_caps), (
+        f"winner lacks research task evidence: {winner.task_evidence}")
+    for item in winner.task_evidence:
+        assert item["source"] in ("offering_name", "offering_description", "deliverable"), (
+            f"task evidence must be offering-level: {item}")
+    for item in winner.subject_evidence:
+        assert item["source"] in ("offering_name", "offering_description", "deliverable"), (
+            f"subject evidence must be offering-level: {item}")
     schema = winner.requirements_schema
     if schema not in (None, "", {}):
         assert validate_against_schema(
@@ -180,8 +188,9 @@ def test_live_case_b_monitoring_differs_from_research(tmp_path, monkeypatch):
         assert exc.candidates_seen >= 1 and exc.rejections
         return
     assert sel.candidate.task_evidence, "selected monitoring provider must show task evidence"
-    evidence_blob = " ".join(sel.candidate.task_evidence + [
-        sel.candidate.offering_name or "", sel.candidate.agent_name or ""]).lower()
+    evidence_blob = " ".join(
+        [item["capability"] for item in sel.candidate.task_evidence] + [
+            sel.candidate.offering_name or "", sel.candidate.agent_name or ""]).lower()
     assert any(tok in evidence_blob for tok in (
         "monitor", "track", "report", "scan", "detect", "screen",
         "watch", "alert", "ranking", "flow", "movements", "activity")), (

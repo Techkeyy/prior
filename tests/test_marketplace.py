@@ -40,6 +40,7 @@ def _agent(name, wallet, offerings, **kw):
         "walletAddress": wallet,
         "lastActiveAt": kw.get("lastActiveAt", "2026-09-01T00:00:00Z"),
         "rating": kw.get("rating", 4.0), "isHidden": kw.get("isHidden", False),
+        "chains": kw.get("chains", [{"chainId": 8453}]),
         "offerings": offerings,
     }
 
@@ -156,10 +157,71 @@ def test_wrong_chain_filtered(no_bridge):
                   description="We research and compare every topic in depth.",
                   requirements={"type": "object",
                                 "properties": {"topic": {"type": "string"}}})])]
-    agents[0]["chains"] = _chains(1)
+    agents[0]["chains"] = [{"chainId": 1}]
     with pytest.raises(NoCompatibleProvider) as exc:
         select_provider_for_spec(spec, contract, discover=lambda kw: agents)
     assert any("chain path" in reason for _, reason in exc.value.rejections)
+
+
+def test_capability_does_not_bleed_between_offerings(no_bridge):
+    """One agent, two offerings: the unrelated offering must fail even
+    though the parent agent description contains research and wallets."""
+    spec, contract, query = _research()
+    agents = [_agent(
+        "MultiAgent", "0x" + "ab" * 20,
+        [_offering("wallet research",
+                   description="Autonomous research and comparison of wallets with sourced reports.",
+                   requirements={"type": "object", "required": ["query"],
+                                 "properties": {"query": {"type": "string"}}}),
+         _offering("image generation",
+                   description="Generate custom images from a text prompt.",
+                   requirements={"type": "object", "required": ["prompt"],
+                                 "properties": {"prompt": {"type": "string"}}})],
+        description="Research agent specializing in wallets, DeFi and market intelligence.")]
+    cands, _, _ = normalize_agents(agents)
+    assert len(cands) == 2
+    by_name = {c.offering_name: c for c in cands}
+    ok_research, _ = check_compatibility(
+        by_name["wallet research"], query, contract, spec)
+    assert ok_research
+    task_ev = by_name["wallet research"].task_evidence
+    assert any(item["source"].startswith("offering") or item["source"] == "deliverable"
+               for item in task_ev)
+    ok_image, reason_image = check_compatibility(
+        by_name["image generation"], query, contract, spec)
+    assert not ok_image, "unrelated offering passed via parent agent metadata"
+    assert "task" in reason_image
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "wallet research"
+
+
+def test_genuine_generalist_offering_may_pass(no_bridge):
+    """Inverse: agent says nothing about wallets, but the offering itself
+    declares general research on any user-supplied topic."""
+    spec, contract, query = _research()
+    agents = [_agent("PlainAgent", "0x" + "cd" * 20, [
+        _offering("open research",
+                  description="General research on any user-supplied topic with cited sources.",
+                  requirements={"type": "object", "required": ["topic"],
+                                "properties": {"topic": {"type": "string"}}})],
+        description="Infrastructure services.")]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "open research"
+
+
+def test_agent_description_alone_passes_nothing(no_bridge):
+    """Agent description carries all the right words; the offering is
+    unrelated and declares nothing general. Must fail."""
+    spec, contract, query = _research()
+    agents = [_agent("WalletResearchPro", "0x" + "ef" * 20, [
+        _offering("logo design",
+                  description="Custom logo design with unlimited revisions.",
+                  requirements={"type": "object", "required": ["brief"],
+                                "properties": {"brief": {"type": "string"}}})],
+        description="Research agent specializing in wallets, DeFi and market intelligence.")]
+    with pytest.raises(NoCompatibleProvider) as exc:
+        select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert any("task" in reason for _, reason in exc.value.rejections)
 
 
 def test_monitoring_family_accepts_tracker_naming(no_bridge):
@@ -257,3 +319,47 @@ def test_ranking_deterministic_and_merit_ordered():
     second = rank_candidates(list(reversed(cands)), query)
     assert [c.wallet_address for c, _, _ in first] == [c.wallet_address for c, _, _ in second]
     assert first[0][0].agent_name == "A Research"
+
+
+def test_clause_survives_into_executable_requirement_data(no_bridge):
+    from prior.domain import Lesson
+    spec, contract, _ = _research()
+    clause = "Include an explicit side-by-side comparison whenever multiple products are requested."
+    contract.applied_lessons = [Lesson(
+        id="L1", workspace_id="ws_x", job_type="research", issue="i",
+        requirement=clause, reason="r", status="active")]
+    agents = [_agent("Researcher", "0x" + "bb" * 20, [
+        _offering("market research",
+                  description="Autonomous research and comparison with reports on any topic.",
+                  requirements={"type": "object", "required": ["query"],
+                                "properties": {"query": {"type": "string"}}})])]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    data = sel.requirement_preview["requirement_data"]
+    blob = " ".join(str(value) for value in data.values() if isinstance(value, str))
+    assert clause in blob
+    assert clause in sel.requirement_preview["learned_requirements"]
+
+
+def test_offering_named_for_open_ended_research_is_generalist(no_bridge):
+    spec, contract, query = _research()
+    agents = [_agent("Narrow Vendor", "0x" + "cc" * 20, [
+        _offering("research",
+                  description="Autonomous research and intelligence gathering with structured reports.",
+                  requirements={"type": "object", "required": ["query"],
+                                "properties": {"query": {"type": "string"}}})],
+        description="Token analytics infrastructure.")]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "research"
+
+
+def test_news_brief_without_subject_or_generalism_rejected(no_bridge):
+    spec, contract, _ = _research()
+    agents = [_agent("Zed", "0x" + "dd" * 20, [
+        _offering("crypto_news_brief",
+                  description="Fresh sourced crypto research brief for one topic with links.",
+                  requirements={"type": "object", "required": ["topic"],
+                                "properties": {"topic": {"type": "string", "minLength": 2}}})],
+        description="Wallet activity checks and market risk snapshots.")]
+    with pytest.raises(NoCompatibleProvider) as exc:
+        select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert any("subject" in reason for _, reason in exc.value.rejections)

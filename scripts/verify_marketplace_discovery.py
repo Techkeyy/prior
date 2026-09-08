@@ -229,6 +229,7 @@ def main() -> int:
             print(f"  rejected: {row['candidate']} -- {row['reason']}")
         print(f"selected: {sel_a.candidate.agent_name} [{trunc(sel_a.candidate.wallet_address)}] / {sel_a.candidate.offering_name}")
         print(f"task evidence: {sel_a.candidate.task_evidence} | score: {sel_a.score} {sel_a.score_breakdown}")
+        print(f"subject evidence: {sel_a.candidate.subject_evidence}")
     else:
         print(f"request A truthful no-match: {case_a.get('message')} (agents seen: {case_a.get('agents_seen')})")
     if case_b.get("live_attempt", {}).get("selected"):

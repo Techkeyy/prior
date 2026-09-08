@@ -95,7 +95,11 @@ uses only returned fields (semantic overlap, offering-name relevance,
 rating, recency, price tiebreak).
 
 Gate scope is discovery plus selection only. No `create-job`, fund,
-complete, or reject call exists in the marketplace layer. Evidence:
+complete, or reject call exists in the marketplace layer. Hard gates read
+the SPECIFIC offering only (name, description, deliverable, schema):
+task verbs, subject terms, and generalist declarations carry per-field
+provenance, and parent-agent metadata alone can never satisfy a gate.
+Evidence:
 `evidence/marketplace-discovery.json`, `scripts/verify_marketplace_discovery.py`.
 
 ## Honest failure

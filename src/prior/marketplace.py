@@ -244,8 +244,9 @@ class MarketplaceCandidate:
     offering_private: bool
     chain_ids: list[int] = field(default_factory=list)
     raw_ref: dict[str, int] = field(default_factory=dict)
-    # Filled by the compatibility gate on success:
-    task_evidence: list[str] = field(default_factory=list)
+    # Filled by the compatibility gate on success, with field provenance:
+    task_evidence: list[dict[str, str]] = field(default_factory=list)
+    subject_evidence: list[dict[str, str]] = field(default_factory=list)
     requirement_data_preview: dict[str, Any] | None = None
     schema_notes: list[str] = field(default_factory=list)
 
@@ -274,7 +275,8 @@ class MarketplaceCandidate:
             "offering_hidden": self.offering_hidden,
             "offering_private": self.offering_private,
             "chain_ids": list(self.chain_ids),
-            "task_evidence": list(self.task_evidence),
+            "task_evidence": [dict(item) for item in self.task_evidence],
+            "subject_evidence": [dict(item) for item in self.subject_evidence],
             "requirement_data_preview": self.requirement_data_preview,
             "schema_notes": list(self.schema_notes),
         }
@@ -501,73 +503,132 @@ def validate_against_schema(value: Any, schema: Any, path: str = "input") -> lis
     return errors
 
 
-def offering_text(candidate: MarketplaceCandidate) -> str:
+# Offerings that explicitly declare broad scope are subject-compatible with
+# any requested subject. Generalism is read ONLY from the offering's own
+# fields, never inferred from the parent agent description. An offering
+# NAMED exactly for open-ended research (the task itself, unmodified)
+# likewise declares it takes any subject through its brief slot.
+GENERALIST_MARKERS = frozenset({
+    "any topic", "any subject", "all topics", "wide range",
+    "various topics", "diverse topics", "any domain", "all domains",
+    "general research", "open-ended research", "arbitrary topic",
+})
+GENERALIST_OFFERING_NAMES = frozenset({
+    "research", "deepresearch", "generalresearch", "openresearch",
+    "researchassistant",
+})
+
+
+def _offering_blob(candidate: "MarketplaceCandidate") -> str:
+    """Offering-level text only: name, description, deliverable."""
     return " ".join([
         candidate.offering_name or "",
         candidate.offering_description,
         candidate.deliverable_desc,
-        candidate.agent_name,
-        candidate.agent_description,
     ])
 
 
-# Offerings that explicitly advertise topic-generality declare subject
-# compatibility with any requested subject (evidence-based, not assumed).
-GENERALIST_MARKERS = frozenset({
-    "any topic", "any subject", "all topics", "wide range",
-    "various topics", "diverse topics", "any domain", "all domains",
-})
+def offering_generalist_markers(candidate: "MarketplaceCandidate") -> list[str]:
+    blob = _offering_blob(candidate).lower()
+    markers = sorted({marker for marker in GENERALIST_MARKERS if marker in blob})
+    if _norm_name(candidate.offering_name or "") in GENERALIST_OFFERING_NAMES:
+        markers = sorted(set(markers) | {"offering named for open-ended research"})
+    return markers
 
 
-def is_subject_general(candidate: MarketplaceCandidate) -> bool:
-    blob = offering_text(candidate).lower()
-    return any(marker in blob for marker in GENERALIST_MARKERS)
+def is_subject_general(candidate: "MarketplaceCandidate") -> bool:
+    return bool(offering_generalist_markers(candidate))
+
+
+def _field_verbs(text: str) -> list[str]:
+    present = set(_words(text))
+    return [stem for stem, forms in TASK_VERB_FORMS.items() if present & forms]
+
+
+def _field_snippet(text: str, needle: str, width: int = 64) -> str:
+    lowered = str(text or "").lower()
+    hit = lowered.find(str(needle or "").lower())
+    if hit < 0:
+        return str(text or "")[:width]
+    start = max(0, hit - width // 2)
+    return str(text or "")[start:start + width].strip()
+
+
+def offering_task_evidence(candidate: MarketplaceCandidate) -> list[dict[str, str]]:
+    """Task verbs evidenced by the OFFERING's own fields, with provenance.
+
+    Agent name/description are deliberately excluded: they are context, not
+    proof that this specific offering performs the task.
+    """
+    evidence: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for source, text in (("offering_name", candidate.offering_name or ""),
+                         ("offering_description", candidate.offering_description),
+                         ("deliverable", candidate.deliverable_desc)):
+        for stem in _field_verbs(text):
+            if stem not in seen:
+                seen.add(stem)
+                evidence.append({"capability": stem, "source": source,
+                                 "text": _field_snippet(text, stem)})
+    return evidence
 
 
 def candidate_task_verbs(candidate: MarketplaceCandidate) -> list[str]:
-    """Action verbs the offering itself evidences (name + description)."""
-    return _task_verbs_in(" ".join([
-        candidate.offering_name or "",
-        candidate.offering_description,
-        candidate.agent_name,
-    ]))
+    """Backwards-compatible verb list (offering-level only)."""
+    return [item["capability"] for item in offering_task_evidence(candidate)]
+
+
+def offering_subject_evidence(candidate: MarketplaceCandidate,
+                              query: CapabilityQuery) -> list[dict[str, str]]:
+    """Subject terms evidenced by the OFFERING's own fields, with provenance."""
+    evidence: list[dict[str, str]] = []
+    for source, text in (("offering_name", candidate.offering_name or ""),
+                         ("offering_description", candidate.offering_description),
+                         ("deliverable", candidate.deliverable_desc)):
+        tokens = set(_tokens(text))
+        for term in query.subject_terms:
+            if term in tokens:
+                evidence.append({"term": term, "source": source,
+                                 "text": _field_snippet(text, term)})
+    return evidence
 
 
 def subject_overlap(candidate: MarketplaceCandidate, query: CapabilityQuery) -> int:
-    text_tokens = set(_tokens(offering_text(candidate)))
-    return len([term for term in query.subject_terms if term in text_tokens])
+    """Subject overlap counted on OFFERING-level fields only."""
+    return len({item["term"] for item in offering_subject_evidence(candidate, query)})
 
 
 def semantic_overlap(candidate: MarketplaceCandidate, query: CapabilityQuery) -> int:
-    """Backwards-compatible overlap over subject plus task terms."""
-    text_tokens = set(_tokens(offering_text(candidate)))
-    return len([term for term in query.required_terms if term in text_tokens])
+    """Backwards-compatible alias: offering-level subject overlap."""
+    return subject_overlap(candidate, query)
 
 
 def check_task_fit(candidate: MarketplaceCandidate,
-                   query: CapabilityQuery) -> tuple[bool, str, list[str]]:
-    """Hard task-capability gate, separate from subject/domain fit.
+                   query: CapabilityQuery) -> tuple[bool, str, list[dict[str, str]]]:
+    """Hard task-capability gate on OFFERING-level evidence only.
 
-    Research-family tasks require strict verb evidence: the offering must
-    declare the requested action (research/compare/analyze/...). Monitoring-
-    family tasks additionally accept explicit tracker naming. A shared
-    subject word alone never passes this gate.
+    Agent name/description alone can never satisfy this gate: automatic
+    hiring selects a compatible offering, not a generally capable agent.
+    Returns (compatible, reason, evidence-with-provenance).
     """
-    offered = candidate_task_verbs(candidate)
+    offered = offering_task_evidence(candidate)
+    offered_stems = [item["capability"] for item in offered]
     req_verbs = [verb for verb in query.task_capabilities if verb in RESEARCH_TASK_VERBS]
     monitoring_requested = any(verb in MONITOR_TASK_VERBS for verb in query.task_capabilities)
-    evidence = [verb for verb in offered if verb in RESEARCH_TASK_VERBS]
-    if req_verbs and any(verb in offered for verb in req_verbs):
-        evidence = [verb for verb in offered if verb in req_verbs]
+    if req_verbs and any(verb in offered_stems for verb in req_verbs):
+        evidence = [item for item in offered if item["capability"] in req_verbs]
         return True, "offering evidences the requested task action", evidence
     if monitoring_requested:
-        if any(verb in offered for verb in MONITOR_TASK_VERBS):
-            evidence = [verb for verb in offered if verb in MONITOR_TASK_VERBS]
+        if any(verb in offered_stems for verb in MONITOR_TASK_VERBS):
+            evidence = [item for item in offered if item["capability"] in MONITOR_TASK_VERBS]
             return True, "offering evidences the requested monitoring action", evidence
-        name_blob = f"{candidate.offering_name or ''} {candidate.agent_name}".lower()
+        name_blob = f"{candidate.offering_name or ''}".lower()
         hits = [noun for noun in MONITOR_FAMILY_NOUNS if noun in name_blob]
         if hits:
-            return True, "offering is explicitly a monitoring/tracking product", hits
+            return True, "offering is explicitly a monitoring/tracking product", [
+                {"capability": noun, "source": "offering_name",
+                 "text": _field_snippet(candidate.offering_name or "", noun)}
+                for noun in hits]
     return False, "offering shows no evidence it performs the requested task", []
 
 
@@ -590,14 +651,15 @@ def check_compatibility(candidate: MarketplaceCandidate,
     task_ok, task_reason, evidence = check_task_fit(candidate, query)
     if not task_ok:
         return False, task_reason
-    if query.subject_terms and subject_overlap(candidate, query) < 1 \
-            and not is_subject_general(candidate):
-        return False, "no subject overlap with the requested job"
+    subject_hits = offering_subject_evidence(candidate, query)
+    if query.subject_terms and not subject_hits and not is_subject_general(candidate):
+        return False, "offering shows no subject relevance to the requested job"
     try:
         preview, notes = build_requirement_data(candidate, query, contract, spec)
     except (SchemaError, ValueError) as exc:
         return False, str(exc)
     candidate.task_evidence = evidence
+    candidate.subject_evidence = subject_hits
     candidate.requirement_data_preview = preview
     candidate.schema_notes = notes
     return True, "compatible"
@@ -724,9 +786,16 @@ def _recency_bonus(last_active_at: str) -> tuple[float, str]:
 
 def score_candidate(candidate: MarketplaceCandidate,
                     query: CapabilityQuery) -> tuple[float, dict[str, Any]]:
-    """Deterministic score plus a human-readable breakdown."""
-    task_hits = len([verb for verb in query.task_capabilities
-                     if verb in (candidate.task_evidence or candidate_task_verbs(candidate))])
+    """Deterministic score plus a human-readable breakdown.
+
+    Scores offering-level evidence only. Agent name/description are display
+    context and tie-break material (wallet address), never score inputs.
+    """
+    if candidate.task_evidence:
+        task_hits = len(candidate.task_evidence)
+    else:
+        task_hits = len([verb for verb in query.task_capabilities
+                         if verb in candidate_task_verbs(candidate)])
     overlap = subject_overlap(candidate, query)
     offering_terms = set(_tokens(candidate.offering_name or ""))
     name_hit = any(term in offering_terms for term in query.subject_terms)
@@ -739,7 +808,9 @@ def score_candidate(candidate: MarketplaceCandidate,
              + recency)
     breakdown = {
         "task_hits": task_hits,
+        "task_evidence": [dict(item) for item in candidate.task_evidence] or None,
         "subject_overlap": overlap,
+        "subject_evidence": [dict(item) for item in candidate.subject_evidence] or None,
         "offering_name_term_hit": name_hit,
         "rating": candidate.rating,
         "recency_note": recency_note,
