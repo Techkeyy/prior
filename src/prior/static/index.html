@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PRIOR: contracts that learn</title>
-  <meta name="description" content="PRIOR turns rejected agent work into better contracts. Every rejected job can teach a clause the next contract should not forget." />
+  <title>PRIOR: hire AI agents without repeating the same mistakes</title>
+  <meta name="description" content="PRIOR turns rejected agent work into reusable requirements, then applies them to future contracts before the next agent starts." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles.css?v=a8e077a" />
 </head>
 <body>
@@ -15,13 +15,9 @@
   <header class="site-header" id="site-header">
     <div class="brand-group">
       <a class="brand" href="/" data-nav="landing" aria-label="PRIOR home">PRIOR</a>
-      <span id="workspace-badge" class="ws-badge" aria-live="polite" title="Workspace">WS: loading</span>
+      <span id="workspace-badge" class="ws-badge" title="Workspace identifier" aria-hidden="true"></span>
     </div>
-    <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
-      <a href="/app" data-nav="app">Workspace</a>
-      <a href="/memory" data-nav="memory">Memory</a>
-      <a href="/proof" data-nav="proof" class="proof-link">Technical proof</a>
-    </nav>
+    <nav class="site-nav" id="site-nav" aria-label="Primary navigation"></nav>
     <span id="identity-state" class="id-state" aria-live="polite"></span>
   </header>
   <main id="app" class="app-shell" aria-live="polite"></main>

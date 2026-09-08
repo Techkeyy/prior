@@ -171,13 +171,17 @@ def test_contract_completeness_validator():
 
 
 def test_frontend_header_and_contract_status_consistency():
-    # 7 & 8. Frontend code contains YOUR WORKSPACE and correct FULFILLED contract status
+    # 7 & 8. Frontend copy stays consumer-language and completed work reads as fulfilled.
+    # (Re-pinned for the 2026-09 UI redesign: headers are sentence case in source and
+    # uppercased via CSS; delivery/acceptance states use plain "Delivered" and
+    # "Contract fulfilled" instead of the old ALL-CAPS "FULFILLED" status code.)
     app_js_path = Path(__file__).resolve().parent.parent / "src" / "prior" / "static" / "app.js"
     app_js_text = app_js_path.read_text(encoding="utf-8")
 
     assert "OPERATOR WORKSPACE" not in app_js_text
-    assert "YOUR WORKSPACE" in app_js_text
-    assert 'if (job.status === "delivered") return "FULFILLED";' in app_js_text
+    assert "Your workspace" in app_js_text
+    assert "Contract fulfilled" in app_js_text
+    assert 'if (job.status === "delivered") return 5;' in app_js_text
 
 
 def test_company_with_wallet_and_unrelated_ai_is_rejected():
