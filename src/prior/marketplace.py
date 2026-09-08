@@ -1,13 +1,19 @@
 """Live Virtuals ACP marketplace discovery and provider selection (READ-ONLY).
 
 Boundary: this module searches the live Virtuals registry, normalizes real
-agents and real offerings, filters incompatible ones, ranks the rest
-deterministically, and builds the exact requirement payload that WOULD be
-sent to the selected provider. It never creates an ACP job, never funds,
-and never falls back to a fixed seller disguised as discovery.
+agents and real offerings, applies HARD compatibility gates (task fit,
+domain fit, fund-flow support, chain support, schema receivability), ranks
+only the survivors deterministically, and builds the exact candidate-shaped
+requirement payload that WOULD be sent to the selected provider.
+
+Task capability and subject/domain are separate signals. A shared domain
+word alone never qualifies a provider: the offering must show it can
+perform the requested TASK, must be able to receive the task brief through
+its real input schema, and must run on PRIOR's supported path.
 
 Read-only gate: no function here calls create-job, fund, complete, or
-reject. The only bridge command used is ``discover`` (browseAgents).
+reject, nor createJobFromOffering / createJobByOfferingName. The only
+bridge command used is ``discover`` (browseAgents).
 """
 
 from __future__ import annotations
@@ -28,6 +34,10 @@ class DiscoveryError(MarketplaceError):
     """Live marketplace lookup failed (network, credentials, malformed)."""
 
 
+class SchemaError(MarketplaceError):
+    """An offering requirements schema cannot be safely interpreted."""
+
+
 class NoCompatibleProvider(MarketplaceError):
     """No genuinely compatible live provider exists for this job."""
 
@@ -41,8 +51,55 @@ class NoCompatibleProvider(MarketplaceError):
 
 
 # ---------------------------------------------------------------------------
-# Capability query: derived ONLY from the user's request and PRIOR contract.
+# Task verbs and capability derivation. Task-defining verbs are never
+# stripped: they are the primary signal of what work the user wants.
 # ---------------------------------------------------------------------------
+
+# stem -> surface forms found in real text (verb inflections only; pure
+# nouns such as "analysis" or plural "reports" are deliberately excluded so
+# that a data product described with nouns cannot pose as an action).
+TASK_VERB_FORMS: dict[str, set[str]] = {
+    "research": {"research", "researching"},
+    "compare": {"compare", "compares", "compared", "comparing", "comparison",
+                "comparisons", "comparative"},
+    "analyze": {"analyze", "analyzes", "analyzed", "analyzing"},
+    "summarize": {"summarize", "summarizes", "summarized", "summarizing",
+                  "summary", "summaries"},
+    "monitor": {"monitor", "monitors", "monitored", "monitoring"},
+    "track": {"track", "tracks", "tracked", "tracking"},
+    "report": {"report", "reports", "reported", "reporting"},
+    "generate": {"generate", "generates", "generated", "generating"},
+    "audit": {"audit", "audits", "audited", "auditing"},
+    "evaluate": {"evaluate", "evaluates", "evaluated", "evaluating"},
+    "review": {"review", "reviews", "reviewed", "reviewing"},
+    "investigate": {"investigate", "investigates", "investigated",
+                    "investigating"},
+    "survey": {"survey", "surveys", "surveyed", "surveying"},
+    "rank": {"rank", "ranks", "ranked", "ranking", "rankings"},
+    "screen": {"screen", "screens", "screened", "screening"},
+    "scan": {"scan", "scans", "scanned", "scanning"},
+    "detect": {"detect", "detects", "detected", "detecting"},
+}
+
+# Research-family tasks require strict verb evidence in the offering.
+RESEARCH_TASK_VERBS = frozenset({
+    "research", "compare", "analyze", "summarize", "investigate", "survey",
+    "evaluate", "review", "audit",
+})
+
+# Monitoring-family tasks accept verb evidence or explicit tracker naming.
+MONITOR_TASK_VERBS = frozenset({
+    "monitor", "track", "report", "watch", "alert", "scan", "detect",
+    "screen",
+})
+MONITOR_FAMILY_NOUNS = frozenset({
+    "monitoring", "tracking", "tracker", "scanner", "screener", "watchlist",
+    "ranking", "leaderboard", "movements", "activity",
+})
+
+_JOB_TYPE_DEFAULT_TASKS = {
+    "research": ["research"],
+}
 
 _STOPWORDS = frozenset(
     "the a an and or of to in on for with by from that this these those "
@@ -50,68 +107,114 @@ _STOPWORDS = frozenset(
     "its his her him her them they are was were been being have has had do "
     "does did will would can could should shall may might must about into "
     "over under again once here there all any both each few more most other "
-    "some such only own same than too very just also compare compared versus "
-    "research top best leading list get give show tell find include using use "
-    "used make made need needs needed please".split()
+    "some such only own same than too very just also top best leading list "
+    "get give show tell find include using use used make made need needs "
+    "needed please five three two four six seven eight nine ten".split()
 )
 
 
-def _tokens(text: str) -> list[str]:
+def _words(text: str) -> list[str]:
     out: list[str] = []
-    for raw in str(text or "").lower().replace("_", " ").split():
+    for raw in str(text or "").lower().replace("_", " ").replace("-", " ").split():
         word = "".join(ch for ch in raw if ch.isalnum())
-        if len(word) >= 3 and word not in _STOPWORDS and word not in out:
+        if len(word) >= 3 and word not in out:
             out.append(word)
     return out
 
 
+def _tokens(text: str) -> list[str]:
+    return [word for word in _words(text) if word not in _STOPWORDS]
+
+
+def _task_verbs_in(text: str) -> list[str]:
+    """Task-verb stems evidenced in text, in lexicon order (deterministic)."""
+    present = set(_words(text))
+    return [stem for stem, forms in TASK_VERB_FORMS.items() if present & forms]
+
+
 @dataclass
 class CapabilityQuery:
-    """Marketplace search intent derived from a PRIOR job, nothing invented."""
+    """Marketplace search intent. Task and subject are separate signals."""
 
     primary_keyword: str
-    required_terms: list[str] = field(default_factory=list)
+    task_capabilities: list[str] = field(default_factory=list)
+    subject_terms: list[str] = field(default_factory=list)
+    deliverable_capabilities: list[str] = field(default_factory=list)
     useful_terms: list[str] = field(default_factory=list)
     job_type: str = "research"
     deliverable_hints: list[str] = field(default_factory=list)
+    # Backwards-compatible alias: required_terms == subject + task terms.
+    required_terms: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "primary_keyword": self.primary_keyword,
-            "required_terms": list(self.required_terms),
+            "task_capabilities": list(self.task_capabilities),
+            "subject_terms": list(self.subject_terms),
+            "deliverable_capabilities": list(self.deliverable_capabilities),
             "useful_terms": list(self.useful_terms),
             "job_type": self.job_type,
             "deliverable_hints": list(self.deliverable_hints),
         }
 
 
-def build_capability_query(spec: JobSpec, contract: Contract | None = None) -> CapabilityQuery:
-    """Derive marketplace search terms from the request, spec, and contract.
+def _split_terms(tokens: list[str]) -> tuple[list[str], list[str]]:
+    """Split tokens into (task verbs, subject terms) via the verb lexicon."""
+    verb_forms: dict[str, str] = {}
+    for stem, forms in TASK_VERB_FORMS.items():
+        for form in forms:
+            verb_forms[form] = stem
+    tasks: list[str] = []
+    subjects: list[str] = []
+    for token in tokens:
+        stem = verb_forms.get(token)
+        if stem is not None and stem not in tasks:
+            tasks.append(stem)
+        elif stem is None and token not in subjects:
+            subjects.append(token)
+    return tasks, subjects
 
-    Every term comes from user text or PRIOR-derived fields. Nothing is
-    invented: no capability is added that the request does not imply.
+
+def build_capability_query(spec: JobSpec, contract: Contract | None = None) -> CapabilityQuery:
+    """Derive task capabilities, subject terms, and deliverable capabilities.
+
+    Every capability stays grounded in user text, the JobSpec, the contract,
+    or the PRIOR job_type. Task-defining verbs are preserved, never stripped.
     """
-    required: list[str] = []
-    for token in _tokens(spec.subject) + _tokens(spec.domain) + _tokens(" ".join(spec.keywords or [])):
-        if token not in required:
-            required.append(token)
+    request_text = " ".join([
+        spec.raw or "", spec.subject or "", spec.domain or "",
+        " ".join(spec.keywords or []),
+    ])
+    tasks, subjects = _split_terms(_tokens(request_text))
+    if not tasks:
+        for default in _JOB_TYPE_DEFAULT_TASKS.get(spec.job_type or "research", []):
+            if default not in tasks:
+                tasks.append(default)
+    deliverable_caps: list[str] = []
+    for chunk in list(spec.deliverables or []) + list(spec.explicit_requirements or []):
+        for stem in _task_verbs_in(chunk):
+            if stem not in tasks and stem not in deliverable_caps:
+                deliverable_caps.append(stem)
     useful: list[str] = []
-    pools = list(spec.deliverables or []) + list(spec.explicit_requirements or [])
+    pools = list(spec.deliverables or [])
     if contract is not None:
         pools += list(contract.acceptance or [])
         pools += [lesson.requirement for lesson in (contract.applied_lessons or [])]
     for token in _tokens(" ".join(pools)):
-        if token not in required and token not in useful:
+        if token not in subjects and token not in tasks and token not in useful:
             useful.append(token)
     primary = (spec.domain or spec.subject or "research").strip().lower()
     if not primary:
         primary = "research"
     return CapabilityQuery(
         primary_keyword=primary,
-        required_terms=required[:12],
+        task_capabilities=tasks,
+        subject_terms=subjects[:12],
+        deliverable_capabilities=deliverable_caps,
         useful_terms=useful[:16],
         job_type=spec.job_type or "research",
         deliverable_hints=list(spec.deliverables or [])[:8],
+        required_terms=(subjects[:12] + [t for t in tasks if t not in subjects])[:12],
     )
 
 
@@ -141,6 +244,10 @@ class MarketplaceCandidate:
     offering_private: bool
     chain_ids: list[int] = field(default_factory=list)
     raw_ref: dict[str, int] = field(default_factory=dict)
+    # Filled by the compatibility gate on success:
+    task_evidence: list[str] = field(default_factory=list)
+    requirement_data_preview: dict[str, Any] | None = None
+    schema_notes: list[str] = field(default_factory=list)
 
     @property
     def label(self) -> str:
@@ -167,6 +274,9 @@ class MarketplaceCandidate:
             "offering_hidden": self.offering_hidden,
             "offering_private": self.offering_private,
             "chain_ids": list(self.chain_ids),
+            "task_evidence": list(self.task_evidence),
+            "requirement_data_preview": self.requirement_data_preview,
+            "schema_notes": list(self.schema_notes),
         }
 
 
@@ -213,7 +323,7 @@ def normalize_agents(raw_agents: Any) -> tuple[list[MarketplaceCandidate], int, 
         for chain in agent.get("chains") or []:
             if isinstance(chain, dict):
                 cid = _as_int(chain.get("chainId"))
-                if cid is not None:
+                if cid is not None and cid not in chains:
                     chains.append(cid)
         offerings = agent.get("offerings")
         if not isinstance(offerings, list) or not offerings:
@@ -251,8 +361,27 @@ def normalize_agents(raw_agents: Any) -> tuple[list[MarketplaceCandidate], int, 
 
 
 # ---------------------------------------------------------------------------
-# Compatibility filter: hard constraints only.
+# Compatibility gates. ALL must pass. Order: visibility, fund flow, chain,
+# task fit, domain fit, schema receivability.
 # ---------------------------------------------------------------------------
+
+# PRIOR's supported execution path. Offerings bound to other chains cannot
+# be hired through the current authorized write path.
+SUPPORTED_CHAIN_ID = 8453
+
+# Schema property names that can legitimately carry the natural-language
+# task brief (normalized: lowercase, alphanumeric only).
+BRIEF_SLOTS = frozenset({
+    "topic", "query", "prompt", "task", "brief", "requirement",
+    "description", "request", "question", "subject", "input", "text",
+    "message", "goal", "jobdescription", "taskdescription", "userrequest",
+    "instruction", "instructions", "jobbrief",
+})
+
+
+def _norm_name(name: str) -> str:
+    return "".join(ch for ch in str(name or "").lower() if ch.isalnum())
+
 
 def requirement_supply_keys() -> set[str]:
     """Keys PRIOR's outgoing requirement payload can always supply."""
@@ -265,48 +394,186 @@ def requirement_supply_keys() -> set[str]:
 
 
 def schema_required_fields(schema: Any) -> list[str]:
-    """Required input fields of an offering requirements schema.
-
-    Handles dict JSON-schema, JSON-encoded strings, and absent schemas.
-    A schema that cannot be understood conservatively yields no required
-    fields here; semantic fit is judged separately.
-    """
-    if schema is None or schema == "":
-        return []
-    if isinstance(schema, str):
-        text = schema.strip()
-        if not text:
-            return []
-        try:
-            import json as _json
-            parsed = _json.loads(text)
-        except ValueError:
-            return []
-        return schema_required_fields(parsed)
-    if isinstance(schema, dict):
-        required = schema.get("required")
+    """Required input fields of an offering requirements schema."""
+    parsed = _parse_schema(schema)
+    if isinstance(parsed, dict):
+        required = parsed.get("required")
         if isinstance(required, list):
             return [str(item) for item in required if str(item).strip()]
-        return []
     return []
 
 
-def candidate_text(candidate: MarketplaceCandidate) -> str:
+def _parse_schema(schema: Any) -> Any:
+    """Parse a requirements schema; raise SchemaError if uninterpretable."""
+    if schema is None or schema == "" or schema == {}:
+        return None
+    if isinstance(schema, str):
+        text = schema.strip()
+        if not text:
+            return None
+        try:
+            import json as _json
+            return _json.loads(text)
+        except ValueError as exc:
+            raise SchemaError(
+                "offering requirement schema could not be safely interpreted") from exc
+    if isinstance(schema, dict):
+        return schema
+    raise SchemaError("offering requirement schema could not be safely interpreted")
+
+
+def _resolve_refs(node: Any, root: Any) -> Any:
+    """Resolve local JSON-schema refs (#/... only). External refs fail."""
+    if isinstance(node, dict):
+        if set(node.keys()) == {"$ref"} and isinstance(node["$ref"], str):
+            ref = node["$ref"]
+            if not ref.startswith("#/"):
+                raise SchemaError(
+                    "offering requirement schema could not be safely interpreted")
+            target: Any = root
+            for part in ref[2:].split("/"):
+                part = part.replace("~1", "/").replace("~0", "~")
+                if not isinstance(target, dict) or part not in target:
+                    raise SchemaError(
+                        "offering requirement schema could not be safely interpreted")
+                target = target[part]
+            return _resolve_refs(target, root)
+        return {key: _resolve_refs(value, root) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_resolve_refs(item, root) for item in node]
+    return node
+
+
+def validate_against_schema(value: Any, schema: Any, path: str = "input") -> list[str]:
+    """Read-only JSON-schema validation. Returns a list of violations."""
+    if isinstance(schema, bool):
+        return [] if schema else [f"{path}: schema forbids all values"]
+    if not isinstance(schema, dict):
+        return [f"{path}: schema could not be safely interpreted"]
+    errors: list[str] = []
+    expected = schema.get("type")
+    if expected is not None:
+        kinds = [expected] if isinstance(expected, str) else list(expected)
+        ok = False
+        for kind in kinds:
+            if kind == "string" and isinstance(value, str):
+                ok = True
+            elif kind == "number" and isinstance(value, (int, float)) and not isinstance(value, bool):
+                ok = True
+            elif kind == "integer" and isinstance(value, int) and not isinstance(value, bool):
+                ok = True
+            elif kind == "boolean" and isinstance(value, bool):
+                ok = True
+            elif kind == "object" and isinstance(value, dict):
+                ok = True
+            elif kind == "array" and isinstance(value, list):
+                ok = True
+            elif kind == "null" and value is None:
+                ok = True
+        if not ok:
+            return [f"{path}: expected {expected}"]
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < int(schema["minLength"] or 0):
+            errors.append(f"{path}: too short")
+        if "maxLength" in schema and len(value) > int(schema["maxLength"] or 0):
+            errors.append(f"{path}: too long")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            errors.append(f"{path}: below minimum")
+        if "maximum" in schema and value > schema["maximum"]:
+            errors.append(f"{path}: above maximum")
+    if "enum" in schema and isinstance(schema["enum"], list):
+        if value not in schema["enum"]:
+            errors.append(f"{path}: not an allowed value")
+    if isinstance(value, dict):
+        required = schema.get("required") or []
+        for key in required:
+            if key not in value:
+                errors.append(f"{path}: missing required field '{key}'")
+        properties = schema.get("properties") or {}
+        if isinstance(properties, dict):
+            for key, subschema in properties.items():
+                if key in value:
+                    errors.extend(validate_against_schema(value[key], subschema, f"{path}.{key}"))
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(value):
+            errors.extend(validate_against_schema(item, schema["items"], f"{path}[{index}]"))
+    return errors
+
+
+def offering_text(candidate: MarketplaceCandidate) -> str:
     return " ".join([
         candidate.offering_name or "",
         candidate.offering_description,
+        candidate.deliverable_desc,
         candidate.agent_name,
         candidate.agent_description,
     ])
 
 
+# Offerings that explicitly advertise topic-generality declare subject
+# compatibility with any requested subject (evidence-based, not assumed).
+GENERALIST_MARKERS = frozenset({
+    "any topic", "any subject", "all topics", "wide range",
+    "various topics", "diverse topics", "any domain", "all domains",
+})
+
+
+def is_subject_general(candidate: MarketplaceCandidate) -> bool:
+    blob = offering_text(candidate).lower()
+    return any(marker in blob for marker in GENERALIST_MARKERS)
+
+
+def candidate_task_verbs(candidate: MarketplaceCandidate) -> list[str]:
+    """Action verbs the offering itself evidences (name + description)."""
+    return _task_verbs_in(" ".join([
+        candidate.offering_name or "",
+        candidate.offering_description,
+        candidate.agent_name,
+    ]))
+
+
+def subject_overlap(candidate: MarketplaceCandidate, query: CapabilityQuery) -> int:
+    text_tokens = set(_tokens(offering_text(candidate)))
+    return len([term for term in query.subject_terms if term in text_tokens])
+
+
 def semantic_overlap(candidate: MarketplaceCandidate, query: CapabilityQuery) -> int:
-    text_tokens = set(_tokens(candidate_text(candidate)))
+    """Backwards-compatible overlap over subject plus task terms."""
+    text_tokens = set(_tokens(offering_text(candidate)))
     return len([term for term in query.required_terms if term in text_tokens])
 
 
+def check_task_fit(candidate: MarketplaceCandidate,
+                   query: CapabilityQuery) -> tuple[bool, str, list[str]]:
+    """Hard task-capability gate, separate from subject/domain fit.
+
+    Research-family tasks require strict verb evidence: the offering must
+    declare the requested action (research/compare/analyze/...). Monitoring-
+    family tasks additionally accept explicit tracker naming. A shared
+    subject word alone never passes this gate.
+    """
+    offered = candidate_task_verbs(candidate)
+    req_verbs = [verb for verb in query.task_capabilities if verb in RESEARCH_TASK_VERBS]
+    monitoring_requested = any(verb in MONITOR_TASK_VERBS for verb in query.task_capabilities)
+    evidence = [verb for verb in offered if verb in RESEARCH_TASK_VERBS]
+    if req_verbs and any(verb in offered for verb in req_verbs):
+        evidence = [verb for verb in offered if verb in req_verbs]
+        return True, "offering evidences the requested task action", evidence
+    if monitoring_requested:
+        if any(verb in offered for verb in MONITOR_TASK_VERBS):
+            evidence = [verb for verb in offered if verb in MONITOR_TASK_VERBS]
+            return True, "offering evidences the requested monitoring action", evidence
+        name_blob = f"{candidate.offering_name or ''} {candidate.agent_name}".lower()
+        hits = [noun for noun in MONITOR_FAMILY_NOUNS if noun in name_blob]
+        if hits:
+            return True, "offering is explicitly a monitoring/tracking product", hits
+    return False, "offering shows no evidence it performs the requested task", []
+
+
 def check_compatibility(candidate: MarketplaceCandidate,
-                        query: CapabilityQuery) -> tuple[bool, str]:
+                        query: CapabilityQuery,
+                        contract: Contract, spec: JobSpec) -> tuple[bool, str]:
     """Hard compatibility gate. Returns (compatible, reason)."""
     if candidate.agent_hidden:
         return False, "agent is hidden on the registry"
@@ -314,24 +581,118 @@ def check_compatibility(candidate: MarketplaceCandidate,
         return False, "offering is hidden or private"
     if not candidate.offering_name:
         return False, "offering has no name to create a job from"
-    missing = [key for key in schema_required_fields(candidate.requirements_schema)
-               if key not in requirement_supply_keys()]
-    if missing:
-        return False, f"offering requires fields PRIOR cannot supply: {', '.join(missing)}"
-    if semantic_overlap(candidate, query) < 1 and query.required_terms:
-        return False, "no capability overlap with the requested job"
+    if candidate.required_funds:
+        return False, "offering requires fund-transfer flow not yet supported by PRIOR"
+    if not candidate.chain_ids:
+        return False, "offering reports no chain information for the execution path"
+    if SUPPORTED_CHAIN_ID not in candidate.chain_ids:
+        return False, "offering is not usable on PRIOR's supported chain path"
+    task_ok, task_reason, evidence = check_task_fit(candidate, query)
+    if not task_ok:
+        return False, task_reason
+    if query.subject_terms and subject_overlap(candidate, query) < 1 \
+            and not is_subject_general(candidate):
+        return False, "no subject overlap with the requested job"
+    try:
+        preview, notes = build_requirement_data(candidate, query, contract, spec)
+    except (SchemaError, ValueError) as exc:
+        return False, str(exc)
+    candidate.task_evidence = evidence
+    candidate.requirement_data_preview = preview
+    candidate.schema_notes = notes
     return True, "compatible"
 
 
 # ---------------------------------------------------------------------------
-# Ranker: deterministic, documented weights, no invented signals.
+# Candidate-specific requirementData: the exact input that WOULD be sent.
+# ---------------------------------------------------------------------------
+
+def _brief_text(query: CapabilityQuery, contract: Contract, spec: JobSpec) -> str:
+    return requirement_payload(contract, spec)["job_description"]
+
+
+def build_requirement_data(candidate: MarketplaceCandidate, query: CapabilityQuery,
+                           contract: Contract, spec: JobSpec) -> tuple[dict[str, Any], list[str]]:
+    """Construct and locally validate the offering-shaped requirementData.
+
+    The full improved brief (task plus learned clauses) is placed into a
+    real schema field capable of carrying natural language. Optional fields
+    are filled only from schema-declared defaults, never invented. Raises
+    SchemaError/ValueError when no legitimate transmission exists.
+    """
+    raw_schema = candidate.requirements_schema
+    if raw_schema is None or raw_schema == "" or raw_schema == {}:
+        return requirement_payload(contract, spec), [
+            "schemaless offering: full brief travels as the raw requirement message"]
+    try:
+        schema = _resolve_refs(_parse_schema(raw_schema), _parse_schema(raw_schema))
+    except SchemaError:
+        raise
+    if not isinstance(schema, dict):
+        raise SchemaError("offering requirement schema could not be safely interpreted")
+    properties = schema.get("properties")
+    if properties is not None and not isinstance(properties, dict):
+        raise SchemaError("offering requirement schema could not be safely interpreted")
+    properties = properties or {}
+    brief = _brief_text(query, contract, spec)
+    data: dict[str, Any] = {}
+    notes: list[str] = []
+    slot: str | None = None
+    for name, subschema in properties.items():
+        if not isinstance(subschema, dict):
+            continue
+        if _norm_name(name) in BRIEF_SLOTS and _accepts_text(subschema):
+            slot = name
+            break
+    if slot is None:
+        raise ValueError(
+            "offering input schema has no field for the task brief; "
+            "PRIOR would have to discard the brief and memory")
+    data[slot] = brief
+    notes.append(f"task brief placed in schema field '{slot}'")
+    for name, subschema in properties.items():
+        if name in data or not isinstance(subschema, dict):
+            continue
+        if "default" in subschema:
+            candidate_value = subschema["default"]
+            problems = validate_against_schema(candidate_value, subschema, name)
+            if not problems:
+                data[name] = candidate_value
+                notes.append(f"optional field '{name}' filled from schema default")
+    for name in schema_required_fields(schema):
+        if name not in data:
+            if _norm_name(name) in BRIEF_SLOTS:
+                data[name] = brief
+                notes.append(f"required field '{name}' carries the task brief")
+            else:
+                raise ValueError(
+                    f"offering requires fields PRIOR cannot supply: {name}")
+    problems = validate_against_schema(data, schema)
+    if problems:
+        raise ValueError(
+            "constructed requirement input fails the offering schema: " + "; ".join(problems[:4]))
+    return data, notes
+
+
+def _accepts_text(subschema: dict[str, Any]) -> bool:
+    kind = subschema.get("type")
+    if kind is None:
+        return True
+    kinds = [kind] if isinstance(kind, str) else list(kind)
+    return "string" in kinds
+
+
+# ---------------------------------------------------------------------------
+# Ranker: runs ONLY over hard-compatible candidates. Deterministic,
+# documented weights, no invented signals.
 # ---------------------------------------------------------------------------
 
 # Documented scoring weights. The registry does not return per-agent success
-# counts, success rates, or buyer counts on AcpAgentDetail, so the ranker
-# does NOT use them. Server-side ordering (AgentSort) can be requested at
-# browse time instead; ranking here uses only fields actually returned.
-WEIGHT_SEMANTIC_OVERLAP = 3.0
+# counts, success rates, or buyer counts on browse results, so the ranker
+# does NOT use them. Rating/recency/price/SLA are secondary signals applied
+# strictly after hard compatibility gates.
+WEIGHT_TASK_HIT = 4.0
+WEIGHT_SUBJECT_OVERLAP = 2.0
 BONUS_OFFERING_NAME_TERM = 2.0
 WEIGHT_RATING = 1.0
 BONUS_ACTIVE_7D = 1.0
@@ -348,7 +709,10 @@ def _recency_bonus(last_active_at: str) -> tuple[float, str]:
         seen = datetime.fromisoformat(stamp)
         if seen.tzinfo is None:
             seen = seen.replace(tzinfo=timezone.utc)
-        age = datetime.now(timezone.utc) - seen
+        now = datetime.now(timezone.utc)
+        if seen - now > timedelta(hours=48):
+            return 0.0, "suspicious future timestamp, ignored"
+        age = now - seen
         if age <= timedelta(days=7):
             return BONUS_ACTIVE_7D, "active within 7 days"
         if age <= timedelta(days=30):
@@ -361,22 +725,28 @@ def _recency_bonus(last_active_at: str) -> tuple[float, str]:
 def score_candidate(candidate: MarketplaceCandidate,
                     query: CapabilityQuery) -> tuple[float, dict[str, Any]]:
     """Deterministic score plus a human-readable breakdown."""
-    overlap = semantic_overlap(candidate, query)
+    task_hits = len([verb for verb in query.task_capabilities
+                     if verb in (candidate.task_evidence or candidate_task_verbs(candidate))])
+    overlap = subject_overlap(candidate, query)
     offering_terms = set(_tokens(candidate.offering_name or ""))
-    name_hit = any(term in offering_terms for term in query.required_terms)
+    name_hit = any(term in offering_terms for term in query.subject_terms)
     rating_value = candidate.rating if candidate.rating is not None else 0.0
     recency, recency_note = _recency_bonus(candidate.last_active_at)
-    score = (overlap * WEIGHT_SEMANTIC_OVERLAP
+    score = (task_hits * WEIGHT_TASK_HIT
+             + overlap * WEIGHT_SUBJECT_OVERLAP
              + (BONUS_OFFERING_NAME_TERM if name_hit else 0.0)
              + rating_value * WEIGHT_RATING
              + recency)
     breakdown = {
-        "semantic_overlap": overlap,
+        "task_hits": task_hits,
+        "subject_overlap": overlap,
         "offering_name_term_hit": name_hit,
         "rating": candidate.rating,
         "recency_note": recency_note,
         "score": round(score, 3),
     }
+    # Backwards-compatible key for earlier evidence readers.
+    breakdown["semantic_overlap"] = overlap
     return score, breakdown
 
 
@@ -397,25 +767,44 @@ def rank_candidates(candidates: list[MarketplaceCandidate],
 
 
 # ---------------------------------------------------------------------------
-# Requirement payload: the exact payload that WOULD be sent.
+# Requirement payload preview: exact executable input plus PRIOR context.
 # ---------------------------------------------------------------------------
 
 def build_provider_payload(candidate: MarketplaceCandidate, contract: Contract,
                            spec: JobSpec) -> dict[str, Any]:
-    """Outgoing payload for the selected provider.
+    """Outgoing payload preview for the selected provider.
 
-    Wraps the standard PRIOR requirement payload (which already carries
-    every applied learned requirement) with the selected offering context.
-    Memory stays provider-independent: the same contract produces the same
-    learned_requirements for any selected provider.
+    ``requirement_data`` is the exact candidate-shaped input that WOULD be
+    supplied to the official job-creation helper (schema-validated). The
+    full improved brief, including every applied learned requirement, lives
+    inside it, and ``prior_context`` separately preserves the task, the
+    full contract, and the learned requirements. Memory stays
+    provider-independent: the same contract produces the same clauses for
+    any selected provider.
     """
-    payload = requirement_payload(contract, spec)
-    payload["selected_offering"] = {
-        "agent_name": candidate.agent_name,
-        "offering_name": candidate.offering_name,
-        "provider_wallet": candidate.wallet_address,
+    query = build_capability_query(spec, contract)
+    requirement_data = candidate.requirement_data_preview
+    if requirement_data is None:
+        preview, _ = build_requirement_data(candidate, query, contract, spec)
+        requirement_data = preview
+    learned = [lesson.requirement for lesson in contract.applied_lessons]
+    return {
+        "requirement_data": requirement_data,
+        "learned_requirements": learned,
+        "prior_context": {
+            "goal": contract.goal,
+            "title": contract.title,
+            "deliverables": list(contract.deliverables),
+            "acceptance": list(contract.acceptance),
+            "applied_lessons": [lesson.to_dict() for lesson in contract.applied_lessons],
+            "raw": spec.raw,
+        },
+        "selected_offering": {
+            "agent_name": candidate.agent_name,
+            "offering_name": candidate.offering_name,
+            "provider_wallet": candidate.wallet_address,
+        },
     }
-    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -458,19 +847,24 @@ class MarketplaceSelection:
 
 def discover_live(keyword: str, *, top_k: int = 25,
                   extra_params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """READ-ONLY live marketplace lookup. Never creates, funds, or hires."""
+    """READ-ONLY live marketplace lookup. Never creates, funds, or hires.
+
+    Automatic selection requests ONLINE providers (exact ``isOnline`` /
+    ``OnlineStatus`` naming from the installed SDK source).
+    """
     from prior.providers.virtuals import _bridge
 
-    args = ["discover", keyword or "research", str(top_k)]
+    params: dict[str, Any] = {"isOnline": "online"}
     if extra_params:
-        import json as _json
-        args.append(_json.dumps(extra_params))
+        params.update(extra_params)
+    args = ["discover", keyword or "research", str(top_k)]
+    args.append(__import__("json").dumps(params))
     try:
         raw = _bridge(args)
     except ProviderError as exc:
         raise DiscoveryError(f"Live marketplace discovery failed: {exc}") from exc
     if not isinstance(raw, dict) or raw.get("ok") is not True:
-        raise DiscoveryError(f"Live marketplace discovery failed: unexpected bridge response.")
+        raise DiscoveryError("Live marketplace discovery failed: unexpected bridge response.")
     agents = raw.get("agents")
     if not isinstance(agents, list):
         raise DiscoveryError("Live marketplace discovery failed: malformed agents list.")
@@ -503,7 +897,7 @@ def select_provider_for_spec(spec: JobSpec, contract: Contract,
     compatible: list[MarketplaceCandidate] = []
     rejections: list[tuple[str, str]] = []
     for candidate in candidates:
-        ok, reason = check_compatibility(candidate, query)
+        ok, reason = check_compatibility(candidate, query, contract, spec)
         if ok:
             compatible.append(candidate)
         else:

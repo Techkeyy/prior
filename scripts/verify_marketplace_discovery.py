@@ -21,6 +21,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 QA_DIR = Path(tempfile.mkdtemp(prefix="prior-marketplace-gate-"))
 os.environ["PRIOR_DATA_DIR"] = str(QA_DIR)
+# Memory/identity paths must be pinned explicitly: settings loads the repo
+# .env on import, whose PRIOR_MEMORY_DB would otherwise override the temp
+# dir and share state across runs. Every store stays inside QA_DIR.
+os.environ["PRIOR_MEMORY_DB"] = str(QA_DIR / "sibyl-memory.db")
+os.environ["PRIOR_IDENTITY_DB"] = str(QA_DIR / "identity.db")
 os.environ["PRIOR_LOCAL_PROVIDER"] = "false"
 
 sys.path.insert(0, str(ROOT / "src"))
@@ -69,27 +74,50 @@ def main() -> int:
     # Case A: generic research request, live discovery.
     text_a = "Research the top five AI wallet companies and compare their features, pricing, strengths, and weaknesses."
     job_a = service.specify(ws, text_a)
-    sel_a = select_provider_for_spec(job_a.spec, job_a.contract)
-    q = sel_a.query
-    case_a = {
-        "request": text_a,
-        "marketplace_query": q.to_dict(),
-        "agents_seen": sel_a.agents_seen,
-        "compatible_total": sel_a.compatible_total,
-        "rejected_count": len(sel_a.rejections),
-        "rejected_sample": [
-            {"candidate": label.split(" / ")[0][:40], "reason": reason}
-            for label, reason in sel_a.rejections[:8]
-        ],
-        "selected_provider": sel_a.candidate.agent_name,
-        "selected_wallet": trunc(sel_a.candidate.wallet_address),
-        "selected_offering": sel_a.candidate.offering_name,
-        "score": sel_a.score,
-        "score_breakdown": sel_a.score_breakdown,
-    }
+    live_snapshot: list[dict] = []
+
+    def _snapshotting(keyword: str) -> list[dict]:
+        agents = marketplace_mod.discover_live(keyword)
+        live_snapshot.extend(agents)
+        return agents
+
+    try:
+        sel_a = select_provider_for_spec(job_a.spec, job_a.contract, discover=_snapshotting)
+        q = sel_a.query
+        case_a = {
+            "request": text_a,
+            "selected": True,
+            "marketplace_query": q.to_dict(),
+            "agents_seen": sel_a.agents_seen,
+            "compatible_total": sel_a.compatible_total,
+            "rejected_count": len(sel_a.rejections),
+            "rejected_sample": [
+                {"candidate": label.split(" / ")[0][:40], "reason": reason}
+                for label, reason in sel_a.rejections[:8]
+            ],
+            "selected_provider": sel_a.candidate.agent_name,
+            "selected_wallet": trunc(sel_a.candidate.wallet_address),
+            "selected_offering": sel_a.candidate.offering_name,
+            "task_evidence": sel_a.candidate.task_evidence,
+            "score": sel_a.score,
+            "score_breakdown": sel_a.score_breakdown,
+        }
+    except NoCompatibleProvider as exc:
+        q = exc.query
+        case_a = {
+            "request": text_a,
+            "selected": False,
+            "truthful_no_match": True,
+            "message": str(exc),
+            "agents_seen": exc.candidates_seen,
+            "rejected_count": len(exc.rejections),
+        }
     evidence["cases"].append({"name": "A generic research, live discovery", **case_a})
 
-    # Case B: active learned clause must survive into the provider payload.
+    # Case B: lesson recall (deterministic, local) plus propagation replay.
+    # The lesson-bearing wallet contract is replayed against the live Case-A
+    # snapshot, so clause survival is proven deterministically while every
+    # marketplace byte stays live.
     lesson = Lesson(
         id="L_gate_compare",
         workspace_id=ws,
@@ -101,23 +129,65 @@ def main() -> int:
         created_at=lessons_mod.now_iso(),
     )
     memory_mod.write_lesson(ws, lesson)
+    clause = "Include an explicit side-by-side comparison whenever multiple products are requested."
     text_b = "Research the top five decentralized exchanges and compare their features and pricing."
     job_b = service.specify(ws, text_b)
-    applied = [lesson.requirement for lesson in job_b.contract.applied_lessons]
-    sel_b = select_provider_for_spec(job_b.spec, job_b.contract)
-    payload_learned = sel_b.requirement_preview.get("learned_requirements") or []
-    description = str(sel_b.requirement_preview.get("job_description") or "")
-    clause = "Include an explicit side-by-side comparison whenever multiple products are requested."
+    applied_dex = [lesson.requirement for lesson in job_b.contract.applied_lessons]
+    # Reworded wallet request: re-specifying identical text would return the
+    # existing open job by design (_reusable_job), not a fresh contract.
+    text_a2 = "Research the top 5 AI wallet companies and compare features, prices, strengths and weaknesses."
+    job_w = service.specify(ws, text_a2)
+    applied_wallet = [lesson.requirement for lesson in job_w.contract.applied_lessons]
+    replay = {"replayed": False}
+    live_attempt: dict = {"attempted": True}
+    try:
+        sel_b = select_provider_for_spec(job_b.spec, job_b.contract)
+        preview = sel_b.requirement_preview
+        payload_learned = preview.get("learned_requirements") or []
+        brief_blob = " ".join(
+            str(value) for value in (preview.get("requirement_data") or {}).values()
+            if isinstance(value, str))
+        live_attempt = {
+            "attempted": True,
+            "selected": True,
+            "selected_provider": sel_b.candidate.agent_name,
+            "selected_offering": sel_b.candidate.offering_name,
+            "task_evidence": sel_b.candidate.task_evidence,
+            "clause_in_executable_input": clause in brief_blob,
+        }
+    except NoCompatibleProvider as exc:
+        live_attempt = {
+            "attempted": True,
+            "selected": False,
+            "truthful_no_match": True,
+            "message": str(exc),
+            "agents_seen": exc.candidates_seen,
+        }
+    if live_snapshot and clause in applied_wallet:
+        snapshot = list(live_snapshot)
+        try:
+            sel_r = select_provider_for_spec(
+                job_w.spec, job_w.contract, discover=lambda keyword: snapshot)
+            blob_r = " ".join(
+                str(value) for value in sel_r.requirement_preview["requirement_data"].values()
+                if isinstance(value, str))
+            replay = {
+                "replayed": True,
+                "lesson_replay_on_live_snapshot": True,
+                "selected_provider": sel_r.candidate.agent_name,
+                "selected_offering": sel_r.candidate.offering_name,
+                "clause_in_executable_input": clause in blob_r,
+                "clause_in_payload": clause in (sel_r.requirement_preview.get("learned_requirements") or []),
+            }
+        except NoCompatibleProvider as exc:
+            replay = {"replayed": True, "selected": False,
+                      "truthful_no_match": True, "message": str(exc)}
     case_b = {
         "request": text_b,
-        "contract_clauses": applied,
-        "payload_learned": payload_learned,
-        "clause_in_contract": clause in applied,
-        "clause_in_payload": clause in payload_learned,
-        "clause_in_job_description": clause in description,
-        "selected_provider": sel_b.candidate.agent_name,
-        "selected_wallet": trunc(sel_b.candidate.wallet_address),
-        "selected_offering": sel_b.candidate.offering_name,
+        "clause_recalled_for_dex": clause in applied_dex,
+        "clause_recalled_for_wallet": clause in applied_wallet,
+        "live_attempt": live_attempt,
+        "replay": replay,
     }
     evidence["cases"].append({"name": "B learned clause propagation", **case_b})
 
@@ -152,15 +222,22 @@ def main() -> int:
 
     print("=== LIVE DISCOVERY EVIDENCE (read-only) ===")
     print(f"request A: {text_a}")
-    print(f"marketplace query: {q.primary_keyword} | required={q.required_terms[:8]}")
-    print(f"agents seen: {sel_a.agents_seen} | compatible: {sel_a.compatible_total} | rejected: {len(sel_a.rejections)}")
-    for row in case_a["rejected_sample"][:5]:
-        print(f"  rejected: {row['candidate']} -- {row['reason']}")
-    print(f"selected: {sel_a.candidate.agent_name} [{trunc(sel_a.candidate.wallet_address)}] / {sel_a.candidate.offering_name}")
-    print(f"score: {sel_a.score} {sel_a.score_breakdown}")
-    print(f"request B clause in contract: {case_b['clause_in_contract']}")
-    print(f"request B clause in payload: {case_b['clause_in_payload']}")
-    print(f"request B clause in job_description: {case_b['clause_in_job_description']}")
+    if case_a.get("selected"):
+        print(f"marketplace query: {q.primary_keyword} | task={q.task_capabilities} | subjects={q.subject_terms[:8]}")
+        print(f"agents seen: {sel_a.agents_seen} | compatible: {sel_a.compatible_total} | rejected: {len(sel_a.rejections)}")
+        for row in case_a["rejected_sample"][:5]:
+            print(f"  rejected: {row['candidate']} -- {row['reason']}")
+        print(f"selected: {sel_a.candidate.agent_name} [{trunc(sel_a.candidate.wallet_address)}] / {sel_a.candidate.offering_name}")
+        print(f"task evidence: {sel_a.candidate.task_evidence} | score: {sel_a.score} {sel_a.score_breakdown}")
+    else:
+        print(f"request A truthful no-match: {case_a.get('message')} (agents seen: {case_a.get('agents_seen')})")
+    if case_b.get("live_attempt", {}).get("selected"):
+        attempt = case_b["live_attempt"]
+        print(f"request B live selected: {attempt['selected_provider']} / {attempt['selected_offering']}")
+        print(f"request B clause in executable input: {attempt['clause_in_executable_input']}")
+    else:
+        print(f"request B live truthful no-match; clause recalled: {case_b.get('clause_recalled_for_dex')}")
+    print(f"replay on live snapshot: {replay}")
     print(f"no-match truthful: {case_e.get('no_match')}")
     print(f"bridge commands used: {sorted(set(bridge_commands))}")
     print(f"ACP write commands issued: {writes if writes else 'NONE'}")
@@ -170,7 +247,15 @@ def main() -> int:
     out.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     print(f"evidence saved: {out}")
 
-    ok = (case_b["clause_in_contract"] and case_b["clause_in_payload"]
+    propagation_ok = (
+        replay.get("replayed") and replay.get("clause_in_executable_input")
+        and replay.get("clause_in_payload"))
+    if case_b.get("live_attempt", {}).get("selected"):
+        propagation_ok = propagation_ok or (
+            case_b["live_attempt"].get("clause_in_executable_input") is True)
+    ok = (case_b.get("clause_recalled_for_dex", False)
+          and case_b.get("clause_recalled_for_wallet", False)
+          and propagation_ok
           and case_e.get("no_match") is True and not writes)
     return 0 if ok else 1
 

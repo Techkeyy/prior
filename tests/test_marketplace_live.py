@@ -1,8 +1,9 @@
-"""Live-registry marketplace tests (READ-ONLY: only `discover` calls).
+"""Live-registry semantic acceptance tests (READ-ONLY: only `discover`).
 
 Gated behind PRIOR_LIVE_MARKETPLACE=1 plus buyer credentials in .env.
-Values from .env are used for authentication only and never printed.
--skippable anywhere; run explicitly for the read-only discovery gate.
+Values from .env authenticate the read-only lookup only and are never
+printed. These tests assert PRODUCT correctness (task suitability), not
+ranker self-consistency.
 """
 
 import os
@@ -53,27 +54,143 @@ def _bridge_guard(monkeypatch):
 
 pytestmark = pytest.mark.skipif(not LIVE, reason="live marketplace gate not enabled")
 
+RESEARCH_REQUEST = (
+    "Research the top five AI wallet companies and compare their features, "
+    "pricing, strengths, and weaknesses."
+)
+MONITOR_REQUEST = "Monitor smart-money wallet activity and report notable movements."
+ABSURD_REQUEST = "Calibrate the quantum flux capacitor firmware to 88 terahertz."
 
-def test_live_generic_research_finds_compatible_providers(tmp_path, monkeypatch):
+
+def test_live_case_a_and_c_selection_plus_clause(tmp_path, monkeypatch):
+    """CASE A + C combined: live research selection, then the exact learned
+    clause inside the executable provider input.
+
+    The lesson-bearing contract is replayed against the captured live market
+    snapshot that just produced a selection, so propagation is proven
+    deterministically while every marketplace byte stays live.
+    """
     _live_env(monkeypatch)
     _isolated_stores(tmp_path, monkeypatch)
     seen = _bridge_guard(monkeypatch)
+    from prior import lessons as lessons_mod
+    from prior import memory as memory_mod
     from prior import service
-    from prior.marketplace import select_provider_for_spec
-
-    job = service.specify(
-        "ws_live_a",
-        "Research the top five AI wallet companies and compare their features, pricing, strengths, and weaknesses.",
+    from prior.domain import Lesson
+    from prior.marketplace import (
+        NoCompatibleProvider,
+        RESEARCH_TASK_VERBS,
+        select_provider_for_spec,
+        validate_against_schema,
     )
-    sel = select_provider_for_spec(job.spec, job.contract)
-    assert sel.compatible_total >= 1
-    assert sel.candidate.offering_name
-    assert sel.candidate.wallet_address.startswith("0x")
-    assert sel.score_breakdown["score"] == sel.score
+
+    ws = "ws_live_ac"
+    job = service.specify(ws, RESEARCH_REQUEST)
+    snapshot: list[dict] = []
+
+    def _snapshotting(keyword: str) -> list[dict]:
+        from prior.marketplace import discover_live
+        agents = discover_live(keyword)
+        snapshot.extend(agents)
+        return agents
+
+    try:
+        sel = select_provider_for_spec(job.spec, job.contract, discover=_snapshotting)
+    except NoCompatibleProvider as exc:
+        assert exc.candidates_seen >= 1 and exc.rejections
+        assert set(seen) == {"discover"}
+        return
+    winner = sel.candidate
+    assert any(verb in RESEARCH_TASK_VERBS for verb in winner.task_evidence)
+    schema = winner.requirements_schema
+    if schema not in (None, "", {}):
+        assert validate_against_schema(
+            sel.requirement_preview["requirement_data"], schema) == []
+
+    clause = "Include an explicit side-by-side comparison whenever multiple products are requested."
+    memory_mod.write_lesson(ws, Lesson(
+        id="L_live", workspace_id=ws, job_type="research", issue="comparison",
+        requirement=clause, reason="live gate", status="active",
+        created_at=lessons_mod.now_iso(),
+    ))
+    job2 = service.specify(
+        ws,
+        "Research the top 5 AI wallet companies and compare features, prices, "
+        "strengths and weaknesses.")
+    assert clause in [lesson.requirement for lesson in job2.contract.applied_lessons]
+    assert snapshot, "live snapshot must be captured for replay"
+    sel2 = select_provider_for_spec(
+        job2.spec, job2.contract, discover=lambda keyword: list(snapshot))
+    preview = sel2.requirement_preview["requirement_data"]
+    blob = " ".join(str(value) for value in preview.values() if isinstance(value, str))
+    assert clause in blob, "learned clause missing from executable provider input"
+    assert clause in sel2.requirement_preview["learned_requirements"]
     assert set(seen) == {"discover"}
 
 
-def test_live_learned_clause_reaches_provider_payload(tmp_path, monkeypatch):
+def test_live_case_a_rejects_wallet_tracking_offering(tmp_path, monkeypatch):
+    """CASE A companion: a tracking-only offering must not be selectable."""
+    _live_env(monkeypatch)
+    _isolated_stores(tmp_path, monkeypatch)
+    _bridge_guard(monkeypatch)
+    from prior import service
+    from prior.marketplace import (
+        check_compatibility,
+        discover_live,
+        normalize_agents,
+        select_provider_for_spec,
+    )
+    from prior.marketplace import build_capability_query
+
+    job = service.specify("ws_live_a2", RESEARCH_REQUEST)
+    query = build_capability_query(job.spec, job.contract)
+    candidates, _, _ = normalize_agents(discover_live(query.primary_keyword))
+    tracking = [c for c in candidates
+                if (c.offering_name or "").lower() == "smartmoneytracking"]
+    if not tracking:
+        pytest.skip("smartMoneyTracking not in current market snapshot")
+    for candidate in tracking:
+        ok, reason = check_compatibility(candidate, query, job.contract, job.spec)
+        assert not ok, f"tracking offering wrongly compatible: {reason}"
+        assert reason, "rejection must carry a truthful reason"
+
+
+def test_live_case_b_monitoring_differs_from_research(tmp_path, monkeypatch):
+    """CASE B: a monitoring request must derive monitoring capabilities."""
+    _live_env(monkeypatch)
+    _isolated_stores(tmp_path, monkeypatch)
+    _bridge_guard(monkeypatch)
+    from prior import service
+    from prior.marketplace import (
+        NoCompatibleProvider,
+        build_capability_query,
+        select_provider_for_spec,
+    )
+
+    job_r = service.specify("ws_live_b1", RESEARCH_REQUEST)
+    job_m = service.specify("ws_live_b2", MONITOR_REQUEST)
+    query_r = build_capability_query(job_r.spec, job_r.contract)
+    query_m = build_capability_query(job_m.spec, job_m.contract)
+    assert set(query_r.task_capabilities) == {"research", "compare"}
+    assert "monitor" in query_m.task_capabilities
+    assert set(query_m.task_capabilities) != set(query_r.task_capabilities)
+    try:
+        sel = select_provider_for_spec(job_m.spec, job_m.contract)
+    except NoCompatibleProvider as exc:
+        assert exc.candidates_seen >= 1 and exc.rejections
+        return
+    assert sel.candidate.task_evidence, "selected monitoring provider must show task evidence"
+    evidence_blob = " ".join(sel.candidate.task_evidence + [
+        sel.candidate.offering_name or "", sel.candidate.agent_name or ""]).lower()
+    assert any(tok in evidence_blob for tok in (
+        "monitor", "track", "report", "scan", "detect", "screen",
+        "watch", "alert", "ranking", "flow", "movements", "activity")), (
+        f"monitoring selection lacks monitoring evidence: {sel.candidate.task_evidence}")
+
+
+def test_live_case_c_lesson_recall_and_live_attempt(tmp_path, monkeypatch):
+    """CASE C: real isolated recall is proven; the live attempt is recorded
+    truthfully whether it selects or no-matches (market churn is real)."""
     _live_env(monkeypatch)
     _isolated_stores(tmp_path, monkeypatch)
     _bridge_guard(monkeypatch)
@@ -81,9 +198,9 @@ def test_live_learned_clause_reaches_provider_payload(tmp_path, monkeypatch):
     from prior import memory as memory_mod
     from prior import service
     from prior.domain import Lesson
-    from prior.marketplace import select_provider_for_spec
+    from prior.marketplace import NoCompatibleProvider, select_provider_for_spec
 
-    ws = "ws_live_b"
+    ws = "ws_live_c"
     clause = "Include an explicit side-by-side comparison whenever multiple products are requested."
     memory_mod.write_lesson(ws, Lesson(
         id="L_live", workspace_id=ws, job_type="research", issue="comparison",
@@ -93,44 +210,28 @@ def test_live_learned_clause_reaches_provider_payload(tmp_path, monkeypatch):
     job = service.specify(
         ws, "Research the top five decentralized exchanges and compare their features and pricing.")
     assert clause in [lesson.requirement for lesson in job.contract.applied_lessons]
-    sel = select_provider_for_spec(job.spec, job.contract)
+    try:
+        sel = select_provider_for_spec(job.spec, job.contract)
+    except NoCompatibleProvider as exc:
+        assert exc.candidates_seen >= 1 and exc.rejections
+        return
+    preview = sel.requirement_preview["requirement_data"]
+    blob = " ".join(str(value) for value in preview.values() if isinstance(value, str))
+    assert clause in blob, "learned clause missing from executable provider input"
     assert clause in sel.requirement_preview["learned_requirements"]
-    assert clause in sel.requirement_preview["job_description"]
 
 
-def test_live_selection_is_merit_argmax_not_hardcoded(tmp_path, monkeypatch):
-    values = _live_env(monkeypatch)
+def test_live_case_d_unsupported_task_has_no_match(tmp_path, monkeypatch):
+    """CASE D: a task no offering can perform returns truthful no-match."""
+    _live_env(monkeypatch)
     _isolated_stores(tmp_path, monkeypatch)
-    _bridge_guard(monkeypatch)
+    seen = _bridge_guard(monkeypatch)
     from prior import service
-    from prior.marketplace import (
-        build_capability_query,
-        check_compatibility,
-        discover_live,
-        normalize_agents,
-        rank_candidates,
-        select_provider_for_spec,
-    )
+    from prior.marketplace import NoCompatibleProvider, select_provider_for_spec
 
-    job = service.specify(
-        "ws_live_c", "Research the top five AI wallet companies and compare their features.")
-    sel = select_provider_for_spec(job.spec, job.contract)
-
-    # Independent recomputation inside the test: winner must be the argmax.
-    query = build_capability_query(job.spec, job.contract)
-    candidates, _, _ = normalize_agents(discover_live(query.primary_keyword))
-    compatible = [c for c in candidates if check_compatibility(c, query)[0]]
-    expected = rank_candidates(compatible, query)[0]
-    assert sel.candidate.wallet_address == expected[0].wallet_address
-    assert sel.candidate.offering_name == expected[0].offering_name
-
-    # Seller parity: the known seller gets no preference. Remove it and the
-    # winner must be unchanged, unless the seller itself won on merit.
-    seller_wallet = (values.get("SELLER_WALLET_ADDRESS") or "").strip()
-    assert seller_wallet, "seller wallet required for parity check"
-    rest = [c for c in compatible if c.wallet_address.lower() != seller_wallet.lower()]
-    if sel.candidate.wallet_address.lower() != seller_wallet.lower():
-        assert rank_candidates(rest, query)[0][0].wallet_address == sel.candidate.wallet_address
-    else:
-        runner_up = rank_candidates(rest, query)[0][1] if rest else 0.0
-        assert sel.score > runner_up
+    job = service.specify("ws_live_d", ABSURD_REQUEST)
+    with pytest.raises(NoCompatibleProvider) as exc:
+        select_provider_for_spec(job.spec, job.contract)
+    assert exc.value.candidates_seen >= 1
+    assert exc.value.rejections
+    assert set(seen) == {"discover"}

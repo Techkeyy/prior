@@ -6,22 +6,25 @@
     {
       "name": "A generic research, live discovery",
       "request": "Research the top five AI wallet companies and compare their features, pricing, strengths, and weaknesses.",
+      "selected": true,
       "marketplace_query": {
         "primary_keyword": "ai wallets",
-        "required_terms": [
+        "task_capabilities": [
+          "research",
+          "compare"
+        ],
+        "subject_terms": [
           "wallet",
           "companies",
-          "wallets",
           "features",
           "pricing",
           "strengths",
-          "weaknesses"
+          "weaknesses",
+          "wallets"
         ],
+        "deliverable_capabilities": [],
         "useful_terms": [
           "products",
-          "current",
-          "public",
-          "available",
           "cover",
           "requested",
           "subject",
@@ -29,7 +32,10 @@
           "deliverables",
           "separate",
           "facts",
-          "speculation"
+          "speculation",
+          "current",
+          "public",
+          "available"
         ],
         "job_type": "research",
         "deliverable_hints": [
@@ -41,69 +47,79 @@
         ]
       },
       "agents_seen": 25,
-      "compatible_total": 79,
-      "rejected_count": 245,
+      "compatible_total": 6,
+      "rejected_count": 249,
       "rejected_sample": [
         {
           "candidate": "Chainward",
-          "reason": "offering requires fields PRIOR cannot supply: target"
+          "reason": "offering shows no evidence it performs the requested task"
         },
         {
           "candidate": "Chainward",
-          "reason": "offering requires fields PRIOR cannot supply: target"
+          "reason": "offering shows no evidence it performs the requested task"
         },
         {
-          "candidate": "Nansen Agent",
-          "reason": "offering requires fields PRIOR cannot supply: query"
+          "candidate": "RoysClaw",
+          "reason": "offering shows no evidence it performs the requested task"
         },
         {
-          "candidate": "Nansen Agent",
-          "reason": "offering requires fields PRIOR cannot supply: query"
+          "candidate": "RoysClaw",
+          "reason": "offering shows no evidence it performs the requested task"
         },
         {
-          "candidate": "Nansen Agent",
-          "reason": "offering requires fields PRIOR cannot supply: address"
+          "candidate": "RoysClaw",
+          "reason": "offering shows no evidence it performs the requested task"
         },
         {
-          "candidate": "Nansen Agent",
-          "reason": "offering requires fields PRIOR cannot supply: market_name"
+          "candidate": "RoysClaw",
+          "reason": "no subject overlap with the requested job"
         },
         {
-          "candidate": "Nansen Agent",
-          "reason": "offering requires fields PRIOR cannot supply: token_name, chain"
+          "candidate": "RoysClaw",
+          "reason": "offering shows no evidence it performs the requested task"
         },
         {
-          "candidate": "Nansen Agent",
-          "reason": "offering requires fields PRIOR cannot supply: chains, timeframe"
+          "candidate": "RoysClaw",
+          "reason": "offering shows no evidence it performs the requested task"
         }
       ],
-      "selected_provider": "Einstein",
-      "selected_wallet": "0xa691...9eda",
-      "selected_offering": "smartMoneyTracking",
-      "score": 12.0,
+      "selected_provider": "ZIZI",
+      "selected_wallet": "0x3433...6ccb",
+      "selected_offering": "crypto_news_brief",
+      "task_evidence": [
+        "research"
+      ],
+      "score": 6.5,
       "score_breakdown": {
-        "semantic_overlap": 2,
+        "task_hits": 1,
+        "subject_overlap": 1,
         "offering_name_term_hit": false,
-        "rating": 5.0,
-        "recency_note": "active within 7 days",
-        "score": 12.0
+        "rating": null,
+        "recency_note": "active within 30 days",
+        "score": 6.5,
+        "semantic_overlap": 1
       }
     },
     {
       "name": "B learned clause propagation",
       "request": "Research the top five decentralized exchanges and compare their features and pricing.",
-      "contract_clauses": [
-        "Include an explicit side-by-side comparison whenever multiple products are requested."
-      ],
-      "payload_learned": [
-        "Include an explicit side-by-side comparison whenever multiple products are requested."
-      ],
-      "clause_in_contract": true,
-      "clause_in_payload": true,
-      "clause_in_job_description": true,
-      "selected_provider": "Athena",
-      "selected_wallet": "0x308d...2e5d",
-      "selected_offering": "athena_wisdom_rankings"
+      "clause_recalled_for_dex": true,
+      "clause_recalled_for_wallet": true,
+      "live_attempt": {
+        "attempted": true,
+        "selected": false,
+        "truthful_no_match": true,
+        "message": "No compatible Virtuals agent was found for this job.",
+        "agents_seen": 25
+      },
+      "replay": {
+        "replayed": true,
+        "lesson_replay_on_live_snapshot": true,
+        "selected_provider": "The Stall",
+        "selected_offering": "Research Synthesis",
+        "clause_in_executable_input": true,
+        "clause_in_payload": true
+      }
     },
     {
       "name": "E truthful no-match",
