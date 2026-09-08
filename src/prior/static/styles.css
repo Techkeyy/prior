@@ -169,12 +169,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
   background: var(--ink);
 }
 
-.site-nav a.proof-link { color: var(--faint); font-size: 13px; }
-.site-nav a.proof-link:hover { color: var(--muted); }
+.site-nav a.proof-link { color: var(--muted); font-size: 13px; }
+.site-nav a.proof-link:hover { color: var(--ink); }
 .site-nav a.proof-link.active { color: var(--ink-soft); }
 .site-nav a.proof-link.active::after { background: var(--line-strong); }
-
-.site-nav .nav-launch-btn { padding: 8px 18px; }
 
 .id-state {
   display: inline-flex;
@@ -684,7 +682,7 @@ code.mono {
   font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
   margin: 0 0 2px;
 }
 
@@ -703,7 +701,7 @@ code.mono {
   font-size: 14px;
 }
 .kv dt {
-  color: var(--faint);
+  color: var(--muted);
   font-size: 11.5px;
   font-weight: 650;
   text-transform: uppercase;
@@ -1085,7 +1083,7 @@ details.proof summary {
 .proof-num {
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--faint);
+  color: var(--muted);
   letter-spacing: 0.08em;
 }
 
@@ -1147,7 +1145,7 @@ details.proof summary {
 
 .hero-proof-sub { margin-top: 18px; }
 .hero-proof-sub .proof-link {
-  color: var(--faint);
+  color: var(--muted);
   font-size: 13px;
   text-decoration: none;
 }
@@ -1314,6 +1312,57 @@ details.proof summary {
   font-family: var(--serif);
   font-size: clamp(26px, 3.4vw, 38px);
   max-width: 22ch;
+}
+
+/* ---------- First-entry auth prompt ---------- */
+
+.auth-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px 18px;
+  background: rgba(25, 26, 23, 0.38);
+}
+
+.auth-prompt-card {
+  width: min(430px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 28px 28px 24px;
+}
+
+.auth-prompt-card h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 23px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+}
+
+.auth-prompt-card .ap-body {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 22px;
+}
+
+.auth-prompt-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-prompt-actions .button { width: 100%; }
+
+.auth-prompt-sub {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* ---------- Responsive ---------- */

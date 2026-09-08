@@ -31,7 +31,6 @@ function updateNav() {
     nav.innerHTML = `
       <a href="/#how-it-works" data-anchor="how-it-works">How it works</a>
       <a href="/proof" data-nav="proof" class="proof-link">Proof</a>
-      <a href="/app" data-nav="app" class="button button-primary button-small nav-launch-btn">Open PRIOR</a>
     `;
   } else {
     if (wsBadge) {
@@ -273,6 +272,7 @@ async function renderDashboard() {
     ${activitySection(dash.jobs)}
   `);
   if (job && (job.status === "working" || job.status === "hired")) poll(job.id);
+  maybeShowAuthPrompt();
 }
 
 function workspaceHeader() {
@@ -1025,6 +1025,95 @@ function identitySlot() {
   return document.getElementById("identity-state");
 }
 
+/* First-entry auth choice (guest vs Google) on /app only. Presentation state
+   only: sessionStorage decides whether the dialog has been shown this browser
+   session. It is NEVER authentication truth; /api/auth/me remains the sole
+   source of signed-in state, and the dialog is rendered only after /api/auth/me
+   has answered unauthenticated. */
+const AUTH_PROMPT_KEY = "prior_auth_prompt_seen";
+let authPromptEl = null;
+
+function authPromptSeen() {
+  try { return window.sessionStorage.getItem(AUTH_PROMPT_KEY) === "1"; } catch { return true; }
+}
+
+function markAuthPromptSeen() {
+  try { window.sessionStorage.setItem(AUTH_PROMPT_KEY, "1"); } catch { /* private mode: skip re-prompt */ }
+}
+
+function maybeShowAuthPrompt() {
+  if (authPromptEl) return;
+  if (route() !== "app") return;
+  if (typeof document === "undefined" || !document.body) return;
+  const me = state.identity;
+  if (!me || me.authenticated) return;
+  if (authPromptSeen()) return;
+  markAuthPromptSeen();
+
+  const previouslyFocused = document.activeElement;
+  const wrap = document.createElement("div");
+  wrap.className = "auth-prompt";
+  const googleBtn = me.google_configured
+    ? `<a class="button button-primary" href="/api/auth/google/start">Continue with Google</a>`
+    : `<p class="ap-body" style="margin:0 0 10px;">Google sign in is unavailable right now.</p>`;
+  wrap.innerHTML = `
+    <div class="auth-prompt-card" role="dialog" aria-modal="true" aria-labelledby="ap-title" aria-describedby="ap-body">
+      <h2 id="ap-title">Save your PRIOR memory</h2>
+      <p id="ap-body" class="ap-body">Sign in to keep your jobs and learned requirements across browsers. You can also continue without signing in.</p>
+      <div class="auth-prompt-actions">
+        ${googleBtn}
+        <button type="button" class="button button-secondary" data-auth-guest>Continue as guest</button>
+      </div>
+      <p class="auth-prompt-sub">Your PRIOR memory follows you, not your browser.</p>
+    </div>`;
+  document.body.appendChild(wrap);
+  authPromptEl = wrap;
+
+  const card = wrap.querySelector(".auth-prompt-card");
+  const focusables = Array.from(card.querySelectorAll("a[href], button"));
+
+  function onKeydown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePrompt();
+      return;
+    }
+    if (event.key !== "Tab" || !focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function onBackdropClick(event) {
+    if (event.target === wrap) closePrompt();
+  }
+
+  function closePrompt() {
+    document.removeEventListener("keydown", onKeydown, true);
+    wrap.removeEventListener("click", onBackdropClick);
+    [document.getElementById("site-header"), app].forEach((el) => {
+      if (el) { el.removeAttribute("inert"); el.removeAttribute("aria-hidden"); }
+    });
+    wrap.remove();
+    authPromptEl = null;
+    if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+  }
+
+  [document.getElementById("site-header"), app].forEach((el) => {
+    if (el) { el.setAttribute("inert", ""); el.setAttribute("aria-hidden", "true"); }
+  });
+  document.addEventListener("keydown", onKeydown, true);
+  wrap.addEventListener("click", onBackdropClick);
+  wrap.querySelector("[data-auth-guest]").addEventListener("click", closePrompt);
+  if (focusables.length) focusables[0].focus();
+}
+
 // Authentication truth comes ONLY from /api/auth/me. The ?auth=... query
 // value is a transient navigation signal, never proof of authentication: a
 // logged-out browser presenting a stale signed-in query must never see a "Signed in"
@@ -1069,6 +1158,9 @@ async function loadIdentity() {
     const out = slot.querySelector("[data-signout]");
     if (out) out.addEventListener("click", async () => {
       try { await api("/api/auth/logout", { method: "POST" }); } catch (err) { /* stay signed in on failure */ }
+      // Presentation only, never auth truth: signing out must not immediately
+      // re-prompt a returning user this session.
+      markAuthPromptSeen();
       consumeAuthQueryParam();
       loadIdentity();
       try { state.workspace = await api("/api/workspace"); } catch (err) { /* keep */ }
@@ -1098,6 +1190,7 @@ async function loadIdentity() {
       <button class="button button-secondary button-small" type="submit">Verify</button>
       <span class="id-note" data-code-status></span>
     </form>`;
+  maybeShowAuthPrompt();
   const toggle = slot.querySelector("[data-email-toggle]");
   const emailForm = slot.querySelector("[data-email-form]");
   const codeForm = slot.querySelector("[data-code-form]");
