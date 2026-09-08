@@ -1100,6 +1100,28 @@ function identitySlot() {
   return document.getElementById("identity-state");
 }
 
+// Authoritative signed-in truth is /api/auth/me. The ?auth=... query value
+// is only a one-time post-redirect signal: it must be consumed (removed from
+// the URL) so a later signed-out render can never show a stale banner.
+function authStatusNotice(isAuthenticated, authParam) {
+  if (isAuthenticated) return "";
+  if (authParam === "signed-in") return "signed-in";
+  if (authParam === "error" || authParam === "cancelled") return "auth-incomplete";
+  return "";
+}
+
+function consumeAuthQueryParam() {
+  try {
+    if (typeof location === "undefined" || typeof history === "undefined") return false;
+    const url = new URL(location.href, "http://local");
+    if (!url.searchParams.has("auth")) return false;
+    url.searchParams.delete("auth");
+    const rest = url.searchParams.toString();
+    history.replaceState({}, "", url.pathname + (rest ? "?" + rest : "") + url.hash);
+    return true;
+  } catch { return false; }
+}
+
 async function loadIdentity() {
   const slot = identitySlot();
   if (!slot) return;
@@ -1118,6 +1140,7 @@ async function loadIdentity() {
     const out = slot.querySelector("[data-signout]");
     if (out) out.addEventListener("click", async () => {
       try { await api("/api/auth/logout", { method: "POST" }); } catch (err) { /* stay signed in on failure */ }
+      consumeAuthQueryParam();
       loadIdentity();
       try { state.workspace = await api("/api/workspace"); } catch (err) { /* keep */ }
       updateWorkspaceBadge();
@@ -1126,9 +1149,11 @@ async function loadIdentity() {
     return;
   }
   const params = new URLSearchParams(location.search);
-  const authNotice = params.get("auth") === "signed-in"
+  const notice = authStatusNotice(Boolean(me && me.authenticated), params.get("auth"));
+  consumeAuthQueryParam();
+  const authNotice = notice === "signed-in"
     ? `<span class="id-note">Signed in. Your PRIOR memory follows you, not your browser.</span>`
-    : (params.get("auth") === "error" || params.get("auth") === "cancelled"
+    : (notice === "auth-incomplete"
       ? `<span class="id-note">Sign in did not complete. Guest mode still works.</span>` : "");
   const googleBtn = me && me.google_configured
     ? `<a class="button button-primary button-small" href="/api/auth/google/start">Continue with Google</a>`
@@ -1193,4 +1218,9 @@ async function loadIdentity() {
 }
 
 window.addEventListener("popstate", render);
-boot();
+if (typeof document !== "undefined" && document.getElementById("app")) boot();
+
+// Exported for node-based unit tests; browsers ignore this block.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { authStatusNotice, consumeAuthQueryParam, route };
+}
