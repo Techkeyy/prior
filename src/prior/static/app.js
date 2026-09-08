@@ -1048,7 +1048,6 @@ function maybeShowAuthPrompt() {
   const me = state.identity;
   if (!me || me.authenticated) return;
   if (authPromptSeen()) return;
-  markAuthPromptSeen();
 
   const previouslyFocused = document.activeElement;
   const wrap = document.createElement("div");
@@ -1095,6 +1094,9 @@ function maybeShowAuthPrompt() {
   }
 
   function closePrompt() {
+    // A real dismissal is the choice: guest button, Escape, or backdrop.
+    // Display alone never marks the prompt seen.
+    markAuthPromptSeen();
     document.removeEventListener("keydown", onKeydown, true);
     wrap.removeEventListener("click", onBackdropClick);
     [document.getElementById("site-header"), app].forEach((el) => {
@@ -1111,6 +1113,8 @@ function maybeShowAuthPrompt() {
   document.addEventListener("keydown", onKeydown, true);
   wrap.addEventListener("click", onBackdropClick);
   wrap.querySelector("[data-auth-guest]").addEventListener("click", closePrompt);
+  const googleLink = wrap.querySelector('.auth-prompt-actions a[href="/api/auth/google/start"]');
+  if (googleLink) googleLink.addEventListener("click", markAuthPromptSeen);
   if (focusables.length) focusables[0].focus();
 }
 
