@@ -173,6 +173,24 @@ def acp_ready() -> bool:
     return acp_enabled() and not missing_virtuals_credentials(role="buyer")
 
 
+def max_acp_job_price_usdc() -> float:
+    """Safety cap for a single ACP job price, USDC-denominated.
+
+    PRIOR treats a fixed offering priceValue as USDC per ACP stablecoin
+    settlement. Malformed configuration fails closed downstream.
+    """
+    raw = (os.getenv("PRIOR_MAX_ACP_JOB_PRICE_USDC", "2.00") or "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"PRIOR_MAX_ACP_JOB_PRICE_USDC is malformed: {raw!r}. Refusing hires.")
+    if not (value >= 0):
+        raise ValueError(
+            f"PRIOR_MAX_ACP_JOB_PRICE_USDC must be non-negative: {raw!r}.")
+    return value
+
+
 def seller_ready() -> bool:
     return not missing_virtuals_credentials(role="seller")
 

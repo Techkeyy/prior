@@ -2,6 +2,11 @@
 
 Uses @virtuals-protocol/acp-node-v2 via acp-bridge with
 PrivyAlchemyEvmProviderAdapter. Never falls back to LOCAL PROVIDER.
+
+Two execution paths exist. The historical path (find_providers +
+create_job) hires through the previously configured seller. The dynamic
+path (prepare_hire + execute_hire) hires the marketplace-selected offering
+from a frozen HirePlan and performs no independent discovery.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from prior.domain import AgentOffer, Contract, JobSpec
+from prior.domain import AgentOffer, Contract, JobRecord, JobSpec
 from prior.providers.base import (
     VIRTUALS_NOT_CONFIGURED,
     ProviderError,
@@ -115,6 +120,65 @@ class VirtualsAcpProvider:
             if missing:
                 detail = f"{VIRTUALS_NOT_CONFIGURED} Missing: {', '.join(missing)}."
             raise ProviderError(detail)
+
+    def prepare_hire(self, record: JobRecord, discover=None) -> dict[str, Any]:
+        """Select a live marketplace offering and freeze a HirePlan.
+
+        Read-only: runs discovery plus deterministic selection, never writes.
+        Live discovery requires buyer credentials; an explicitly injected
+        discover callable is a controlled/test path and skips that gate.
+        """
+        from prior import hiring as hiring_mod
+        from prior.marketplace import select_provider_for_spec
+
+        if discover is None:
+            self._require_ready()
+        selection = select_provider_for_spec(
+            record.spec, record.contract, discover=discover)
+        plan = hiring_mod.build_hire_plan(record, selection)
+        return plan.to_dict()
+
+    def execute_hire(self, record: JobRecord, plan_dict: dict[str, Any]) -> ProviderJob:
+        """Create exactly one ACP job from a frozen HirePlan.
+
+        Runs final preflight, then issues a single create-offering-job bridge
+        call against the plan's wallet, offering, and requirementData. Never
+        rediscovers and never substitutes the seller.
+        """
+        from prior import hiring as hiring_mod
+
+        self._require_ready()
+        plan = hiring_mod.HirePlan.from_dict(plan_dict or {})
+        violations = hiring_mod.validate_preflight(record, plan)
+        if violations:
+            raise hiring_mod.HireError(
+                "Hire preflight refused the write: " + " | ".join(violations))
+        raw = _bridge([
+            "create-offering-job",
+            plan.provider_wallet,
+            plan.offering_name,
+            json.dumps(plan.requirement_data),
+        ])
+        job_id = raw.get("jobId")
+        if not job_id:
+            raise ProviderError(f"ACP create-offering-job returned no jobId: {raw}")
+        offer = AgentOffer(
+            id=plan.provider_wallet,
+            name=plan.agent_name or "Virtuals ACP agent",
+            summary=f"Selected offering: {plan.offering_name}",
+            price_label=str(plan.price_value) if plan.price_value is not None else "",
+            source=VIRTUALS_SOURCE,
+            network="Virtuals ACP",
+            wallet_address=plan.provider_wallet,
+            offering_name=plan.offering_name,
+        )
+        return ProviderJob(
+            source=VIRTUALS_SOURCE,
+            phase=str(raw.get("phase") or "job.created"),
+            offer=offer,
+            requirement=dict(plan.requirement_data),
+            acp_job_id=str(job_id),
+        )
 
 
 def _bridge(args: list[str]) -> dict[str, Any]:

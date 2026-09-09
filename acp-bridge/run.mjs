@@ -69,6 +69,47 @@ async function main() {
     process.exit(0);
   }
 
+  if (cmd === "create-offering-job") {
+    // REAL write path for a marketplace-selected offering. Uses the official
+    // createJobByOfferingName(chainId, offeringName, providerAddress,
+    // requirementData, { evaluatorAddress }) with PRIOR as its own evaluator,
+    // matching the established accept/reject lifecycle. Only invoked with a
+    // frozen HirePlan; never performs discovery.
+    const providerAddress = args[0];
+    const offeringName = args[1] || "research";
+    const requirementRaw = args.slice(2).join(" ");
+    if (!providerAddress || !providerAddress.startsWith("0x")) {
+      fail("create-offering-job requires a 0x seller wallet address.");
+    }
+    let requirementData = {};
+    try {
+      requirementData = JSON.parse(requirementRaw);
+    } catch {
+      fail("create-offering-job requires JSON requirementData matching the offering schema.");
+    }
+    const mod = await loadSdk();
+    const { agent, chain } = await createAgent(mod, "buyer");
+    const myAddress = await agent.getAddress();
+    const jobId = await agent.createJobByOfferingName(
+      chain.id,
+      offeringName,
+      providerAddress,
+      requirementData,
+      { evaluatorAddress: myAddress }
+    );
+    console.log(
+      JSON.stringify({
+        ok: true,
+        jobId: String(jobId),
+        phase: "job.created",
+        chainId: chain.id,
+        providerAddress,
+        offeringName,
+      })
+    );
+    process.exit(0);
+  }
+
   if (cmd === "create-job") {
     const providerAddress = args[0];
     const offeringName = args[1] || "research";

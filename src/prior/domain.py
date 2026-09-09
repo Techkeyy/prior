@@ -192,6 +192,13 @@ class JobRecord:
     error: str | None = None
     worker_requirement: dict[str, Any] | None = None
     tx_hash: str | None = None
+    # Dynamic-marketplace hire intent. None = no intent yet. States:
+    # prepared (plan frozen, no write) -> creating (write attempted) ->
+    # created (external ACP job id recorded) | failed (terminal attempt,
+    # re-preparable). Existing statuses are preserved unchanged.
+    hire_state: str | None = None
+    hire_plan: dict[str, Any] | None = None
+    hire_error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -212,6 +219,9 @@ class JobRecord:
             "error": self.error,
             "worker_requirement": self.worker_requirement,
             "tx_hash": self.tx_hash,
+            "hire_state": self.hire_state,
+            "hire_plan": self.hire_plan,
+            "hire_error": self.hire_error,
         }
 
     @classmethod
@@ -234,4 +244,7 @@ class JobRecord:
             error=data.get("error"),
             worker_requirement=data.get("worker_requirement"),
             tx_hash=data.get("tx_hash"),
+            hire_state=data.get("hire_state"),
+            hire_plan=data.get("hire_plan"),
+            hire_error=data.get("hire_error"),
         )
