@@ -102,6 +102,11 @@ provenance, and parent-agent metadata alone can never satisfy a gate.
 A bare offering name such as "research" is task evidence only, never
 subject-generalism: broad scope requires explicit wording ("any topic",
 "general research", "open-ended research", …) in the offering itself.
+Discovery fans out over up to 4 short subject/domain/job-type queries and
+merges by wallet (no single top-25 slice decides); malformed slices fail
+closed. Request intent accepts interrogative forms ("what is", "which",
+"how does/do", …) via research cues, with genuinely non-research actions
+still refused.
 Evidence:
 `evidence/marketplace-discovery.json`, `scripts/verify_marketplace_discovery.py`.
 

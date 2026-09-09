@@ -145,6 +145,11 @@ class CapabilityQuery:
     deliverable_hints: list[str] = field(default_factory=list)
     # Backwards-compatible alias: required_terms == subject + task terms.
     required_terms: list[str] = field(default_factory=list)
+    # Ordered discovery queries: subject terms first (specific), then a
+    # short domain label, then the job type as a final breadth fallback.
+    # The live selector searches ALL of them and merges, so relevant
+    # providers outside any single top-N slice stay reachable.
+    discovery_queries: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -155,6 +160,7 @@ class CapabilityQuery:
             "useful_terms": list(self.useful_terms),
             "job_type": self.job_type,
             "deliverable_hints": list(self.deliverable_hints),
+            "discovery_queries": list(self.discovery_queries),
         }
 
 
@@ -206,8 +212,26 @@ def build_capability_query(spec: JobSpec, contract: Contract | None = None) -> C
     primary = (spec.domain or spec.subject or "research").strip().lower()
     if not primary:
         primary = "research"
+    # Discovery queries, specific first: subject terms carry the request's
+    # nouns; a raw domain/subject string is only usable when short (longer
+    # strings are sentence fragments that poison registry search); the job
+    # type trails as a breadth fallback. Capped and deduplicated.
+    queries: list[str] = []
+    for term in subjects[:2]:
+        if term and term not in queries:
+            queries.append(term)
+    if primary and len(primary.split()) <= 3 and primary not in queries:
+        queries.append(primary)
+    for term in subjects[2:12]:
+        if term and term not in queries and len(queries) < 3:
+            queries.append(term)
+    if (spec.job_type or "research") not in queries:
+        queries.append(spec.job_type or "research")
+    queries = queries[:4]
+    if not queries:
+        queries = ["research"]
     return CapabilityQuery(
-        primary_keyword=primary,
+        primary_keyword=queries[0],
         task_capabilities=tasks,
         subject_terms=subjects[:12],
         deliverable_capabilities=deliverable_caps,
@@ -215,6 +239,7 @@ def build_capability_query(spec: JobSpec, contract: Contract | None = None) -> C
         job_type=spec.job_type or "research",
         deliverable_hints=list(spec.deliverables or [])[:8],
         required_terms=(subjects[:12] + [t for t in tasks if t not in subjects])[:12],
+        discovery_queries=queries,
     )
 
 
@@ -936,6 +961,39 @@ def discover_live(keyword: str, *, top_k: int = 25,
     return agents
 
 
+def merge_agent_lists(lists: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Merge per-query agent lists, deduplicated by wallet address.
+
+    Offerings merge by offering name; scalar agent fields keep the first
+    seen value. Deterministic: first-seen query order wins ties. No single
+    top-N slice can hide a relevant provider behind another query's slice.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for agents in lists:
+        if not isinstance(agents, list):
+            continue
+        for agent in agents:
+            if not isinstance(agent, dict):
+                continue
+            wallet = str(agent.get("walletAddress") or "").strip().lower()
+            if not wallet:
+                continue
+            if wallet not in merged:
+                merged[wallet] = dict(agent)
+                merged[wallet]["offerings"] = []
+                order.append(wallet)
+            seen_offerings = {str(o.get("name")) for o in merged[wallet]["offerings"]
+                              if isinstance(o, dict)}
+            for offering in agent.get("offerings") or []:
+                if not isinstance(offering, dict):
+                    continue
+                if str(offering.get("name")) not in seen_offerings:
+                    merged[wallet]["offerings"].append(offering)
+                    seen_offerings.add(str(offering.get("name")))
+    return [merged[wallet] for wallet in order]
+
+
 def select_provider_for_spec(spec: JobSpec, contract: Contract,
                              *, discover: Callable[[str], list[dict[str, Any]]] | None = None,
                              top_k: int = 25) -> MarketplaceSelection:
@@ -948,17 +1006,22 @@ def select_provider_for_spec(spec: JobSpec, contract: Contract,
     """
     query = build_capability_query(spec, contract)
     lookup = discover or (lambda keyword: discover_live(keyword, top_k=top_k))
+    raw_lists: list[list[dict[str, Any]]] = []
     try:
-        raw_agents = lookup(query.primary_keyword)
+        for keyword in query.discovery_queries or [query.primary_keyword]:
+            raw_list = lookup(keyword)
+            if not isinstance(raw_list, list):
+                raise DiscoveryError(
+                    "Live marketplace discovery failed: malformed agents list.")
+            raw_lists.append(raw_list)
     except NoCompatibleProvider:
         raise
     except MarketplaceError:
         raise
     except Exception as exc:  # noqa: BLE001 - discovery must fail explicitly
         raise DiscoveryError(f"Live marketplace discovery failed: {exc}") from exc
-    if not isinstance(raw_agents, list):
-        raise DiscoveryError("Live marketplace discovery failed: malformed agents list.")
-    candidates, agents_seen, skipped = normalize_agents(raw_agents)
+    merged_agents = merge_agent_lists(raw_lists)
+    candidates, agents_seen, skipped = normalize_agents(merged_agents)
     compatible: list[MarketplaceCandidate] = []
     rejections: list[tuple[str, str]] = []
     for candidate in candidates:

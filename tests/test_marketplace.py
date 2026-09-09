@@ -305,6 +305,69 @@ def test_schema_required_names_still_checked():
     assert schema_required_fields({}) == []
 
 
+def test_compare_request_retains_compare_capability(no_bridge):
+    spec = parse_job("Compare the leading hardware wallet security approaches.")
+    assert spec.job_type == "research"
+    contract = build_contract(spec, [])
+    query = build_capability_query(spec, contract)
+    assert "compare" in query.task_capabilities
+
+
+def test_discovery_queries_are_short_specific_terms(no_bridge):
+    spec = parse_job("Research the current state of quantum-safe cryptography and deliver a structured report.")
+    assert spec.job_type == "research"
+    contract = build_contract(spec, [])
+    query = build_capability_query(spec, contract)
+    assert query.discovery_queries
+    assert len(query.discovery_queries) <= 4
+    for keyword in query.discovery_queries:
+        assert len(keyword.split()) <= 4, f"sentence fragment used as query: {keyword!r}"
+
+
+def test_multi_query_reaches_providers_outside_first_slice(no_bridge):
+    spec, contract, _ = _research()
+    seen_keywords: list[str] = []
+
+    def _sliced(keyword):
+        seen_keywords.append(keyword)
+        if "wallet" in keyword:
+            return [_agent("Hidden Gem", "0x" + "99" * 20, [
+                _offering("wallet comparison",
+                          description="We research and compare crypto wallets with sourced reports on any topic.",
+                          requirements={"type": "object", "required": ["query"],
+                                        "properties": {"query": {"type": "string"}}})])]
+        return []
+
+    sel = select_provider_for_spec(spec, contract, discover=_sliced)
+    assert len(set(seen_keywords)) > 1, "selector must fan out beyond one query"
+    assert sel.candidate.agent_name == "Hidden Gem"
+
+
+def test_multi_query_results_deduplicated(no_bridge):
+    spec, contract, _ = _research()
+    agent = _agent("Dup", "0x" + "98" * 20, [
+        _offering("wallet comparison",
+                  description="We research and compare crypto wallets with sourced reports on any topic.",
+                  requirements={"type": "object", "required": ["query"],
+                                "properties": {"query": {"type": "string"}}})])
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: [agent])
+    assert sel.compatible_total == 1
+    assert sel.agents_seen == 1
+
+
+def test_merge_agent_lists_dedupes_offerings():
+    from prior.marketplace import merge_agent_lists
+
+    left = [{"walletAddress": "0xABC", "name": "A",
+             "offerings": [{"name": "o1"}, {"name": "o2"}]}]
+    right = [{"walletAddress": "0xabc", "name": "A",
+              "offerings": [{"name": "o2"}, {"name": "o3"}]}]
+    merged = merge_agent_lists([left, right])
+    assert len(merged) == 1
+    assert sorted(o["name"] for o in merged[0]["offerings"]) == ["o1", "o2", "o3"]
+    assert merge_agent_lists([None, "junk"]) == []
+
+
 def test_ranking_deterministic_and_merit_ordered():
     _, _, query = _research()
     agents = [
