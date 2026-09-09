@@ -99,6 +99,8 @@ class VirtualsAcpProvider:
             job.extra["sessionStatus"] = str(raw["sessionStatus"])
         if isinstance(raw.get("funded"), bool):
             job.extra["funded"] = raw["funded"]
+        if isinstance(raw.get("submitted"), bool):
+            job.extra["submitted"] = raw["submitted"]
         if isinstance(raw.get("history"), list):
             job.extra["history"] = raw["history"][:20]
         try:
@@ -275,13 +277,19 @@ def _bridge(args: list[str]) -> dict[str, Any]:
 
 def _decode_deliverable(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
-        return value
+        return _normalize_deliverable(value)
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, dict):
-            return parsed
+            return _normalize_deliverable(parsed)
         return {"type": "text", "value": {"text": value}}
     return {"type": "text", "value": {"text": str(value)}}
+
+
+def _normalize_deliverable(data: dict[str, Any]) -> dict[str, Any]:
+    if "value" in data:
+        return data
+    return {"type": "object", "value": data}

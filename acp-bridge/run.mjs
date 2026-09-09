@@ -2,7 +2,7 @@
  * Buyer-side commands for official @virtuals-protocol/acp-node-v2.
  * Adapter: PrivyAlchemyEvmProviderAdapter
  */
-import { createAgent, done, fail, flattenOfferings, loadSdk } from "./lib.mjs";
+import { createAgent, done, fail, extractSubmittedDeliverable, flattenOfferings, jobHistoryEntries, loadSdk } from "./lib.mjs";
 
 const [cmd, ...args] = process.argv.slice(2);
 
@@ -236,12 +236,16 @@ async function main() {
       || hasBudgetEvent || session.status === "budget_set";
     const funded = session.status === "funded";
     await session.fetchJob().catch(() => {});
-    const entries = await agent.getTransport().getHistory(chain.id, jobId).catch(() => []);
+    const rawHistory = await agent.getTransport().getHistory(chain.id, jobId).catch(() => []);
+    const entries = jobHistoryEntries(rawHistory, jobId);
     for (const e of entries) session.appendEntry(e);
-    let deliverable = session.job?.deliverable || deliverableFromSession(session);
-    if (!deliverable && ((session.job?.status || "").toUpperCase() === "SUBMITTED" || session.status === "submitted")) {
-      deliverable = "Deliverable confirmed submitted on-chain by provider.";
-    }
+    const deliverable = session.job?.deliverable
+      || deliverableFromSession(session)
+      || extractSubmittedDeliverable(session.entries)
+      || null;
+    const submitted = session.entries.some(
+      (e) => e?.kind === "system" && e.event?.type === "job.submitted"
+    );
     const job = session.job || null;
     return done(sanitizeJson({
       ok: true,
@@ -256,7 +260,8 @@ async function main() {
       budget,
       hasBudget,
       funded,
-      deliverable: deliverable || null,
+      submitted,
+      deliverable,
       history: summarizeHistory(session.entries),
       expiredAt: job?.expiredAt !== undefined && job?.expiredAt !== null
         ? String(job.expiredAt) : null,

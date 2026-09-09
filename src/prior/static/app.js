@@ -569,6 +569,8 @@ function reviewPanel(job) {
       </div>` : textBlob
       ? `<p class="deliverable-text">${escapeHtml(textBlob)}</p>`
       : comparison ? `<p class="deliverable-text">${escapeHtml(String(comparison))}</p>`
+      : Object.keys(value).length
+      ? `<dl class="kv">${Object.entries(value).map(([k, v]) => `<dt>${escapeHtml(String(k).replace(/_/g, " "))}</dt><dd>${escapeHtml(typeof v === "object" && v !== null ? JSON.stringify(v, null, 1) : String(v))}</dd>`).join("")}</dl>`
       : `<p class="meta">The agent submitted its work, but it arrived without readable content.</p>`;
   const comparisonBlock = findings.length && comparison ? `<div class="comparison"><p class="kicker">Side-by-side summary</p><p class="deliverable-text">${escapeHtml(String(comparison))}</p></div>` : "";
   return `

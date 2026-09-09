@@ -405,7 +405,12 @@ def _ambiguous_fund(record: JobRecord, message: str) -> None:
 def refresh(workspace_id: str, job_id: str) -> JobRecord:
     record = _owned(workspace_id, job_id)
     if record.status not in {"hired", "working"}:
-        return record
+        if not (
+            record.status == "delivered"
+            and record.evaluation is None
+            and str((record.provider or {}).get("source") or "") != LOCAL_SOURCE
+        ):
+            return record
     if not record.provider:
         return record
     provider = provider_for_record(record)
@@ -540,6 +545,9 @@ def _apply_provider_job(record: JobRecord, started: ProviderJob) -> JobRecord:
         record.status = "delivered"
     elif started.source == LOCAL_SOURCE:
         record.status = "working"
+    elif started.extra.get("submitted") is True:
+        record.deliverable = None
+        record.status = "delivered"
     else:
         record.status = "hired"
     record.error = started.error

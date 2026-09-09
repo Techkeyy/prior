@@ -90,6 +90,23 @@ export async function createAgent(mod, role = "buyer") {
   return { agent, chain };
 }
 
+export function jobHistoryEntries(entries, jobId) {
+  return (entries || []).filter((e) =>
+    !e || e.onChainJobId === undefined || e.onChainJobId === null ||
+    String(e.onChainJobId) === String(jobId));
+}
+
+export function extractSubmittedDeliverable(entries) {
+  const list = entries || [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const e = list[i];
+    const d = e?.kind === "system" && e.event?.type === "job.submitted"
+      ? e.event.deliverable : null;
+    if (typeof d === "string" && d.trim() !== "") return d;
+  }
+  return null;
+}
+
 export function flattenOfferings(agents) {
   const offers = [];
   for (const agent of agents || []) {
