@@ -7,6 +7,7 @@ const state = {
   baseProof: null,
   health: null,
   hirePlan: null,
+  fundPlan: null,
   error: "",
   busy: false,
   showReject: false,
@@ -472,7 +473,53 @@ function workPanel(job) {
       <div class="skeleton" role="status" style="margin-top:12px;">Hired ${escapeHtml(name)}. Contract and learned requirements delivered. Waiting for the agent's submission.</div>
       <p class="meta" style="margin-top:12px;">Protocol phase: <strong>${escapeHtml(phase)}</strong>. This page updates on its own, and your review options appear when the work is delivered.</p>
       <p class="meta small mono">Job ${escapeHtml(job.acp_job_id || job.id)}</p>
+      ${fundBlock(job)}
     </section>`;
+}
+
+function fundAmount(job) {
+  const budget = job.acp_budget || {};
+  const value = Number(budget.amount);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value;
+}
+
+function fundBlock(job) {
+  if (job.fund_state === "funded") {
+    return `<p class="meta" style="margin-top:12px;"><span class="tag tag-memory">Funded</span> The agent budget is escrowed. PRIOR will bring the result back for review.</p>`;
+  }
+  if (job.fund_state === "fund_ambiguous" || job.fund_state === "funding") {
+    return `<p class="meta" style="margin-top:12px;">A funding outcome is uncertain. Reconcile before retrying; PRIOR will not fund twice.</p>`;
+  }
+  const amount = fundAmount(job);
+  if (amount === null) {
+    return "";
+  }
+  if (state.fundPlan) {
+    const plan = state.fundPlan;
+    return `
+    <div class="learned" aria-label="Funding confirmation" style="margin-top:18px;">
+      <div class="panel-topline" style="margin-bottom:6px;">
+        <p class="kicker memory" style="margin:0;">Confirm funding</p>
+        <span class="status-pill status-safe">Read only so far</span>
+      </div>
+      <p style="font-size:15.5px;">Fund <strong>${escapeHtml(plan.agent || "")}</strong> ${escapeHtml(String(plan.amount))} ${escapeHtml(plan.currency || "USDC")} to start <strong>${escapeHtml(plan.offering || "")}</strong>?</p>
+      <p class="meta">PRIOR uses the job budget to pay the agent. Nothing has been funded yet.</p>
+      <div class="row">
+        <button class="button button-primary" data-fund-confirm${state.busy ? " disabled" : ""}>${state.busy ? "Funding..." : `Fund ${escapeHtml(String(plan.amount))}`}</button>
+        <button class="button button-ghost" data-fund-cancel>Back</button>
+      </div>
+    </div>`;
+  }
+  if (job.fund_state !== null && job.fund_state !== undefined
+      && job.fund_state !== "fund_failed" && job.fund_state !== "fund_prepared") {
+    return "";
+  }
+  return `
+    <div class="row">
+      <button class="button button-secondary" data-fund${state.busy ? " disabled" : ""}>Fund ${escapeHtml(String(amount))} USDC</button>
+    </div>
+    <p class="hint">The agent requested ${escapeHtml(String(amount))} USDC to start. Funding needs your explicit confirmation.</p>`;
 }
 
 function userReason(job, lesson) {
@@ -854,6 +901,7 @@ function bind() {
       state.notification = "";
       state.showReject = false;
       state.hirePlan = null;
+    state.fundPlan = null;
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
@@ -885,6 +933,7 @@ function bind() {
         state.job = await api(`/api/jobs/${id}`);
         state.showReject = false;
         state.hirePlan = null;
+    state.fundPlan = null;
         history.pushState({}, "", "/app");
         render();
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -921,6 +970,7 @@ function bind() {
       const text = new FormData(specify).get("text");
       state.job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ text }) });
       state.hirePlan = null;
+    state.fundPlan = null;
     });
   });
 
@@ -935,11 +985,32 @@ function bind() {
   if (hireConfirm) hireConfirm.addEventListener("click", () => run(async () => {
     state.job = await api(`/api/jobs/${state.job.id}/hire/execute`, { method: "POST" });
     state.hirePlan = null;
+    state.fundPlan = null;
   }));
 
   const hireCancel = document.querySelector("[data-hire-cancel]");
   if (hireCancel) hireCancel.addEventListener("click", () => {
     state.hirePlan = null;
+    state.fundPlan = null;
+    render();
+  });
+
+  const fund = document.querySelector("[data-fund]");
+  if (fund) fund.addEventListener("click", () => run(async () => {
+    const res = await api(`/api/jobs/${state.job.id}/fund/prepare`, { method: "POST" });
+    state.job = res.job;
+    state.fundPlan = res.fund_plan;
+  }));
+
+  const fundConfirm = document.querySelector("[data-fund-confirm]");
+  if (fundConfirm) fundConfirm.addEventListener("click", () => run(async () => {
+    state.job = await api(`/api/jobs/${state.job.id}/fund/execute`, { method: "POST" });
+    state.fundPlan = null;
+  }));
+
+  const fundCancel = document.querySelector("[data-fund-cancel]");
+  if (fundCancel) fundCancel.addEventListener("click", () => {
+    state.fundPlan = null;
     render();
   });
 
@@ -950,6 +1021,7 @@ function bind() {
     state.notification = "";
     state.showReject = false;
     state.hirePlan = null;
+    state.fundPlan = null;
     history.pushState({}, "", "/app");
     render();
   });

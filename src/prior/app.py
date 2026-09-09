@@ -170,6 +170,53 @@ def hire_execute(job_id: str, request: Request, response: Response) -> dict:
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.post("/api/jobs/{job_id}/fund/prepare")
+def fund_prepare(job_id: str, request: Request, response: Response) -> dict:
+    """READ-ONLY funding intent: observe the live seller budget and freeze
+    what an explicit user confirmation would fund. No ACP write."""
+    from prior import hiring as hiring_mod
+
+    workspace_id, _ = _identity(request, response)
+    try:
+        plan = service.prepare_fund(workspace_id, job_id)
+        record = service.refresh(workspace_id, job_id)
+        return {"job": record.to_dict(), "fund_plan": plan}
+    except MemoryUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except hiring_mod.AmbiguousHireError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except hiring_mod.HireError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/fund/execute")
+def fund_execute(job_id: str, request: Request, response: Response) -> dict:
+    """WRITE: fund exactly the previously confirmed funding intent, once."""
+    from prior import hiring as hiring_mod
+    from prior import jobs as jobs_mod
+
+    workspace_id, _ = _identity(request, response)
+    try:
+        return service.execute_fund(workspace_id, job_id).to_dict()
+    except MemoryUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except hiring_mod.AmbiguousHireError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except jobs_mod.FundConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except hiring_mod.HireError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ProviderError as exc:
+        status = 403 if "disabled by server configuration" in str(exc) else 503
+        raise HTTPException(status, str(exc)) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/jobs/{job_id}/accept")
 def accept_job(job_id: str, request: Request, response: Response) -> dict:
     workspace_id, _ = _identity(request, response)

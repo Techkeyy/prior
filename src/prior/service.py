@@ -189,7 +189,12 @@ def execute_hire(workspace_id: str, job_id: str) -> JobRecord:
     except hiring_mod.AmbiguousHireError:
         raise
     except Exception as exc:
-        _ambiguous_hire(record, f"Uncertain ACP create result: {exc}")
+        try:
+            _ambiguous_hire(record, f"Uncertain ACP create result: {exc}")
+        except hiring_mod.AmbiguousHireError:
+            raise
+        except Exception:
+            hiring_mod.mark_ambiguous(record.id)
         raise hiring_mod.AmbiguousHireError(
             f"Uncertain ACP create result ({exc}). State is durably ambiguous; "
             "reconcile via ACP job history before any manual retry.") from exc
@@ -242,6 +247,161 @@ def _resolve_claim_conflict(workspace_id: str, job_id: str) -> JobRecord:
         "PRIOR created no second job from this call.")
 
 
+def _current_funding_status(record: JobRecord) -> dict[str, Any]:
+    """Read-only funding observation: refresh without side effects."""
+    from prior.providers.virtuals import VirtualsAcpProvider
+
+    provider = VirtualsAcpProvider()
+    current = _record_to_provider_job(record)
+    updated = provider.get_job_status(current)
+    return {
+        "phase": updated.phase,
+        "budget": updated.extra.get("budget") if isinstance(updated.extra.get("budget"), dict) else None,
+        "funded": updated.extra.get("funded"),
+        "sessionStatus": updated.extra.get("sessionStatus"),
+        "chainId": updated.extra.get("chainId"),
+    }
+
+
+def prepare_fund(workspace_id: str, job_id: str) -> dict[str, Any]:
+    """Funding path, phase 1 (read-only except local intent storage).
+
+    Observes the live seller budget, verifies the job is actively fundable,
+    and freezes a FundIntent. Issues no ACP writes (bridge calls: status).
+    """
+    from prior import hiring as hiring_mod
+
+    record = _owned(workspace_id, job_id)
+    if record.status not in ("hired", "working"):
+        raise ValueError("Only a live hired job can be funded.")
+    if record.fund_state == "funded":
+        raise ValueError("Job is already funded; double-funding refused.")
+    if (record.fund_state in ("funding", "fund_ambiguous")
+            or hiring_mod.is_ambiguous(record.id)):
+        raise hiring_mod.AmbiguousHireError(
+            "A previous funding outcome is ambiguous; reconcile before preparing again.")
+    if not record.acp_job_id:
+        raise ValueError("Job has no external ACP execution to fund.")
+    if record.fund_state == "fund_prepared" and record.fund_intent:
+        existing = hiring_mod.FundIntent.from_dict(record.fund_intent)
+        if existing.contract_fingerprint == hiring_mod.contract_fingerprint(record.contract):
+            return hiring_mod.fund_presentation(existing, record)
+    record = refresh(workspace_id, job_id)
+    if record.status not in ("hired", "working"):
+        raise ValueError("Only a live hired job can be funded.")
+    current = _current_funding_status(record)
+    budget = current.get("budget") or {}
+    chain_id = current.get("chainId") or 8453
+    intent = hiring_mod.build_fund_intent(record, budget, chain_id)
+    violations = hiring_mod.validate_fund_preflight(record, intent, current)
+    if violations:
+        record.fund_state = "fund_failed"
+        record.fund_error = " | ".join(violations)[:500]
+        record.updated_at = now_iso()
+        jobs.put(record)
+        raise hiring_mod.HireError(
+            "Funding preflight refused: " + " | ".join(violations))
+    record.fund_intent = intent.to_dict()
+    record.fund_state = "fund_prepared"
+    record.fund_error = None
+    record.updated_at = now_iso()
+    jobs.put(record)
+    return hiring_mod.fund_presentation(intent, record)
+
+
+def execute_fund(workspace_id: str, job_id: str) -> JobRecord:
+    """Funding path, phase 2: fund exactly the frozen intent, once.
+
+    Revalidates against live state after an atomic claim. Uncertain
+    post-boundary outcomes persist durably ambiguous and never auto-retry.
+    """
+    from prior import hiring as hiring_mod
+    from prior.providers.virtuals import VirtualsAcpProvider
+
+    record = _owned(workspace_id, job_id)
+    if record.status not in ("hired", "working"):
+        raise ValueError("Only a live hired job can be funded.")
+    if record.fund_state == "funded":
+        return record
+    if (record.fund_state in ("funding", "fund_ambiguous")
+            or hiring_mod.is_ambiguous(record.id)):
+        raise hiring_mod.AmbiguousHireError(
+            "A previous funding outcome is uncertain. Reconcile via ACP job "
+            "history before any manual retry; PRIOR will not fund twice.")
+    if record.fund_state != "fund_prepared" or not record.fund_intent:
+        raise ValueError("No prepared funding intent for this job; prepare first.")
+    record = refresh(workspace_id, job_id)
+    if record.status not in ("hired", "working"):
+        raise ValueError("Only a live hired job can be funded.")
+    from prior import settings as settings_mod
+
+    if not settings_mod.acp_writes_enabled():
+        raise ProviderError(
+            "ACP writes are disabled by server configuration (PRIOR_ENABLE_ACP_WRITES).")
+    provider = VirtualsAcpProvider()
+    intent = hiring_mod.FundIntent.from_dict(record.fund_intent)
+    current = _current_funding_status(record)
+    violations = hiring_mod.validate_fund_preflight(record, intent, current)
+    if violations:
+        record.fund_state = "fund_failed"
+        record.fund_error = " | ".join(violations)[:500]
+        record.updated_at = now_iso()
+        jobs.put(record)
+        raise hiring_mod.HireError(
+            "Funding preflight refused: " + " | ".join(violations))
+    try:
+        record = jobs.fund_claim(record.id, record.workspace_id)
+    except jobs.FundConflictError:
+        resolved = _owned(workspace_id, job_id)
+        if resolved.fund_state == "funded":
+            return resolved
+        raise hiring_mod.AmbiguousHireError(
+            "Another funding claimed this job concurrently. Re-read before "
+            "retrying; PRIOR funded nothing from this call.")
+    except KeyError:
+        raise
+    try:
+        result = provider.execute_fund(record)
+    except hiring_mod.AmbiguousHireError:
+        raise
+    except Exception as exc:
+        try:
+            _ambiguous_fund(record, f"Uncertain ACP fund result: {exc}")
+        except hiring_mod.AmbiguousHireError:
+            raise
+        except Exception:
+            hiring_mod.mark_ambiguous(record.id)
+        raise hiring_mod.AmbiguousHireError(
+            f"Uncertain ACP fund result ({exc}). State is durably ambiguous; "
+            "reconcile before any manual retry.") from exc
+    record.fund_state = "funded"
+    record.fund_error = None
+    record.updated_at = now_iso()
+    try:
+        jobs.put(record)
+    except Exception as exc:
+        hiring_mod.mark_ambiguous(record.id)
+        raise hiring_mod.AmbiguousHireError(
+            "ACP fund succeeded remotely but local persistence failed "
+            f"({exc}). Reconcile before retrying.") from exc
+    return record
+
+
+def _ambiguous_fund(record: JobRecord, message: str) -> None:
+    """Uncertain post-boundary funding outcome: durable, never auto-retryable."""
+    from prior import hiring as hiring_mod
+
+    record.fund_state = "fund_ambiguous"
+    record.fund_error = message[:500]
+    record.updated_at = now_iso()
+    try:
+        jobs.put(record)
+    except Exception:
+        hiring_mod.mark_ambiguous(record.id)
+        raise
+    hiring_mod.mark_ambiguous(record.id)
+
+
 def refresh(workspace_id: str, job_id: str) -> JobRecord:
     record = _owned(workspace_id, job_id)
     if record.status not in {"hired", "working"}:
@@ -253,6 +413,11 @@ def refresh(workspace_id: str, job_id: str) -> JobRecord:
     updated = provider.get_job_status(current)
     if updated.extra.get("expiredAt"):
         record.acp_expired_at = str(updated.extra["expiredAt"])
+    if isinstance(updated.extra.get("budget"), dict):
+        record.acp_budget = dict(updated.extra["budget"])
+    if updated.extra.get("funded") is True and record.fund_state != "funded":
+        record.fund_state = "funded"
+        record.fund_error = None
     return _apply_provider_job(record, updated)
 
 

@@ -468,3 +468,198 @@ def validate_preflight(record: JobRecord, plan: HirePlan) -> list[str]:
     if plan.contract_fingerprint != contract_fingerprint(record.contract):
         violations.append("K2. contract changed after the plan was frozen; re-prepare required.")
     return violations
+
+
+# ---------------------------------------------------------------------------
+# Explicit user-approved funding. The standard ACP lifecycle requires the
+# buyer to escrow the seller-proposed budget (session.fund() funds the job's
+# budget); requiredFunds=false means no ADDITIONAL transfer flow, not that
+# funding is unnecessary. Funding is a real write: frozen intent, preflight,
+# atomic claim, single bridge call, durable ambiguous state on uncertainty.
+# ---------------------------------------------------------------------------
+
+# Currency basis: the SDK settles in USDC (AssetToken.usdc, USDC_ADDRESSES;
+# official FAQ prices jobs like "$0.01"). Only this exact token is accepted.
+USDC_BASE_ADDRESSES = {8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"}
+
+
+@dataclass
+class FundIntent:
+    """Frozen funding intent for exactly one fund execution."""
+
+    idempotency_key: str
+    workspace_id: str
+    logical_job_id: str
+    acp_job_id: str
+    provider_wallet: str
+    amount: float
+    currency: str
+    token_address: str
+    chain_id: int
+    contract_fingerprint: str
+    hire_key: str
+    budget_snapshot: dict[str, Any] = field(default_factory=dict)
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "idempotency_key": self.idempotency_key,
+            "workspace_id": self.workspace_id,
+            "logical_job_id": self.logical_job_id,
+            "acp_job_id": self.acp_job_id,
+            "provider_wallet": self.provider_wallet,
+            "amount": self.amount,
+            "currency": self.currency,
+            "token_address": self.token_address,
+            "chain_id": self.chain_id,
+            "contract_fingerprint": self.contract_fingerprint,
+            "hire_key": self.hire_key,
+            "budget_snapshot": dict(self.budget_snapshot),
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FundIntent":
+        try:
+            amount = float(data.get("amount"))
+        except (TypeError, ValueError):
+            amount = -1.0
+        try:
+            chain_id = int(data.get("chain_id"))
+        except (TypeError, ValueError):
+            chain_id = -1
+        return cls(
+            idempotency_key=str(data.get("idempotency_key") or ""),
+            workspace_id=str(data.get("workspace_id") or ""),
+            logical_job_id=str(data.get("logical_job_id") or ""),
+            acp_job_id=str(data.get("acp_job_id") or ""),
+            provider_wallet=str(data.get("provider_wallet") or ""),
+            amount=amount,
+            currency=str(data.get("currency") or ""),
+            token_address=str(data.get("token_address") or ""),
+            chain_id=chain_id,
+            contract_fingerprint=str(data.get("contract_fingerprint") or ""),
+            hire_key=str(data.get("hire_key") or ""),
+            budget_snapshot=dict(data.get("budget_snapshot") or {}),
+            created_at=str(data.get("created_at") or ""),
+        )
+
+
+def _budget_amount(budget: dict[str, Any] | None) -> float | None:
+    if not isinstance(budget, dict):
+        return None
+    try:
+        value = float(budget.get("amount"))
+    except (TypeError, ValueError):
+        return None
+    return value
+
+
+def build_fund_intent(record: JobRecord, budget: dict[str, Any],
+                      chain_id: int) -> FundIntent:
+    """Freeze a funding intent from live budget evidence. No writes occur."""
+    amount = _budget_amount(budget)
+    key_material = "|".join([
+        record.workspace_id, record.id, str(record.acp_job_id),
+        str(amount), str(budget.get("tokenAddress") or ""), str(chain_id),
+        contract_fingerprint(record.contract),
+    ])
+    key = "fund_" + hashlib.sha256(key_material.encode("utf-8")).hexdigest()[:24]
+    provider = record.provider or {}
+    return FundIntent(
+        idempotency_key=key,
+        workspace_id=record.workspace_id,
+        logical_job_id=record.id,
+        acp_job_id=str(record.acp_job_id or ""),
+        provider_wallet=str(provider.get("wallet_address") or ""),
+        amount=amount if amount is not None else -1.0,
+        currency=str(budget.get("symbol") or ""),
+        token_address=str(budget.get("tokenAddress") or ""),
+        chain_id=int(chain_id),
+        contract_fingerprint=contract_fingerprint(record.contract),
+        hire_key=str((record.hire_plan or {}).get("idempotency_key") or ""),
+        budget_snapshot=dict(budget),
+        created_at=_now_iso(),
+    )
+
+
+def validate_fund_preflight(record: JobRecord, intent: FundIntent,
+                            current: dict[str, Any]) -> list[str]:
+    """Revalidate a frozen funding intent immediately before any fund write.
+
+    Returns violations (empty = pass). Performs no writes and no discovery.
+    Amount rule: 0 < current ≤ approved frozen price (when known) and ≤
+    configured max. A lower seller budget is honored as proposed; a higher
+    one is refused. Currency must be the exact USDC token on Base 8453.
+    """
+    violations: list[str] = []
+    if record.workspace_id != intent.workspace_id or record.id != intent.logical_job_id:
+        violations.append("fund intent does not belong to this logical job/workspace.")
+    if not record.acp_job_id or record.acp_job_id != intent.acp_job_id:
+        violations.append("fund intent targets a different ACP job.")
+    if record.status not in ("hired", "working"):
+        violations.append("job is not in a fundable lifecycle state.")
+    try:
+        ensure_fundable(record)
+    except HireError as exc:
+        violations.append(f"funding refused: {exc}")
+    if current.get("funded") is True or current.get("sessionStatus") == "funded":
+        violations.append("job is already funded; double-funding refused.")
+    live_budget = current.get("budget") if isinstance(current.get("budget"), dict) else None
+    live_amount = _budget_amount(live_budget)
+    if live_amount is None or not (live_amount > 0):
+        violations.append("no positive live seller budget to fund.")
+    else:
+        if abs(live_amount - intent.amount) > 1e-9:
+            violations.append(
+                f"seller budget drifted ({intent.amount} -> {live_amount}); re-prepare required.")
+        token = str((live_budget or {}).get("tokenAddress") or "")
+        expected_token = USDC_BASE_ADDRESSES.get(SUPPORTED_CHAIN_ID, "")
+        if token.lower() != expected_token.lower():
+            violations.append("budget token is not the supported USDC settlement token.")
+        try:
+            live_chain = int(current.get("chainId"))
+        except (TypeError, ValueError):
+            live_chain = -1
+        if live_chain != SUPPORTED_CHAIN_ID:
+            violations.append("budget job is not on the supported Base 8453 path.")
+        if str((live_budget or {}).get("symbol") or "").upper() != "USDC":
+            violations.append("budget currency is not USDC.")
+    approved = None
+    plan_price = (record.hire_plan or {}).get("price_value")
+    try:
+        approved = float(plan_price) if plan_price is not None else None
+    except (TypeError, ValueError):
+        approved = None
+    try:
+        from prior import settings as settings_mod
+        price_max = settings_mod.max_acp_job_price_usdc()
+    except ValueError as exc:
+        return violations + [f"price policy misconfigured: {exc}"]
+    if live_amount is not None and live_amount > 0:
+        if approved is not None and live_amount > approved + 1e-9:
+            violations.append(
+                f"seller budget {live_amount} exceeds the approved hire price {approved}.")
+        if not (live_amount <= price_max):
+            violations.append(f"seller budget {live_amount} exceeds the spend cap {price_max} USDC.")
+    stored = record.fund_intent or {}
+    if stored and stored.get("idempotency_key") != intent.idempotency_key:
+        violations.append("fund intent does not match the stored funding intent (possible substitution).")
+    if intent.contract_fingerprint != contract_fingerprint(record.contract):
+        violations.append("contract changed after funding was prepared; re-prepare required.")
+    return violations
+
+
+def fund_presentation(intent: FundIntent, record: JobRecord) -> dict[str, Any]:
+    """Truthful confirmation content: what funding is about to do."""
+    provider = record.provider or {}
+    return {
+        "agent": provider.get("name") or "Virtuals ACP agent",
+        "offering": provider.get("offering_name") or "",
+        "network": "Virtuals ACP",
+        "amount": intent.amount,
+        "currency": intent.currency or "USDC",
+        "acp_job_id": intent.acp_job_id,
+        "expiry": describe_lifecycle(record),
+        "idempotency_key": intent.idempotency_key,
+    }

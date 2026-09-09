@@ -109,10 +109,19 @@ def test_unknown_job_truthful_no_writes(status_bridge, monkeypatch):
 def test_explicit_fund_preserved_but_never_called_by_reads():
     bridge = Path("acp-bridge/run.mjs").read_text(encoding="utf-8")
     assert 'if (cmd === "fund")' in bridge
-    for mod in ["src/prior/service.py", "src/prior/providers/virtuals.py",
-                "src/prior/providers/base.py", "src/prior/app.py"]:
+    import re
+
+    for mod, allowed in [
+        ("src/prior/service.py", ["execute_fund"]),
+        ("src/prior/providers/virtuals.py", ["execute_fund"]),
+        ("src/prior/providers/base.py", []),
+        ("src/prior/app.py", []),
+    ]:
         text = Path(mod).read_text(encoding="utf-8")
-        assert '["fund"' not in text and "['fund'" not in text, mod
+        for match in re.finditer(r'\["fund"(?!\w)', text):
+            chunk = re.split(r"\n\s*def\s+", text[:match.start()])[-1]
+            scope = chunk.split("(")[0].strip()
+            assert scope in allowed, f"{mod}: fund bridge call outside {allowed}: in {scope}"
 
 
 def test_status_command_contains_no_mutation():

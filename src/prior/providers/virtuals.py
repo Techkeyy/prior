@@ -93,6 +93,18 @@ class VirtualsAcpProvider:
         job.phase = str(raw.get("phase") or job.phase)
         if raw.get("expiredAt") not in (None, ""):
             job.extra["expiredAt"] = str(raw["expiredAt"])
+        if isinstance(raw.get("budget"), dict):
+            job.extra["budget"] = raw["budget"]
+        if raw.get("sessionStatus") not in (None, ""):
+            job.extra["sessionStatus"] = str(raw["sessionStatus"])
+        if isinstance(raw.get("funded"), bool):
+            job.extra["funded"] = raw["funded"]
+        if isinstance(raw.get("history"), list):
+            job.extra["history"] = raw["history"][:20]
+        try:
+            job.extra["chainId"] = int(raw.get("chainId"))
+        except (TypeError, ValueError):
+            job.extra["chainId"] = None
         if raw.get("deliverable"):
             job.deliverable = _decode_deliverable(raw["deliverable"])
         if raw.get("txHash"):
@@ -210,6 +222,20 @@ class VirtualsAcpProvider:
             requirement=dict(plan.requirement_data),
             acp_job_id=str(job_id),
         )
+
+    def execute_fund(self, record: JobRecord) -> dict[str, Any]:
+        """Fund the job's seller-proposed budget: exactly one bridge call.
+
+        Thin by design: all policy lives in service/hiring preflight. The
+        bridge funds the on-chain proposed budget for this ACP job id only.
+        """
+        self._require_ready()
+        if not record.acp_job_id:
+            raise ProviderError("Cannot fund: missing ACP job id.")
+        raw = _bridge(["fund", str(record.acp_job_id)])
+        if not isinstance(raw, dict) or raw.get("ok") is not True:
+            raise ProviderError(f"ACP fund returned failure: {raw}")
+        return raw
 
 
 def _bridge(args: list[str]) -> dict[str, Any]:

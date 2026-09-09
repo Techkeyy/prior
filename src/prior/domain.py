@@ -202,6 +202,15 @@ class JobRecord:
     # Raw ACP deadline evidence (Unix seconds, as reported by the bridge).
     # Never synthesized: None means unknown, never "no deadline".
     acp_expired_at: str | None = None
+    # Explicit user-approved funding intent. None = never prepared. States:
+    # fund_prepared (intent frozen, no write) -> funding (write attempted) ->
+    # funded (observed/confirmed) | fund_failed (definitive pre-write refusal,
+    # re-preparable) | fund_ambiguous (uncertain post-boundary, never retry).
+    fund_state: str | None = None
+    fund_intent: dict[str, Any] | None = None
+    fund_error: str | None = None
+    # Last observed seller budget snapshot (read-only evidence, not approval).
+    acp_budget: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -226,6 +235,10 @@ class JobRecord:
             "hire_plan": self.hire_plan,
             "hire_error": self.hire_error,
             "acp_expired_at": self.acp_expired_at,
+            "fund_state": self.fund_state,
+            "fund_intent": self.fund_intent,
+            "fund_error": self.fund_error,
+            "acp_budget": self.acp_budget,
         }
 
     @classmethod
@@ -252,4 +265,8 @@ class JobRecord:
             hire_plan=data.get("hire_plan"),
             hire_error=data.get("hire_error"),
             acp_expired_at=data.get("acp_expired_at"),
+            fund_state=data.get("fund_state"),
+            fund_intent=data.get("fund_intent"),
+            fund_error=data.get("fund_error"),
+            acp_budget=data.get("acp_budget"),
         )
