@@ -455,6 +455,30 @@ def test_18_result_attaches_to_same_logical_job(acp_env_on, bridge):
     assert len(jobs_mod.list_for(record.workspace_id)) == 1
 
 
+def test_postcreate_chain_mismatch_stays_ambiguous(acp_env_on, bridge, monkeypatch):
+    calls, _ = bridge
+    import prior.providers.virtuals as virtuals_mod
+
+    intercepted = virtuals_mod._bridge
+
+    def _wrong_chain(args):
+        out = intercepted(args)
+        if args[0] == "create-offering-job":
+            out = dict(out)
+            out["chainId"] = 84532
+        return out
+
+    monkeypatch.setattr(virtuals_mod, "_bridge", _wrong_chain)
+    record = _job("ws_chain_post")
+    service.prepare_hire(record.workspace_id, record.id, discover=_discover(_market()))
+    with pytest.raises(hiring_mod.AmbiguousHireError):
+        service.execute_hire(record.workspace_id, record.id)
+    assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
+    with pytest.raises(hiring_mod.AmbiguousHireError):
+        service.execute_hire(record.workspace_id, record.id)
+    assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
+
+
 def test_sdk_contract_matches_installed_sdk(tmp_path):
     """Our bridge call shape matches the installed SDK's real method.
 

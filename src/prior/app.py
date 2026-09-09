@@ -99,22 +99,18 @@ def get_job(job_id: str, request: Request, response: Response) -> dict:
 
 @app.post("/api/jobs/{job_id}/hire")
 def hire_job(job_id: str, request: Request, response: Response) -> dict:
-    """Historical fixed-path hire endpoint.
+    """RETIRED historical hire endpoint. Always 410 Gone.
 
-    Preserved for backward compatibility only. The normal consumer flow uses
-    /hire/prepare (read-only marketplace selection + confirmation) followed
-    by /hire/execute (single confirmed write). The frontend no longer calls
-    this endpoint.
+    This route must never perform an ACP write: it cannot reach
+    service.hire, provider.create_job, or any write bridge command. The
+    normal consumer flow uses /hire/prepare (read-only selection plus
+    confirmation) followed by /hire/execute (single confirmed write).
     """
-    workspace_id, _ = _identity(request, response)
-    try:
-        return service.hire(workspace_id, job_id).to_dict()
-    except MemoryUnavailable as exc:
-        raise HTTPException(503, str(exc)) from exc
-    except ProviderError as exc:
-        raise HTTPException(503, str(exc)) from exc
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(400, str(exc)) from exc
+    raise HTTPException(
+        410,
+        "This hire endpoint has been retired. "
+        "Use /hire/prepare followed by /hire/execute.",
+    )
 
 
 @app.post("/api/jobs/{job_id}/hire/prepare")

@@ -258,6 +258,16 @@ def verify_freshness(record: JobRecord, plan: HirePlan,
     if not current.get("found") or not current.get("offering"):
         return ["Selected Virtuals offering changed: provider or offering no longer present. "
                 "Please review the updated hire plan."]
+    try:
+        buyer_chain = int(current.get("chainId"))
+    except (TypeError, ValueError):
+        buyer_chain = -1
+    if buyer_chain != SUPPORTED_CHAIN_ID:
+        # Definitive pre-write refusal: the ACTUAL buyer SDK execution chain
+        # is wrong, regardless of what the provider advertises. No write.
+        return [f"Buyer execution network mismatch: live buyer chain is "
+                f"{current.get('chainId')}, PRIOR requires Base {SUPPORTED_CHAIN_ID}. "
+                "Correct configuration and prepare again."]
     offering = current["offering"] or {}
     if offering.get("isHidden") or offering.get("isPrivate"):
         drift.append("Selected offering is now hidden or private.")

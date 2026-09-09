@@ -139,7 +139,9 @@ def test_two_browsers_keep_isolated_memory(monkeypatch):
     browser_a = TestClient(app)
     ws_a = browser_a.get("/api/workspace").json()["workspace_id"]
     job_a = browser_a.post("/api/jobs", json={"text": "Research the top five AI wallet companies."}).json()
-    browser_a.post(f"/api/jobs/{job_a['id']}/hire")
+    # Historical fixed-path hire via the service function directly: the
+    # public POST /hire route is retired (410) and must stay firewalled.
+    service.hire(ws_a, job_a["id"])
     browser_a.post(
         f"/api/jobs/{job_a['id']}/reject",
         json={"reason": "Material factual claims must include identifiable source links."},

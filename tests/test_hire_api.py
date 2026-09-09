@@ -119,6 +119,43 @@ def _client():
     return TestClient(app)
 
 
+def test_legacy_hire_route_is_gone(api_env, api_bridge, monkeypatch):
+    import prior.service as service_mod
+
+    calls = api_bridge
+    client = _client()
+    job = client.post("/api/jobs", json={"text": "Research the top five AI wallet companies."}).json()
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("retired route reached legacy service.hire")
+
+    monkeypatch.setattr(service_mod, "hire", _boom)
+    res = client.post(f"/api/jobs/{job['id']}/hire")
+    assert res.status_code == 410
+    assert "retired" in res.json()["detail"]
+    assert calls == []
+
+
+def test_legacy_hire_route_gone_even_with_creds(api_env, api_bridge):
+    calls = api_bridge
+    client = _client()
+    job = client.post("/api/jobs", json={"text": "Research the top five AI wallet companies."}).json()
+    res = client.post(f"/api/jobs/{job['id']}/hire")
+    assert res.status_code == 410
+    assert calls == []
+    stored = jobs_mod.get(job["id"], job["workspace_id"])
+    assert stored is not None and stored.acp_job_id is None and stored.hire_state is None
+
+
+def test_normal_flow_unaffected_by_legacy_retirement(api_env, api_bridge, api_select):
+    calls = api_bridge
+    client = _client()
+    job = client.post("/api/jobs", json={"text": "Research the top five AI wallet companies."}).json()
+    assert client.post(f"/api/jobs/{job['id']}/hire/prepare").status_code == 200
+    assert client.post(f"/api/jobs/{job['id']}/hire/execute").status_code == 200
+    assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
+
+
 def test_prepare_endpoint_returns_confirmation(api_env, api_bridge, api_select):
     client = _client()
     job = client.post("/api/jobs", json={
@@ -339,6 +376,69 @@ def test_freshness_price_drift_refuses(api_env, api_select, monkeypatch):
     assert stored is not None and stored.hire_state == "failed"
 
 
+def _refresh_with_chain(monkeypatch, chain_id, present=True):
+    import prior.providers.virtuals as virtuals_mod
+
+    calls: list[list] = []
+
+    def _fake(args):
+        calls.append(list(args))
+        if args[0] == "offering-refresh":
+            out = _refresh_ok(args)
+            if not present:
+                out.pop("chainId", None)
+            else:
+                out["chainId"] = chain_id
+            return out
+        if args[0] == "create-offering-job":
+            return {"ok": True, "jobId": "41234", "phase": "job.created",
+                    "chainId": 8453, "providerAddress": args[1],
+                    "offeringName": args[2]}
+        raise AssertionError(f"unexpected bridge command: {args}")
+
+    monkeypatch.setattr(virtuals_mod, "_bridge", _fake)
+    return calls
+
+
+def test_prewrite_wrong_buyer_chain_refuses(api_env, api_select, monkeypatch):
+    calls = _refresh_with_chain(monkeypatch, 84532)
+    record = service.specify("ws_chain_wrong", "Research the top five AI wallet companies and compare their features.")
+    service.prepare_hire("ws_chain_wrong", record.id, discover=lambda kw: _market())
+    with pytest.raises(hiring_mod.HireError) as exc:
+        service.execute_hire("ws_chain_wrong", record.id)
+    assert "Buyer execution network mismatch" in str(exc.value)
+    assert [c for c in calls if c[0] == "create-offering-job"] == []
+    stored = jobs_mod.get(record.id, "ws_chain_wrong")
+    assert stored is not None and stored.hire_state == "failed"
+
+
+def test_prewrite_missing_buyer_chain_refuses(api_env, api_select, monkeypatch):
+    calls = _refresh_with_chain(monkeypatch, None, present=False)
+    record = service.specify("ws_chain_missing", "Research the top five AI wallet companies and compare their features.")
+    service.prepare_hire("ws_chain_missing", record.id, discover=lambda kw: _market())
+    with pytest.raises(hiring_mod.HireError):
+        service.execute_hire("ws_chain_missing", record.id)
+    assert [c for c in calls if c[0] == "create-offering-job"] == []
+
+
+def test_prewrite_malformed_buyer_chain_refuses(api_env, api_select, monkeypatch):
+    calls = _refresh_with_chain(monkeypatch, "not-a-chain")
+    record = service.specify("ws_chain_malformed", "Research the top five AI wallet companies and compare their features.")
+    service.prepare_hire("ws_chain_malformed", record.id, discover=lambda kw: _market())
+    with pytest.raises(hiring_mod.HireError):
+        service.execute_hire("ws_chain_malformed", record.id)
+    assert [c for c in calls if c[0] == "create-offering-job"] == []
+
+
+def test_prewrite_correct_chain_proceeds(api_env, api_select, monkeypatch):
+    calls = _refresh_with_chain(monkeypatch, 8453)
+    record = service.specify("ws_chain_ok", "Research the top five AI wallet companies and compare their features.")
+    service.prepare_hire("ws_chain_ok", record.id, discover=lambda kw: _market())
+    done = service.execute_hire("ws_chain_ok", record.id)
+    assert done.acp_job_id == "41234"
+    assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
+
+
 def test_verify_freshness_unit_cases():
     import copy
 
@@ -351,6 +451,7 @@ def test_verify_freshness_unit_cases():
     contract = build_contract(spec, [])
     query = build_capability_query(spec, contract)
     base = {"found": True,
+            "chainId": 8453,
             "offering": {"name": "r", "description": "research",
                          "requirements": {"type": "object", "required": ["query"],
                                           "properties": {"query": {"type": "string"}}},
