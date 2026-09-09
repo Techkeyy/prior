@@ -251,6 +251,8 @@ def refresh(workspace_id: str, job_id: str) -> JobRecord:
     provider = provider_for_record(record)
     current = _record_to_provider_job(record)
     updated = provider.get_job_status(current)
+    if updated.extra.get("expiredAt"):
+        record.acp_expired_at = str(updated.extra["expiredAt"])
     return _apply_provider_job(record, updated)
 
 

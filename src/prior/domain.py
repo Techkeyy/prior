@@ -199,6 +199,9 @@ class JobRecord:
     hire_state: str | None = None
     hire_plan: dict[str, Any] | None = None
     hire_error: str | None = None
+    # Raw ACP deadline evidence (Unix seconds, as reported by the bridge).
+    # Never synthesized: None means unknown, never "no deadline".
+    acp_expired_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -222,6 +225,7 @@ class JobRecord:
             "hire_state": self.hire_state,
             "hire_plan": self.hire_plan,
             "hire_error": self.hire_error,
+            "acp_expired_at": self.acp_expired_at,
         }
 
     @classmethod
@@ -247,4 +251,5 @@ class JobRecord:
             hire_state=data.get("hire_state"),
             hire_plan=data.get("hire_plan"),
             hire_error=data.get("hire_error"),
+            acp_expired_at=data.get("acp_expired_at"),
         )

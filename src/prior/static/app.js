@@ -451,6 +451,18 @@ function workPanel(job) {
   const p = job.provider || {};
   const name = p.name || "Virtuals ACP agent";
   const phase = job.acp_phase || (job.status === "hired" ? "job funded, agent starting" : "working");
+  if (job.prior_lifecycle === "expired") {
+    return `
+    <section class="opblock" aria-label="Expired job">
+      <div class="panel-topline">
+        <h2 style="margin:0;">This job timed out</h2>
+        <span class="status-pill"><span class="status-dot" aria-hidden="true"></span>Expired</span>
+      </div>
+      <p class="meta" style="margin-top:12px;">The agreed deadline passed with no delivered work. Raw ACP state is still <strong>${escapeHtml(phase)}</strong>, which the chain does not flip on its own. PRIOR will not fund or retry this job.</p>
+      <p class="meta small mono">Job ${escapeHtml(job.acp_job_id || job.id)}</p>
+      <div class="row"><button class="button button-secondary" data-reset>Start a new job</button></div>
+    </section>`;
+  }
   return `
     <section class="opblock" aria-label="Work in progress">
       <div class="panel-topline">
@@ -1042,7 +1054,7 @@ async function poll(id) {
     const job = await api(`/api/jobs/${id}`);
     if (!state.job || state.job.id !== id) return;
     state.job = job;
-    if (job.status === "working" || job.status === "hired") {
+    if ((job.status === "working" || job.status === "hired") && job.prior_lifecycle !== "expired") {
       setTimeout(() => poll(id), 1200);
     } else {
       render();

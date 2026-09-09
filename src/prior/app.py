@@ -90,7 +90,12 @@ def specify_job(payload: SpecifyIn, request: Request, response: Response) -> dic
 def get_job(job_id: str, request: Request, response: Response) -> dict:
     workspace_id, _ = _identity(request, response)
     try:
-        return service.refresh(workspace_id, job_id).to_dict()
+        record = service.refresh(workspace_id, job_id)
+        body = record.to_dict()
+        from prior import hiring as hiring_mod
+
+        body["prior_lifecycle"] = hiring_mod.describe_lifecycle(record)
+        return body
     except ProviderError as exc:
         raise HTTPException(503, str(exc)) from exc
     except KeyError as exc:

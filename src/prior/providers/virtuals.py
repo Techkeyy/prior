@@ -91,6 +91,8 @@ class VirtualsAcpProvider:
             raise ProviderError("Cannot read ACP status: missing job id.")
         raw = _bridge(["status", job.acp_job_id])
         job.phase = str(raw.get("phase") or job.phase)
+        if raw.get("expiredAt") not in (None, ""):
+            job.extra["expiredAt"] = str(raw["expiredAt"])
         if raw.get("deliverable"):
             job.deliverable = _decode_deliverable(raw["deliverable"])
         if raw.get("txHash"):

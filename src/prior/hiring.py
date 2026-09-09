@@ -82,6 +82,51 @@ def contract_fingerprint(contract: Contract) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def expiry_state(expired_at: Any, now: float | None = None) -> str:
+    """Deadline truth: 'expired', 'active', or 'unknown'.
+
+    'unknown' (missing/malformed deadline) is never presented as expired,
+    but funding guards treat anything but explicit 'active' as unfundable.
+    """
+    import time as _time
+
+    try:
+        deadline = int(str(expired_at).strip())
+    except (TypeError, ValueError, AttributeError):
+        return "unknown"
+    if deadline <= 0:
+        return "unknown"
+    moment = now if now is not None else _time.time()
+    return "expired" if moment > deadline else "active"
+
+
+def describe_lifecycle(record: JobRecord) -> str:
+    """PRIOR-level lifecycle for display. Never rewrites external ACP state.
+
+    A hired/working job past its deadline reports 'expired' even while raw
+    ACP still says OPEN (the chain does not auto-flip state). All other
+    statuses report themselves.
+    """
+    if record.status in ("hired", "working"):
+        if expiry_state(record.acp_expired_at) == "expired":
+            return "expired"
+        return "active"
+    return record.status
+
+
+def ensure_fundable(record: JobRecord) -> None:
+    """Funding precondition: only an explicitly unexpired live job may fund.
+
+    Unknown deadlines fail closed. Raises HireError otherwise.
+    """
+    if record.status not in ("hired", "working"):
+        raise HireError(f"Job {record.id} is not in a fundable lifecycle state.")
+    if expiry_state(record.acp_expired_at) != "active":
+        raise HireError(
+            "Funding refused: the ACP deadline is passed or unknown. "
+            "An expired job must not be funded.")
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
