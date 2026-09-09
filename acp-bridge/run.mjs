@@ -17,6 +17,43 @@ function deliverableFromSession(session) {
   return null;
 }
 
+function sanitizeJson(value) {
+  return JSON.parse(JSON.stringify(value, (key, val) =>
+    typeof val === "bigint" ? val.toString() : val));
+}
+
+function summarizeHistory(entries) {
+  return (entries || []).slice(0, 100).map((e) => {
+    if (!e || typeof e !== "object") return { kind: "unknown" };
+    const summary = { kind: e.kind || "unknown" };
+    if (e.event && typeof e.event.type === "string") summary.eventType = e.event.type;
+    if (typeof e.contentType === "string") summary.contentType = e.contentType;
+    if (typeof e.from === "string") summary.from = e.from;
+    for (const key of ["timestamp", "createdAt", "at"]) {
+      if (e[key] !== undefined && e[key] !== null) {
+        try { summary.at = new Date(e[key]).toISOString(); } catch { summary.at = String(e[key]); }
+        break;
+      }
+    }
+    return summary;
+  });
+}
+
+function sanitizeBudget(budget) {
+  if (!budget || typeof budget !== "object") return null;
+  try {
+    const out = {};
+    if (budget.amount !== undefined) out.amount = String(budget.amount);
+    if (typeof budget.symbol === "string") out.symbol = budget.symbol;
+    if (budget.decimals !== undefined) out.decimals = Number(budget.decimals);
+    const token = budget.address || budget.tokenAddress || null;
+    if (token) out.tokenAddress = String(token);
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
   if (cmd === "probe") {
     const mod = await loadSdk();
@@ -181,6 +218,9 @@ async function main() {
   }
 
   if (cmd === "status") {
+    // STRICTLY READ-ONLY. This command must never fund, complete, reject,
+    // create, or message. It fetches the job, reads history, derives the
+    // current phase plus budget/funding evidence, and returns it.
     const [jobId] = args;
     const mod = await loadSdk();
     const { agent, chain } = await createAgent(mod, "buyer");
@@ -190,17 +230,9 @@ async function main() {
     const hasBudgetEvent = (session.entries || []).some(
       (e) => e.kind === "system" && e.event?.type === "budget.set"
     );
-    const hasBudget = session.job?.budget !== undefined || hasBudgetEvent || session.status === "budget_set";
-
-    if (onChainStatus === "OPEN" && hasBudget) {
-      try {
-        console.error(`[BUYER] Auto-funding job ${jobId}...`);
-        await session.fund();
-        console.error(`[BUYER] Job ${jobId} auto-funded.`);
-      } catch (err) {
-        console.error("Auto-fund error:", String(err?.message || err));
-      }
-    }
+    const budget = sanitizeBudget(session.job?.budget);
+    const hasBudget = budget !== null || hasBudgetEvent || session.status === "budget_set";
+    const funded = session.status === "funded";
     await session.fetchJob().catch(() => {});
     const entries = await agent.getTransport().getHistory(chain.id, jobId).catch(() => []);
     for (const e of entries) session.appendEntry(e);
@@ -208,12 +240,25 @@ async function main() {
     if (!deliverable && ((session.job?.status || "").toUpperCase() === "SUBMITTED" || session.status === "submitted")) {
       deliverable = "Deliverable confirmed submitted on-chain by provider.";
     }
-    return done({
+    const job = session.job || null;
+    return done(sanitizeJson({
       ok: true,
       jobId,
+      chainId: chain.id,
       phase: (session.job?.status || session.status || "open").toLowerCase(),
-      deliverable,
-    });
+      onChainStatus: onChainStatus || null,
+      sessionStatus: session.status || null,
+      providerAddress: job?.providerAddress || null,
+      evaluatorAddress: job?.evaluatorAddress || null,
+      clientAddress: job?.clientAddress || null,
+      budget,
+      hasBudget,
+      funded,
+      deliverable: deliverable || null,
+      history: summarizeHistory(session.entries),
+      expiredAt: job?.expiredAt !== undefined && job?.expiredAt !== null
+        ? String(job.expiredAt) : null,
+    }));
   }
 
   if (cmd === "fund") {
