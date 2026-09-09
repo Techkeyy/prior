@@ -62,3 +62,36 @@ def test_non_research_questions_stay_unsupported():
         spec = parse_job(text)
         assert spec.job_type == "unsupported", text
         assert spec.refusal_reason
+
+
+def test_hyphenated_standards_do_not_create_counts():
+    from prior.job_spec import _extract_count
+    for text in [
+        "Action: ERC-20 token approval",
+        "Review an ERC-20 approval",
+        "Explain EIP-1559",
+        "Review SHA-256 usage",
+        "Analyze Base chain ID 8453",
+        "Research crypto security in 2026",
+        "version 2 of the protocol",
+        "HTTP/2 performance",
+    ]:
+        assert _extract_count(text.lower()) is None, text
+
+
+def test_genuine_cardinality_still_counts():
+    from prior.job_spec import _extract_count
+    assert _extract_count("research 5 wallets") == 5
+    assert _extract_count("compare 3 exchanges") == 3
+    assert _extract_count("list the top 10 protocols") == 10
+    assert _extract_count("find five competitors") == 5
+    assert _extract_count("best 5 dexes") == 5
+
+
+def test_missing_review_artifact_detected():
+    from prior.job_spec import missing_review_artifact
+    assert missing_review_artifact("Review this Solidity contract for issues.") == "contract"
+    assert missing_review_artifact(
+        "Analyze this transaction 0x8c95120c327ccfcd5c003f1dab484d341f75160e"
+        "8899aabbccddeeff00112233.") is None
+    assert missing_review_artifact("Research the top five AI wallet companies.") is None

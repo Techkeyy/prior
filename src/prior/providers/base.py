@@ -77,6 +77,10 @@ def acp_job_description(payload: dict[str, Any]) -> str:
     goal = str(payload.get("goal") or payload.get("raw") or "").strip()
     if goal:
         parts.append(goal)
+    raw = str(payload.get("raw") or "").strip()
+    if raw and _raw_carries_artifact(raw, goal):
+        parts.append("Original request details:")
+        parts.append(raw)
     learned = [str(item).strip() for item in (payload.get("learned_requirements") or []) if str(item).strip()]
     if learned:
         parts.append("Learned requirements:")
@@ -86,6 +90,22 @@ def acp_job_description(payload: dict[str, Any]) -> str:
         parts.append("Acceptance criteria:")
         parts.extend(f"- {item}" for item in acceptance)
     return "\n".join(parts)
+
+
+def _raw_carries_artifact(raw: str, goal: str) -> bool:
+    """True when the raw request holds material input the derived goal drops.
+
+    The adaptive contract stays primary; the raw section is appended only
+    when artifact signals (URL, address, hash, code block, pasted content)
+    exist beyond what the goal already says. Plain requests are unaffected.
+    """
+    from prior.job_spec import _has_review_artifact
+
+    if not _has_review_artifact(raw):
+        return False
+    normal = " ".join(raw.lower().split())
+    goal_normal = " ".join(goal.lower().split())
+    return bool(normal) and normal != goal_normal and goal_normal not in normal
 
 
 def transmitted_learned_requirements(requirement: dict[str, Any] | None) -> list[str]:

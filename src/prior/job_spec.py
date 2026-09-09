@@ -243,7 +243,12 @@ def _extract_count(lowered: str) -> int | None:
     for word, value in WORD_COUNTS.items():
         if re.search(rf"\b{word}\b", lowered):
             return value
-    match_num = re.search(r"\b(\d{1,2})\s+[a-z0-9_-]+\b", lowered)
+    # Last-resort cardinality: a bare number is a requested count ONLY when it
+    # is not glued to a hyphen/slash (versions, standards, chain IDs such as
+    # ERC-20, HTTP/2, EIP-1559) and it quantifies a plural noun ("5 wallets").
+    # Singular complements ("version 2 of", "2 tokens" is fine but "2 of")
+    # and non-plurals never create count semantics.
+    match_num = re.search(r"(?<![-\w/])(\d{1,2})\s+([a-z0-9_-]*s)\b", lowered)
     if match_num and int(match_num.group(1)) <= 50:
         return int(match_num.group(1))
     return None
