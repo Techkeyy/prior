@@ -2,7 +2,7 @@
  * Buyer-side commands for official @virtuals-protocol/acp-node-v2.
  * Adapter: PrivyAlchemyEvmProviderAdapter
  */
-import { createAgent, fail, flattenOfferings, loadSdk } from "./lib.mjs";
+import { createAgent, done, fail, flattenOfferings, loadSdk } from "./lib.mjs";
 
 const [cmd, ...args] = process.argv.slice(2);
 
@@ -46,8 +46,7 @@ async function main() {
     if (!agents.length) {
       agents = (await agent.browseAgents(keyword)) || [];
     }
-    console.log(JSON.stringify({ ok: true, keyword, agents: flattenOfferings(agents) }));
-    process.exit(0);
+    return done({ ok: true, keyword, agents: flattenOfferings(agents) });
   }
 
   if (cmd === "discover") {
@@ -65,8 +64,7 @@ async function main() {
     const mod = await loadSdk();
     const { agent } = await createAgent(mod, "buyer");
     const agents = (await agent.browseAgents(keyword, params)) || [];
-    console.log(JSON.stringify({ ok: true, keyword, params, count: agents.length, agents }));
-    process.exit(0);
+    return done({ ok: true, keyword, params, count: agents.length, agents });
   }
 
   if (cmd === "create-offering-job") {
@@ -97,17 +95,14 @@ async function main() {
       requirementData,
       { evaluatorAddress: myAddress }
     );
-    console.log(
-      JSON.stringify({
-        ok: true,
-        jobId: String(jobId),
-        phase: "job.created",
-        chainId: chain.id,
-        providerAddress,
-        offeringName,
-      })
-    );
-    process.exit(0);
+    return done({
+      ok: true,
+      jobId: String(jobId),
+      phase: "job.created",
+      chainId: chain.id,
+      providerAddress,
+      offeringName,
+    });
   }
 
   if (cmd === "offering-refresh") {
@@ -120,11 +115,10 @@ async function main() {
     const { agent, chain } = await createAgent(mod, "buyer");
     const detail = await agent.getAgentByWalletAddress(providerAddress);
     if (!detail) {
-      console.log(JSON.stringify({ ok: true, found: false, providerAddress }));
-      process.exit(0);
+      return done({ ok: true, found: false, providerAddress });
     }
     const offering = ((detail.offerings || []).find((o) => o && o.name === offeringName)) || null;
-    console.log(JSON.stringify({
+    return done({
       ok: true,
       found: true,
       chainId: chain.id,
@@ -143,8 +137,7 @@ async function main() {
         isHidden: Boolean(offering.isHidden),
         isPrivate: Boolean(offering.isPrivate),
       } : null,
-    }));
-    process.exit(0);
+    });
   }
 
   if (cmd === "create-job") {
@@ -179,15 +172,12 @@ async function main() {
 
     await agent.sendMessage(chain.id, jobId.toString(), JSON.stringify(requirement), "requirement");
 
-    console.log(
-      JSON.stringify({
-        ok: true,
-        jobId: String(jobId),
-        phase: "job.created",
-        chainId: chain.id,
-      })
-    );
-    process.exit(0);
+    return done({
+      ok: true,
+      jobId: String(jobId),
+      phase: "job.created",
+      chainId: chain.id,
+    });
   }
 
   if (cmd === "status") {
@@ -218,15 +208,12 @@ async function main() {
     if (!deliverable && ((session.job?.status || "").toUpperCase() === "SUBMITTED" || session.status === "submitted")) {
       deliverable = "Deliverable confirmed submitted on-chain by provider.";
     }
-    console.log(
-      JSON.stringify({
-        ok: true,
-        jobId,
-        phase: (session.job?.status || session.status || "open").toLowerCase(),
-        deliverable,
-      })
-    );
-    process.exit(0);
+    return done({
+      ok: true,
+      jobId,
+      phase: (session.job?.status || session.status || "open").toLowerCase(),
+      deliverable,
+    });
   }
 
   if (cmd === "fund") {
@@ -236,8 +223,7 @@ async function main() {
     const session = agent.getOrCreateSession(jobId, chain.id);
     await session.fetchJob();
     await session.fund();
-    console.log(JSON.stringify({ ok: true, jobId, action: "fund", phase: session.status }));
-    process.exit(0);
+    return done({ ok: true, jobId, action: "fund", phase: session.status });
   }
 
   if (cmd === "complete" || cmd === "reject") {
@@ -249,15 +235,12 @@ async function main() {
     if (cmd === "complete") await session.complete(reason || "Accepted by hiring user.");
     else await session.reject(reason || "Rejected by hiring user.");
     await session.fetchJob().catch(() => {});
-    console.log(
-      JSON.stringify({
-        ok: true,
-        jobId,
-        action: cmd,
-        phase: (session.job?.status || session.status || cmd).toLowerCase(),
-      })
-    );
-    process.exit(0);
+    return done({
+      ok: true,
+      jobId,
+      action: cmd,
+      phase: (session.job?.status || session.status || cmd).toLowerCase(),
+    });
   }
 
   fail(`Unknown ACP bridge command: ${cmd}`);

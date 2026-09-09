@@ -29,6 +29,15 @@ export function fail(message, extra = {}) {
   process.exit(1);
 }
 
+export function done(payload) {
+  // Flush piped stdout before exiting: console.log followed by
+  // process.exit(0) can truncate large JSON responses because the pipe
+  // write is asynchronous. Exiting in the write callback guarantees the
+  // complete document (proven by truncated 65KB+ marketplace responses).
+  const text = JSON.stringify(payload) + "\n";
+  process.stdout.write(text, () => process.exit(0));
+}
+
 export function requiredEnv(name) {
   const value = process.env[name];
   if (!value || !String(value).trim()) {
