@@ -187,6 +187,10 @@ class JobRecord:
     acp_phase: str | None = None
     deliverable: dict[str, Any] | None = None
     evaluation: str | None = None
+    # Did the marketplace actually accept our evaluation? Independent of the
+    # human verdict in `evaluation`: an expired or write-disabled job records
+    # the user's quality decision while this stays "not attempted"/"failed".
+    remote_evaluation: str | None = None
     rejection_reason: str | None = None
     proposed_lesson: dict[str, Any] | None = None
     error: str | None = None
@@ -226,6 +230,7 @@ class JobRecord:
             "acp_phase": self.acp_phase,
             "deliverable": self.deliverable,
             "evaluation": self.evaluation,
+            "remote_evaluation": self.remote_evaluation,
             "rejection_reason": self.rejection_reason,
             "proposed_lesson": self.proposed_lesson,
             "error": self.error,
@@ -256,6 +261,7 @@ class JobRecord:
             acp_phase=data.get("acp_phase"),
             deliverable=data.get("deliverable"),
             evaluation=data.get("evaluation"),
+            remote_evaluation=data.get("remote_evaluation"),
             rejection_reason=data.get("rejection_reason"),
             proposed_lesson=data.get("proposed_lesson"),
             error=data.get("error"),

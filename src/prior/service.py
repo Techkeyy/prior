@@ -426,19 +426,50 @@ def refresh(workspace_id: str, job_id: str) -> JobRecord:
     return _apply_provider_job(record, updated)
 
 
+def _attempt_remote_evaluation(record: JobRecord, accepted: bool, reason: str) -> str:
+    """Best-effort marketplace evaluation. The human verdict is already
+    persisted by the caller; this never raises and never claims a remote
+    outcome that did not happen."""
+    from prior import settings as settings_mod
+
+    source = str((record.provider or {}).get("source") or "")
+    if source == LOCAL_SOURCE:
+        try:
+            evaluated = provider_for_record(record).evaluate(
+                _record_to_provider_job(record), accepted, reason
+            )
+        except Exception as exc:
+            return f"local evaluation failed: {str(exc)[:160]}"
+        record.acp_phase = evaluated.phase
+        return "confirmed locally"
+    if not settings_mod.acp_writes_enabled():
+        return "not attempted (ACP writes disabled by server configuration)"
+    if (record.acp_phase or "").lower() in {"expired", "job.expired"}:
+        return "not attempted (ACP evaluation window expired)"
+    try:
+        evaluated = provider_for_record(record).evaluate(
+            _record_to_provider_job(record), accepted, reason
+        )
+    except Exception as exc:
+        return f"attempt failed: {str(exc)[:160]}"
+    record.acp_phase = evaluated.phase
+    if evaluated.extra.get("txHash"):
+        record.tx_hash = str(evaluated.extra["txHash"])
+    return "confirmed by ACP"
+
+
 def accept(workspace_id: str, job_id: str) -> JobRecord:
     record = _owned(workspace_id, job_id)
     if record.status != "delivered":
         raise ValueError("Only a delivered job can be accepted.")
-    provider = provider_for_record(record)
-    evaluated = provider.evaluate(
-        _record_to_provider_job(record), True, "Accepted by the hiring user."
-    )
-    record.acp_phase = evaluated.phase
-    if evaluated.extra.get("txHash"):
-        record.tx_hash = str(evaluated.extra["txHash"])
     record.evaluation = "accepted"
     record.status = "accepted"
+    record.remote_evaluation = "pending"
+    record.updated_at = now_iso()
+    jobs.put(record)
+    record.remote_evaluation = _attempt_remote_evaluation(
+        record, True, "Accepted by the hiring user."
+    )
     record.updated_at = now_iso()
     return jobs.put(record)
 
@@ -449,15 +480,16 @@ def reject(workspace_id: str, job_id: str, reason: str) -> JobRecord:
         raise ValueError("Only a delivered job can be rejected.")
     if not (reason or "").strip():
         raise ValueError("A rejection needs a useful reason.")
-    provider = provider_for_record(record)
-    evaluated = provider.evaluate(_record_to_provider_job(record), False, reason.strip())
-    record.acp_phase = evaluated.phase
-    if evaluated.extra.get("txHash"):
-        record.tx_hash = str(evaluated.extra["txHash"])
     record.evaluation = "rejected"
     record.rejection_reason = reason.strip()
     record.status = "rejected"
     record.proposed_lesson = propose_lesson(record, reason).to_dict()
+    record.remote_evaluation = "pending"
+    record.updated_at = now_iso()
+    jobs.put(record)
+    record.remote_evaluation = _attempt_remote_evaluation(
+        record, False, reason.strip()
+    )
     record.updated_at = now_iso()
     return jobs.put(record)
 

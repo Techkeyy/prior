@@ -598,6 +598,15 @@ function reviewPanel(job) {
     </section>`;
 }
 
+function remoteEvalLine(job) {
+  const note = job.remote_evaluation;
+  if (!note || note === "confirmed by ACP" || note === "confirmed locally") return "";
+  const label = note === "pending"
+    ? "Marketplace evaluation is still being attempted."
+    : `Your verdict stands, but the marketplace was not told: ${note}.`;
+  return `<p class="meta small">${escapeHtml(label)}</p>`;
+}
+
 function learningPanel(job) {
   if (job.status === "accepted") {
     return `
@@ -606,6 +615,7 @@ function learningPanel(job) {
           <h2 style="margin:0;">Work accepted</h2>
           <span class="status-pill status-live">Contract fulfilled</span>
         </div>
+        ${remoteEvalLine(job)}
         <p class="meta">The result matched your contract, so PRIOR kept nothing new. Your memory only grows from lessons you approve.</p>
         <div class="row">
           <button class="button button-primary" data-reset>Start a new job</button>
@@ -623,6 +633,7 @@ function learningPanel(job) {
         </div>
         <p class="meta">Your rejection:</p>
         <p class="hd-quote">"${escapeHtml(userReason(job, lesson))}"</p>
+        ${remoteEvalLine(job)}
         <p class="meta" style="margin-top:14px;">PRIOR proposes this reusable requirement:</p>
         <div class="learned" style="margin:10px 0 16px;">
           <p class="clause" style="margin:0;">"${escapeHtml(lesson.requirement)}"</p>
@@ -651,9 +662,10 @@ function learningPanel(job) {
         </div>
         <p class="clause" style="margin:0;">"${escapeHtml(lesson.requirement)}"</p>
         <p class="clause-note">Matching contracts will include this requirement from now on.</p>
+        ${remoteEvalLine(job)}
       </div>` : duplicate ? `
-      <p class="meta" style="margin:0;">This requirement was already in your memory, so nothing new was stored.</p>` : `
-      <p class="meta" style="margin:0;">No lesson came from this job. PRIOR learns only from rejections you explain, and rules you approve.</p>`}
+      <p class="meta" style="margin:0;">This requirement was already in your memory, so nothing new was stored.</p>${remoteEvalLine(job)}` : `
+      <p class="meta" style="margin:0;">No lesson came from this job. PRIOR learns only from rejections you explain, and rules you approve.</p>${remoteEvalLine(job)}`}
       <div class="row">
         <button class="button button-primary" data-reset>Start a new job</button>
         <a class="button button-secondary" href="/memory" data-nav="memory">View memory</a>
