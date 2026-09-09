@@ -120,10 +120,10 @@ def ensure_fundable(record: JobRecord) -> None:
     Unknown deadlines fail closed. Raises HireError otherwise.
     """
     if record.status not in ("hired", "working"):
-        raise HireError(f"Job {record.id} is not in a fundable lifecycle state.")
+        raise HireError(f"job {record.id} is not in a fundable lifecycle state.")
     if expiry_state(record.acp_expired_at) != "active":
         raise HireError(
-            "Funding refused: the ACP deadline is passed or unknown. "
+            "the ACP deadline is passed or unknown. "
             "An expired job must not be funded.")
 
 
