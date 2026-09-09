@@ -231,7 +231,9 @@ async function main() {
       (e) => e.kind === "system" && e.event?.type === "budget.set"
     );
     const budget = sanitizeBudget(session.job?.budget);
-    const hasBudget = budget !== null || hasBudgetEvent || session.status === "budget_set";
+    const budgetAmount = budget !== null ? Number(budget.amount) : NaN;
+    const hasBudget = (Number.isFinite(budgetAmount) && budgetAmount > 0)
+      || hasBudgetEvent || session.status === "budget_set";
     const funded = session.status === "funded";
     await session.fetchJob().catch(() => {});
     const entries = await agent.getTransport().getHistory(chain.id, jobId).catch(() => []);
