@@ -113,6 +113,9 @@ def prepare_hire(workspace_id: str, job_id: str, discover=None) -> dict[str, Any
     if record.hire_state == "creating":
         raise hiring_mod.AmbiguousHireError(
             "A hire is already in progress for this job; refusing a second intent.")
+    if record.hire_state == "ambiguous" or hiring_mod.is_ambiguous(record.id):
+        raise hiring_mod.AmbiguousHireError(
+            "A previous hire outcome is ambiguous; reconcile before preparing again.")
     if record.hire_state == "created" or record.acp_job_id:
         raise ValueError("Job already has an ACP execution; cannot prepare another hire.")
     if record.hire_state == "prepared" and record.hire_plan:
@@ -132,9 +135,11 @@ def prepare_hire(workspace_id: str, job_id: str, discover=None) -> dict[str, Any
 def execute_hire(workspace_id: str, job_id: str) -> JobRecord:
     """Dynamic path, phase 2: create exactly one ACP job from the frozen plan.
 
-    Idempotent at the logical-job boundary: a repeated call after a recorded
-    creation returns the same job without another bridge call. An ambiguous
-    in-progress state never retries blindly.
+    Order: load -> idempotency guards -> writes gate -> read-only preflight
+    -> read-only freshness revalidation -> atomic claim -> re-read -> single
+    bridge create. Any uncertain failure after the write boundary leaves a
+    durable ambiguous state (never retryable `failed`); only definitive
+    pre-write refusals stay retryable.
     """
     from prior import hiring as hiring_mod
     from prior.providers.virtuals import VirtualsAcpProvider
@@ -142,26 +147,52 @@ def execute_hire(workspace_id: str, job_id: str) -> JobRecord:
     record = _owned(workspace_id, job_id)
     if record.hire_state == "created" and record.acp_job_id:
         return record
-    if record.hire_state == "creating" or hiring_mod.completed_write_for(record.id):
+    if (record.hire_state in ("creating", "ambiguous")
+            or hiring_mod.completed_write_for(record.id)
+            or hiring_mod.is_ambiguous(record.id)):
         raise hiring_mod.AmbiguousHireError(
             "A previous hire may have created an ACP job while local persistence "
             "is uncertain. Reconcile via ACP job history before any manual retry; "
             "PRIOR will not blindly create a second job.")
     if record.hire_state != "prepared" or not record.hire_plan:
         raise ValueError("No prepared hire intent for this job; prepare first.")
+    if record.status != "specified":
+        raise ValueError("Job left the specified state after preparation; prepare again if still needed.")
+    from prior import settings as settings_mod
+
+    if not settings_mod.acp_writes_enabled():
+        raise ProviderError(
+            "ACP writes are disabled by server configuration (PRIOR_ENABLE_ACP_WRITES).")
     provider = VirtualsAcpProvider()
-    record.hire_state = "creating"
-    record.hire_error = None
-    record.updated_at = now_iso()
-    jobs.put(record)
+    plan = hiring_mod.HirePlan.from_dict(record.hire_plan)
+    violations = hiring_mod.validate_preflight(record, plan)
+    if violations:
+        _fail_hire(record, "Hire preflight refused the write: " + " | ".join(violations))
+        raise hiring_mod.HireError(
+            "Hire preflight refused the write: " + " | ".join(violations))
     try:
-        started = provider.execute_hire(record, record.hire_plan)
-    except Exception as exc:
-        record.hire_state = "failed"
-        record.hire_error = str(exc)[:500]
-        record.updated_at = now_iso()
-        jobs.put(record)
+        current = provider.refresh_selected_offering(record.hire_plan)
+    except ProviderError as exc:
+        raise ProviderError(f"Could not verify offering freshness: {exc}") from exc
+    drift = hiring_mod.verify_freshness(record, plan, current)
+    if drift:
+        _fail_hire(record, " | ".join(drift))
+        raise hiring_mod.HireError(" | ".join(drift))
+    try:
+        record = jobs.hire_claim(record.id, record.workspace_id)
+    except jobs.HireConflictError:
+        return _resolve_claim_conflict(workspace_id, job_id)
+    except KeyError:
         raise
+    try:
+        started = provider.execute_hire(record, record.hire_plan or {})
+    except hiring_mod.AmbiguousHireError:
+        raise
+    except Exception as exc:
+        _ambiguous_hire(record, f"Uncertain ACP create result: {exc}")
+        raise hiring_mod.AmbiguousHireError(
+            f"Uncertain ACP create result ({exc}). State is durably ambiguous; "
+            "reconcile via ACP job history before any manual retry.") from exc
     hiring_mod.note_completed_write(record.id, started.acp_job_id or "")
     try:
         record = _apply_provider_job(record, started)
@@ -169,10 +200,46 @@ def execute_hire(workspace_id: str, job_id: str) -> JobRecord:
         record.hire_error = None
         jobs.put(record)
     except Exception as exc:
+        hiring_mod.mark_ambiguous(record.id)
         raise hiring_mod.AmbiguousHireError(
             "ACP job was created remotely but the local record could not be "
             f"persisted ({exc}). Do not retry blindly; reconcile first.") from exc
     return record
+
+
+def _fail_hire(record: JobRecord, message: str) -> None:
+    """Definitive pre-write refusal: retryable via a fresh prepare."""
+    record.hire_state = "failed"
+    record.hire_error = message[:500]
+    record.updated_at = now_iso()
+    jobs.put(record)
+
+
+def _ambiguous_hire(record: JobRecord, message: str) -> None:
+    """Uncertain post-boundary outcome: durable, never auto-retryable."""
+    from prior import hiring as hiring_mod
+
+    record.hire_state = "ambiguous"
+    record.hire_error = message[:500]
+    record.updated_at = now_iso()
+    try:
+        jobs.put(record)
+    except Exception:
+        hiring_mod.mark_ambiguous(record.id)
+        raise
+    hiring_mod.mark_ambiguous(record.id)
+
+
+def _resolve_claim_conflict(workspace_id: str, job_id: str) -> JobRecord:
+    """Lost an atomic claim race: return the winner's job if it completed."""
+    from prior import hiring as hiring_mod
+
+    record = _owned(workspace_id, job_id)
+    if record.hire_state == "created" and record.acp_job_id:
+        return record
+    raise hiring_mod.AmbiguousHireError(
+        "Another execution claimed this job concurrently. Re-read before retrying; "
+        "PRIOR created no second job from this call.")
 
 
 def refresh(workspace_id: str, job_id: str) -> JobRecord:

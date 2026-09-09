@@ -110,6 +110,43 @@ async function main() {
     process.exit(0);
   }
 
+  if (cmd === "offering-refresh") {
+    // READ-ONLY freshness lookup for one exact provider + offering. No
+    // search, no selection, no write. Used to revalidate a frozen HirePlan.
+    const providerAddress = args[0];
+    const offeringName = args[1] || "";
+    if (!providerAddress) fail("offering-refresh requires a seller wallet address.");
+    const mod = await loadSdk();
+    const { agent, chain } = await createAgent(mod, "buyer");
+    const detail = await agent.getAgentByWalletAddress(providerAddress);
+    if (!detail) {
+      console.log(JSON.stringify({ ok: true, found: false, providerAddress }));
+      process.exit(0);
+    }
+    const offering = ((detail.offerings || []).find((o) => o && o.name === offeringName)) || null;
+    console.log(JSON.stringify({
+      ok: true,
+      found: true,
+      chainId: chain.id,
+      agentName: detail.name || null,
+      walletAddress: detail.walletAddress || providerAddress,
+      lastActiveAt: detail.lastActiveAt || null,
+      chains: (detail.chains || []).map((c) => c && c.chainId).filter((v) => v !== undefined),
+      offering: offering ? {
+        name: offering.name,
+        description: offering.description || "",
+        requirements: offering.requirements ?? null,
+        priceType: offering.priceType || "",
+        priceValue: offering.priceValue ?? null,
+        requiredFunds: Boolean(offering.requiredFunds),
+        slaMinutes: offering.slaMinutes ?? null,
+        isHidden: Boolean(offering.isHidden),
+        isPrivate: Boolean(offering.isPrivate),
+      } : null,
+    }));
+    process.exit(0);
+  }
+
   if (cmd === "create-job") {
     const providerAddress = args[0];
     const offeringName = args[1] || "research";

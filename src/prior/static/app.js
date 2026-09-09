@@ -6,6 +6,7 @@ const state = {
   workspace: null,
   baseProof: null,
   health: null,
+  hirePlan: null,
   error: "",
   busy: false,
   showReject: false,
@@ -390,10 +391,40 @@ function contractPanel(job) {
         </div>
       </div>
       <div class="row">
-        <button class="button button-primary" data-hire${busy ? " disabled" : ""}>${busy ? "Hiring..." : "Hire an agent with this contract"}</button>
+        <button class="button button-primary" data-hire${busy ? " disabled" : ""}>${busy ? "Finding an agent..." : "Find an agent for this contract"}</button>
         <button class="button button-ghost" data-reset>Discard</button>
       </div>
+      ${hireConfirmHtml()}
     </section>`;
+}
+
+function hireConfirmHtml() {
+  const plan = state.hirePlan;
+  if (!plan) return "";
+  const remembered = (plan.remembered || []).map(
+    (r) => `<li class="learned-row"><span class="check" aria-hidden="true">&#10003;</span>${escapeHtml(r)}</li>`).join("");
+  return `
+    <div class="learned" aria-label="Hire confirmation" style="margin-top:18px;">
+      <div class="panel-topline" style="margin-bottom:6px;">
+        <p class="kicker memory" style="margin:0;">Review before hiring</p>
+        <span class="status-pill status-safe">Read only so far</span>
+      </div>
+      <dl class="kv">
+        <dt>Agent</dt><dd>${escapeHtml(plan.agent || "Virtuals ACP agent")}</dd>
+        <dt>Offering</dt><dd>${escapeHtml(plan.offering || "")}</dd>
+        <dt>Network</dt><dd>${escapeHtml(plan.network || "Virtuals ACP")}</dd>
+        <dt>Price</dt><dd>${escapeHtml(plan.price || "")}</dd>
+      </dl>
+      <p class="meta">Why this match: ${escapeHtml(plan.match_reason || "")}</p>
+      ${remembered ? `<p class="meta">What PRIOR remembered:</p><ul class="clean req-list">${remembered}</ul>` : `<p class="meta">No past lesson matched this request.</p>`}
+      <p class="meta">What will be sent:</p>
+      <p class="hd-quote">${escapeHtml((plan.will_be_sent || "").slice(0, 500))}</p>
+      <div class="row">
+        <button class="button button-primary" data-hire-confirm${state.busy ? " disabled" : ""}>${state.busy ? "Hiring..." : "Confirm hire"}</button>
+        <button class="button button-ghost" data-hire-cancel>Back</button>
+      </div>
+      <p class="hint">Confirming creates a real paid ACP job. Nothing has been hired yet.</p>
+    </div>`;
 }
 
 function collapsedContract(job) {
@@ -810,6 +841,7 @@ function bind() {
       state.error = "";
       state.notification = "";
       state.showReject = false;
+      state.hirePlan = null;
       render();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
@@ -840,6 +872,7 @@ function bind() {
       run(async () => {
         state.job = await api(`/api/jobs/${id}`);
         state.showReject = false;
+        state.hirePlan = null;
         history.pushState({}, "", "/app");
         render();
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -875,13 +908,28 @@ function bind() {
     await run(async () => {
       const text = new FormData(specify).get("text");
       state.job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ text }) });
+      state.hirePlan = null;
     });
   });
 
   const hire = document.querySelector("[data-hire]");
   if (hire) hire.addEventListener("click", () => run(async () => {
-    state.job = await api(`/api/jobs/${state.job.id}/hire`, { method: "POST" });
+    const res = await api(`/api/jobs/${state.job.id}/hire/prepare`, { method: "POST" });
+    state.job = res.job;
+    state.hirePlan = res.hire_plan;
   }));
+
+  const hireConfirm = document.querySelector("[data-hire-confirm]");
+  if (hireConfirm) hireConfirm.addEventListener("click", () => run(async () => {
+    state.job = await api(`/api/jobs/${state.job.id}/hire/execute`, { method: "POST" });
+    state.hirePlan = null;
+  }));
+
+  const hireCancel = document.querySelector("[data-hire-cancel]");
+  if (hireCancel) hireCancel.addEventListener("click", () => {
+    state.hirePlan = null;
+    render();
+  });
 
   const reset = document.querySelector("[data-reset]");
   if (reset) reset.addEventListener("click", () => {
@@ -889,6 +937,7 @@ function bind() {
     state.error = "";
     state.notification = "";
     state.showReject = false;
+    state.hirePlan = null;
     history.pushState({}, "", "/app");
     render();
   });

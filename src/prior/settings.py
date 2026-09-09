@@ -148,6 +148,17 @@ def acp_enabled() -> bool:
     return os.getenv("ACP_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def acp_writes_enabled() -> bool:
+    """Explicit server-side gate for real ACP writes. Default OFF.
+
+    Prepare (read-only discovery + plan freezing) stays available while
+    writes are disabled. No client flag can override this.
+    """
+    return os.getenv("PRIOR_ENABLE_ACP_WRITES", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
 def _present(name: str) -> bool:
     value = os.getenv(name)
     return bool(value and value.strip())

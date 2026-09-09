@@ -73,8 +73,10 @@ def _discover(market):
 @pytest.fixture
 def acp_env_on(monkeypatch):
     """Satisfy the credentials gate with placeholders; the bridge is always
-    intercepted in these tests, so no network is reachable."""
+    intercepted in these tests, so no network is reachable. Writes are
+    explicitly enabled for this isolated environment only."""
     monkeypatch.setenv("ACP_ENABLED", "true")
+    monkeypatch.setenv("PRIOR_ENABLE_ACP_WRITES", "true")
     monkeypatch.setenv("BUYER_WALLET_ADDRESS", "0x" + "b0" * 20)
     monkeypatch.setenv("BUYER_WALLET_ID", "buyer-wallet-test")
     monkeypatch.setenv("BUYER_SIGNER_PRIVATE_KEY", "test-signer-key")
@@ -93,6 +95,18 @@ def bridge(monkeypatch):
         cmd = args[0]
         if cmd in failures:
             raise hiring_mod.ProviderError(failures[cmd])
+        if cmd == "offering-refresh":
+            return {"ok": True, "found": True, "chainId": 8453,
+                    "agentName": "Winner Agent", "walletAddress": args[1],
+                    "lastActiveAt": "2026-09-01T00:00:00Z",
+                    "chains": [8453],
+                    "offering": {
+                        "name": args[2], "description": "Autonomous research",
+                        "requirements": {"type": "object", "required": ["query"],
+                                         "properties": {"query": {"type": "string"}}},
+                        "priceType": "fixed", "priceValue": 0.5,
+                        "requiredFunds": False, "slaMinutes": 10,
+                        "isHidden": False, "isPrivate": False}}
         if cmd == "create-offering-job":
             return {"ok": True, "jobId": "41234", "phase": "job.created",
                     "chainId": 8453, "providerAddress": args[1],
@@ -122,6 +136,24 @@ def test_01_selected_provider_becomes_acp_target(acp_env_on, bridge):
     service.execute_hire(record.workspace_id, record.id)
     writes = [c for c in calls if c[0] == "create-offering-job"]
     assert len(writes) == 1 and writes[0][1] == WINNER_WALLET
+
+
+def test_01b_execute_refuses_when_writes_disabled(bridge, monkeypatch):
+    import prior.providers.virtuals as virtuals_mod
+
+    calls, _ = bridge
+    monkeypatch.setenv("ACP_ENABLED", "true")
+    monkeypatch.setenv("BUYER_WALLET_ADDRESS", "0x" + "b0" * 20)
+    monkeypatch.setenv("BUYER_WALLET_ID", "buyer-wallet-test")
+    monkeypatch.setenv("BUYER_SIGNER_PRIVATE_KEY", "test-signer-key")
+    # PRIOR_ENABLE_ACP_WRITES left at its default OFF.
+    record = _job("ws_hire_01b")
+    plan = service.prepare_hire(record.workspace_id, record.id, discover=_discover(_market()))
+    assert plan["idempotency_key"]
+    with pytest.raises(hiring_mod.ProviderError) as exc:
+        service.execute_hire(record.workspace_id, record.id)
+    assert "disabled" in str(exc.value)
+    assert calls == []
 
 
 def test_02_selected_offering_becomes_acp_target(acp_env_on, bridge):
@@ -270,18 +302,38 @@ def test_12_created_job_cannot_create_another(acp_env_on, bridge):
     assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
 
 
-def test_13_bridge_failure_leaves_recoverable_state(acp_env_on, bridge):
+def test_13_bridge_failure_is_ambiguous_never_retryable(acp_env_on, bridge):
     calls, failures = bridge
     failures["create-offering-job"] = "simulated ACP outage"
     record = _job("ws_hire_13")
     service.prepare_hire(record.workspace_id, record.id, discover=_discover(_market()))
-    with pytest.raises(hiring_mod.ProviderError):
+    with pytest.raises(hiring_mod.AmbiguousHireError):
+        service.execute_hire(record.workspace_id, record.id)
+    stored = jobs_mod.get(record.id, record.workspace_id)
+    assert stored is not None and stored.hire_state == "ambiguous"
+    assert stored.acp_job_id is None
+    assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
+    # Neither re-prepare nor re-execute may start a new write.
+    with pytest.raises(hiring_mod.AmbiguousHireError):
+        service.prepare_hire(record.workspace_id, record.id, discover=_discover(_market()))
+    with pytest.raises(hiring_mod.AmbiguousHireError):
+        service.execute_hire(record.workspace_id, record.id)
+    assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
+
+
+def test_13b_preflight_failure_stays_retryable(acp_env_on, bridge):
+    calls, _ = bridge
+    record = _job("ws_hire_13b")
+    service.prepare_hire(record.workspace_id, record.id, discover=_discover(_market()))
+    record = _fresh(record)
+    record.contract.acceptance.append("Must include emojis in every paragraph.")
+    jobs_mod.put(record)
+    with pytest.raises(hiring_mod.HireError):
         service.execute_hire(record.workspace_id, record.id)
     stored = jobs_mod.get(record.id, record.workspace_id)
     assert stored is not None and stored.hire_state == "failed"
-    assert stored.acp_job_id is None and "outage" in (stored.hire_error or "")
-    assert len([c for c in calls if c[0] == "create-offering-job"]) == 1
-    # Re-prepare after failure is allowed (fresh intent, no write yet).
+    assert calls == []
+    # Definitive pre-write refusal: a fresh prepare is allowed.
     plan = service.prepare_hire(record.workspace_id, record.id, discover=_discover(_market()))
     assert plan["idempotency_key"]
 
@@ -303,6 +355,16 @@ def test_14_ambiguous_persist_failure_never_retries_blindly(acp_env_on, bridge, 
 
     def _fake(args):
         calls.append(list(args))
+        if args[0] == "offering-refresh":
+            return {"ok": True, "found": True, "chainId": 8453,
+                    "agentName": "Winner Agent", "walletAddress": args[1] if len(args) > 1 else "",
+                    "chains": [8453],
+                    "offering": {"name": "deep_research",
+                                 "description": "Autonomous research",
+                                 "requirements": {"type": "object", "required": ["query"],
+                                                  "properties": {"query": {"type": "string"}}},
+                                 "priceType": "fixed", "priceValue": 0.5,
+                                 "requiredFunds": False, "isHidden": False, "isPrivate": False}}
         assert args[0] == "create-offering-job"
         state["bridge_done"] = True
         return {"ok": True, "jobId": "41234", "phase": "job.created",

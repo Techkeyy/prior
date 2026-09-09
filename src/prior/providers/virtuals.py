@@ -138,6 +138,25 @@ class VirtualsAcpProvider:
         plan = hiring_mod.build_hire_plan(record, selection)
         return plan.to_dict()
 
+    def refresh_selected_offering(self, plan_dict: dict[str, Any]) -> dict[str, Any]:
+        """Read-only freshness lookup for the plan's exact provider+offering.
+
+        Uses getAgentByWalletAddress (official SDK read). Never searches,
+        never selects, never writes. Raises ProviderError when the provider
+        or offering is gone or the lookup itself fails.
+        """
+        from prior import hiring as hiring_mod
+
+        self._require_ready()
+        plan = hiring_mod.HirePlan.from_dict(plan_dict or {})
+        if not plan.provider_wallet or not plan.offering_name:
+            raise ProviderError("HirePlan is missing provider or offering identity.")
+        raw = _bridge(["offering-refresh", plan.provider_wallet, plan.offering_name])
+        if not isinstance(raw, dict) or not raw.get("found") or not raw.get("offering"):
+            raise ProviderError(
+                f"Selected offering no longer present: {plan.offering_name}.")
+        return raw
+
     def execute_hire(self, record: JobRecord, plan_dict: dict[str, Any]) -> ProviderJob:
         """Create exactly one ACP job from a frozen HirePlan.
 
@@ -159,6 +178,16 @@ class VirtualsAcpProvider:
             plan.offering_name,
             json.dumps(plan.requirement_data),
         ])
+        try:
+            chain_id = int(raw.get("chainId"))
+        except (TypeError, ValueError):
+            chain_id = -1
+        from prior.marketplace import SUPPORTED_CHAIN_ID
+
+        if chain_id != SUPPORTED_CHAIN_ID:
+            raise hiring_mod.AmbiguousHireError(
+                "ACP create returned an unexpected execution chain "
+                f"({raw.get('chainId')}); refusing to assume success. Reconcile first.")
         job_id = raw.get("jobId")
         if not job_id:
             raise ProviderError(f"ACP create-offering-job returned no jobId: {raw}")

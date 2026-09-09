@@ -32,6 +32,7 @@ from typing import Any
 from prior.domain import Contract, JobRecord, JobSpec
 from prior.marketplace import (
     SUPPORTED_CHAIN_ID,
+    BRIEF_SLOTS,
     MarketplaceCandidate,
     MarketplaceSelection,
     validate_against_schema,
@@ -54,6 +55,11 @@ class AmbiguousHireError(ProviderError):
 # a remote success. Does not survive restarts (documented limitation).
 _COMPLETED_WRITES: dict[str, str] = {}
 
+# In-process supplement for ambiguous outcomes whose durable persist failed.
+# Checked at execute start alongside the stored hire_state. The stored state
+# remains primary; this only covers persist-failure windows.
+_AMBIGUOUS_JOBS: set[str] = set()
+
 
 def note_completed_write(logical_job_id: str, acp_job_id: str) -> None:
     _COMPLETED_WRITES[str(logical_job_id)] = str(acp_job_id)
@@ -61,6 +67,14 @@ def note_completed_write(logical_job_id: str, acp_job_id: str) -> None:
 
 def completed_write_for(logical_job_id: str) -> str | None:
     return _COMPLETED_WRITES.get(str(logical_job_id))
+
+
+def mark_ambiguous(logical_job_id: str) -> None:
+    _AMBIGUOUS_JOBS.add(str(logical_job_id))
+
+
+def is_ambiguous(logical_job_id: str) -> bool:
+    return str(logical_job_id) in _AMBIGUOUS_JOBS
 
 
 def contract_fingerprint(contract: Contract) -> str:
@@ -89,6 +103,7 @@ class HirePlan:
     required_funds: bool = False
     requirements_schema: Any = None
     requirement_data: dict[str, Any] = field(default_factory=dict)
+    brief_text: str = ""
     learned_requirements: list[str] = field(default_factory=list)
     contract_fingerprint: str = ""
     marketplace_query: dict[str, Any] = field(default_factory=dict)
@@ -111,6 +126,7 @@ class HirePlan:
             "required_funds": self.required_funds,
             "requirements_schema": self.requirements_schema,
             "requirement_data": dict(self.requirement_data),
+            "brief_text": self.brief_text,
             "learned_requirements": list(self.learned_requirements),
             "contract_fingerprint": self.contract_fingerprint,
             "marketplace_query": dict(self.marketplace_query),
@@ -135,6 +151,7 @@ class HirePlan:
             required_funds=bool(data.get("required_funds", False)),
             requirements_schema=data.get("requirements_schema"),
             requirement_data=dict(data.get("requirement_data") or {}),
+            brief_text=str(data.get("brief_text") or ""),
             learned_requirements=[str(item) for item in (data.get("learned_requirements") or [])],
             contract_fingerprint=str(data.get("contract_fingerprint") or ""),
             marketplace_query=dict(data.get("marketplace_query") or {}),
@@ -154,6 +171,13 @@ def build_hire_plan(record: JobRecord, selection: MarketplaceSelection) -> HireP
     ])
     key = "hire_" + hashlib.sha256(key_material.encode("utf-8")).hexdigest()[:24]
     preview = selection.requirement_preview
+    from prior.providers.base import requirement_payload as _requirement_payload
+
+    brief = ""
+    try:
+        brief = str(_requirement_payload(record.contract, record.spec).get("job_description") or "")
+    except Exception:  # noqa: BLE001 - brief is presentational; gates use requirement_data
+        brief = ""
     return HirePlan(
         idempotency_key=key,
         workspace_id=record.workspace_id,
@@ -168,6 +192,7 @@ def build_hire_plan(record: JobRecord, selection: MarketplaceSelection) -> HireP
         required_funds=candidate.required_funds,
         requirements_schema=candidate.requirements_schema,
         requirement_data=dict(preview.get("requirement_data") or {}),
+        brief_text=brief,
         learned_requirements=list(preview.get("learned_requirements") or []),
         contract_fingerprint=fingerprint,
         marketplace_query=dict(selection.query.to_dict()),
@@ -203,6 +228,131 @@ def _executable_blob(requirement_data: dict[str, Any]) -> str:
 
     _walk(requirement_data)
     return _normalize_text(" ".join(parts))
+
+
+def _canonical_schema(schema: Any) -> str:
+    """Canonical form for drift comparison. Unparseable stays distinct."""
+    if schema is None or schema == "" or schema == {}:
+        return ""
+    if isinstance(schema, str):
+        try:
+            import json as _json
+            schema = _json.loads(schema)
+        except ValueError:
+            return "unparseable:" + str(schema)[:200]
+    try:
+        return json.dumps(schema, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return "unparseable:" + str(schema)[:200]
+
+
+def verify_freshness(record: JobRecord, plan: HirePlan,
+                     current: dict[str, Any]) -> list[str]:
+    """Compare a live offering refresh against the frozen plan.
+
+    Read-only. Any material drift refuses the write with a message telling
+    the user to review a new plan. This is not rediscovery: the provider is
+    never switched, only revalidated or refused.
+    """
+    drift: list[str] = []
+    if not current.get("found") or not current.get("offering"):
+        return ["Selected Virtuals offering changed: provider or offering no longer present. "
+                "Please review the updated hire plan."]
+    offering = current["offering"] or {}
+    if offering.get("isHidden") or offering.get("isPrivate"):
+        drift.append("Selected offering is now hidden or private.")
+    chain_ids = []
+    for cid in current.get("chains") or []:
+        try:
+            chain_ids.append(int(cid))
+        except (TypeError, ValueError):
+            continue
+    if SUPPORTED_CHAIN_ID not in chain_ids:
+        drift.append("Selected offering left the supported Base 8453 path.")
+    if bool(offering.get("requiredFunds", False)) is True:
+        drift.append("Selected offering now requires a fund-transfer flow PRIOR does not support.")
+    if str(offering.get("priceType") or "") != str(plan.price_type or ""):
+        drift.append(f"Offering price type changed ({plan.price_type} -> {offering.get('priceType')}).")
+    try:
+        if float(offering.get("priceValue")) != float(plan.price_value or 0):
+            drift.append(f"Offering price changed ({plan.price_value} -> {offering.get('priceValue')}).")
+    except (TypeError, ValueError):
+        drift.append("Offering price is no longer parseable.")
+    if _canonical_schema(offering.get("requirements")) != _canonical_schema(plan.requirements_schema):
+        drift.append("Offering requirements schema changed.")
+    # Brief slot and learned-clause fit against the CURRENT schema.
+    from prior.marketplace import BRIEF_SLOTS
+
+    properties = None
+    schema = offering.get("requirements")
+    if isinstance(schema, str):
+        try:
+            import json as _json
+            schema = _json.loads(schema)
+        except ValueError:
+            schema = None
+    if isinstance(schema, dict):
+        properties = schema.get("properties")
+    if isinstance(properties, dict):
+        slots = [name for name, sub in properties.items()
+                 if isinstance(sub, dict) and _brief_slot_name(name)
+                 and _accepts_brief_text(sub)]
+        if not slots:
+            drift.append("Current offering schema no longer has a field for the task brief.")
+    elif schema not in (None, "", {}):
+        drift.append("Current offering schema can no longer be interpreted.")
+    try:
+        from prior import settings as settings_mod
+        price_max = settings_mod.max_acp_job_price_usdc()
+    except ValueError as exc:
+        return drift + [f"E. price policy misconfigured: {exc}"]
+    try:
+        current_price = float(offering.get("priceValue"))
+    except (TypeError, ValueError):
+        return drift + ["Current offering price is missing or malformed."]
+    if str(offering.get("priceType") or "") != "fixed" or not (0 <= current_price <= price_max):
+        drift.append(f"Current price fails the spend cap (max {price_max} USDC).")
+    if drift:
+        drift.append("Selected Virtuals offering changed. Please review the updated hire plan.")
+    return drift
+
+
+def _brief_slot_name(name: str) -> bool:
+    return "".join(ch for ch in str(name or "").lower() if ch.isalnum()) in BRIEF_SLOTS
+
+
+def _accepts_brief_text(subschema: dict[str, Any]) -> bool:
+    kind = subschema.get("type")
+    if kind is None:
+        return True
+    kinds = [kind] if isinstance(kind, str) else list(kind)
+    return "string" in kinds
+
+
+def plan_presentation(plan: HirePlan) -> dict[str, Any]:
+    """Truthful confirmation content for the user: what is about to happen."""
+    evidence = plan.selection_evidence or {}
+    breakdown = evidence.get("score_breakdown") or {}
+    task_evidence = evidence.get("task_evidence") or []
+    price_text = "unpriced"
+    if str(plan.price_type or "") == "fixed" and isinstance(plan.price_value, (int, float)):
+        price_text = f"{plan.price_value} USDC"
+    match_bits = []
+    for item in task_evidence:
+        if isinstance(item, dict) and item.get("capability"):
+            match_bits.append(f"{item['capability']} ({item.get('source', '?')})")
+    return {
+        "agent": plan.agent_name,
+        "offering": plan.offering_name,
+        "network": "Virtuals ACP",
+        "price": price_text,
+        "match_reason": f"score {evidence.get('score')}; " + (
+            ", ".join(match_bits) if match_bits else "marketplace compatibility gates"),
+        "remembered": list(plan.learned_requirements or []),
+        "will_be_sent": (plan.brief_text or "")[:800],
+        "requirement_data": dict(plan.requirement_data or {}),
+        "idempotency_key": plan.idempotency_key,
+    }
 
 
 def validate_preflight(record: JobRecord, plan: HirePlan) -> list[str]:

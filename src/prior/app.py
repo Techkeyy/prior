@@ -99,6 +99,13 @@ def get_job(job_id: str, request: Request, response: Response) -> dict:
 
 @app.post("/api/jobs/{job_id}/hire")
 def hire_job(job_id: str, request: Request, response: Response) -> dict:
+    """Historical fixed-path hire endpoint.
+
+    Preserved for backward compatibility only. The normal consumer flow uses
+    /hire/prepare (read-only marketplace selection + confirmation) followed
+    by /hire/execute (single confirmed write). The frontend no longer calls
+    this endpoint.
+    """
     workspace_id, _ = _identity(request, response)
     try:
         return service.hire(workspace_id, job_id).to_dict()
@@ -106,6 +113,58 @@ def hire_job(job_id: str, request: Request, response: Response) -> dict:
         raise HTTPException(503, str(exc)) from exc
     except ProviderError as exc:
         raise HTTPException(503, str(exc)) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/hire/prepare")
+def hire_prepare(job_id: str, request: Request, response: Response) -> dict:
+    """READ-ONLY dynamic prepare: live marketplace selection frozen as a
+    HirePlan, returned with user-facing confirmation content. No ACP write."""
+    from prior import hiring as hiring_mod
+    from prior.marketplace import NoCompatibleProvider
+
+    workspace_id, _ = _identity(request, response)
+    try:
+        plan_dict = service.prepare_hire(workspace_id, job_id)
+        plan = hiring_mod.HirePlan.from_dict(plan_dict)
+        record = service.refresh(workspace_id, job_id)
+        return {"job": record.to_dict(),
+                "hire_plan": hiring_mod.plan_presentation(plan)}
+    except MemoryUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except NoCompatibleProvider as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except hiring_mod.AmbiguousHireError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except hiring_mod.HireError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/hire/execute")
+def hire_execute(job_id: str, request: Request, response: Response) -> dict:
+    """WRITE: execute the previously confirmed HirePlan exactly once."""
+    from prior import hiring as hiring_mod
+    from prior import jobs as jobs_mod
+
+    workspace_id, _ = _identity(request, response)
+    try:
+        return service.execute_hire(workspace_id, job_id).to_dict()
+    except MemoryUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except hiring_mod.AmbiguousHireError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except jobs_mod.HireConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except hiring_mod.HireError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ProviderError as exc:
+        status = 403 if "disabled by server configuration" in str(exc) else 503
+        raise HTTPException(status, str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
