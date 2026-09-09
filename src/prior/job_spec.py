@@ -53,6 +53,62 @@ UNSUPPORTED_CUES = (
     "post on x",
 )
 
+# Review-like tasks that need a concrete target to be executable. A request
+# saying "review this X" with no X attached cannot be performed by anyone.
+# Pure detector: additive only, never changes job_type classification.
+REVIEW_ARTIFACT_NOUNS = (
+    "contract",
+    "code",
+    "transaction",
+    "document",
+    "file",
+    "repository",
+    "repo",
+    "image",
+    "video",
+    "link",
+    "paper",
+    "text",
+    "diff",
+    "pull request",
+)
+
+_URL_RE = re.compile(r"https?://[^\s)]+", re.I)
+_ADDRESS_RE = re.compile(r"0x[0-9a-fA-F]{40}\b")
+_HASH_RE = re.compile(r"\b(?:0x)?[0-9a-fA-F]{64}\b")
+_FENCE_RE = re.compile(r"```|~~~")
+
+
+def _has_review_artifact(raw: str) -> bool:
+    text = raw or ""
+    if _URL_RE.search(text) or _ADDRESS_RE.search(text) or _HASH_RE.search(text):
+        return True
+    if _FENCE_RE.search(text):
+        return True
+    if len(text) > 900:
+        return True
+    return False
+
+
+def missing_review_artifact(raw: str) -> str | None:
+    """Name the expected-but-absent review target, or None.
+
+    Fires only for explicit "review/analyze/summarize this <artifact>"
+    phrasing with no URL, address, hash, code block, or pasted content.
+    General research prompts without a demonstrative reference are
+    unaffected.
+    """
+    lowered = (raw or "").lower()
+    verbs = ("review", "analyze", "analyse", "summarize", "summarise", "audit")
+    if not any(verb in lowered for verb in verbs):
+        return None
+    for noun in REVIEW_ARTIFACT_NOUNS:
+        if re.search(rf"\bthis\s+(?:\w+\s+){{0,2}}{re.escape(noun)}\b", lowered):
+            if not _has_review_artifact(raw or ""):
+                return noun
+            return None
+    return None
+
 WORD_COUNTS = {
     "two": 2,
     "three": 3,

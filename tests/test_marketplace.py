@@ -368,6 +368,117 @@ def test_merge_agent_lists_dedupes_offerings():
     assert merge_agent_lists([None, "junk"]) == []
 
 
+def _tx_offering(name="tx_review", **kw):
+    base = _offering(
+        name,
+        description=kw.pop("description",
+                           "Transaction safety review for anyone about to sign. "
+                           "Verdict ALLOW REVIEW AVOID with risk score for approval "
+                           "popup, batch, permit2, or contract call."),
+        requirements=kw.pop("requirements", {"type": "object",
+                                             "properties": {"message": {"type": "string"}}}))
+    base.update(kw)
+    return base
+
+
+def _code_offering(name="smart_contract_audit", **kw):
+    base = _offering(
+        name,
+        description=kw.pop("description",
+                           "Comprehensive Solidity smart contract security audit. "
+                           "Submit source code or Etherscan link for a detailed report."),
+        requirements=kw.pop("requirements", {"type": "object", "required": ["code"],
+                                             "properties": {"code": {"type": "string"}}}))
+    base.update(kw)
+    return base
+
+
+def _review_request(text):
+    from prior.job_spec import parse_job
+    from prior.contract import build_contract
+    from prior.marketplace import build_capability_query
+    spec = parse_job(text)
+    assert spec.job_type == "research", text
+    contract = build_contract(spec, [])
+    return spec, contract, build_capability_query(spec, contract)
+
+
+def test_1_transaction_review_matches_transaction_offering(no_bridge):
+    spec, contract, query = _review_request(
+        "Review this transaction for signing safety: "
+        "0x8c95120c327ccfcd5c003f1dab484d341f75160e8899aabbccddeeff00112233.")
+    agents = [_agent("TxAgent", "0x" + "aa" * 20, [_tx_offering()])]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "tx_review"
+
+
+def test_2_sourceless_code_request_rejected_from_tx_offering(no_bridge):
+    spec, contract, query = _review_request(
+        "Review this Solidity staking contract for common security issues.")
+    agents = [_agent("TxAgent", "0x" + "aa" * 20, [_tx_offering()])]
+    with pytest.raises(NoCompatibleProvider) as exc:
+        select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert any("no provider can perform an empty-reference review" in reason
+               for _, reason in exc.value.rejections)
+
+
+def test_3_sourced_code_request_matches_code_offering(no_bridge):
+    code = "```solidity\ncontract Vault { mapping(address=>uint) bal; }\n```"
+    spec, contract, query = _review_request(
+        "Review this Solidity staking contract for reentrancy. " + code)
+    agents = [_agent("AuditAgent", "0x" + "bb" * 20, [_code_offering()])]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "smart_contract_audit"
+    blob = " ".join(str(v) for v in sel.requirement_preview["requirement_data"].values()
+                    if isinstance(v, str))
+    assert "contract Vault" in blob
+
+
+def test_4_contract_token_alone_does_not_bridge_subtypes(no_bridge):
+    code = "```solidity\ncontract Vault { mapping(address=>uint) bal; }\n```"
+    spec, contract, query = _review_request(
+        "Review this Solidity staking contract for reentrancy. " + code)
+    agents = [_agent("TxAgent", "0x" + "aa" * 20, [_tx_offering()])]
+    with pytest.raises(NoCompatibleProvider) as exc:
+        select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert any("source-code review capability" in reason
+               for _, reason in exc.value.rejections)
+
+
+def test_9_missing_artifact_surfaced_truthfully(no_bridge):
+    from prior.job_spec import missing_review_artifact
+    assert missing_review_artifact(
+        "Review this Solidity contract for issues.") == "contract"
+    assert missing_review_artifact(
+        "Analyze this transaction 0x8c95120c327ccfcd5c003f1dab484d341f75160e8899aabbccddeeff00112233.") is None
+    assert missing_review_artifact(
+        "Research the top five AI wallet companies.") is None
+    assert missing_review_artifact(
+        "Summarize the key steps for using Base bridge.") is None
+
+
+def test_10_provided_input_proceeds_normally(no_bridge):
+    spec, contract, query = _review_request(
+        "Research this document and compare its claims: https://example.com/tokenomics-paper")
+    agents = [_agent("Researcher", "0x" + "cc" * 20, [
+        _offering("market research",
+                  description="Autonomous research and comparison with reports on any topic.",
+                  requirements={"type": "object", "required": ["query"],
+                                "properties": {"query": {"type": "string"}}})])]
+    sel = select_provider_for_spec(spec, contract, discover=lambda kw: agents)
+    assert sel.candidate.offering_name == "market research"
+
+
+def test_12_no_provider_names_in_product_code():
+    import pathlib
+    for rel in ["src/prior/marketplace.py", "src/prior/job_spec.py",
+                "src/prior/hiring.py"]:
+        text = pathlib.Path(rel).read_text(encoding="utf-8")
+        for name in ["COINGAZURA", "ZeroAgent", "ZIZI", "BitsAndBytesBack",
+                     "Nova", "Dexx", "Vigil", "smartMoneyTracking"]:
+            assert name not in text, f"{rel} mentions live provider {name}"
+
+
 def test_ranking_deterministic_and_merit_ordered():
     _, _, query = _research()
     agents = [

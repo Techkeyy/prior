@@ -102,6 +102,11 @@ provenance, and parent-agent metadata alone can never satisfy a gate.
 A bare offering name such as "research" is task evidence only, never
 subject-generalism: broad scope requires explicit wording ("any topic",
 "general research", "open-ended research", …) in the offering itself.
+Review-family verbs (review/audit/evaluate) match symmetrically. Requests
+naming a review target ("this contract/code/…") with no URL, address,
+hash, code block, or pasted content are rejected as unexecutable; source-
+code review requests additionally require source-code capability evidence
+in the offering (no transaction/signing conflation).
 Discovery fans out over up to 4 short subject/domain/job-type queries and
 merges by wallet (no single top-25 slice decides); malformed slices fail
 closed. Request intent accepts interrogative forms ("what is", "which",

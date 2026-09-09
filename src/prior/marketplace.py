@@ -87,6 +87,50 @@ RESEARCH_TASK_VERBS = frozenset({
     "evaluate", "review", "audit",
 })
 
+# Verbs denoting the same examine-and-judge action. Used symmetrically when
+# intersecting requested and evidenced task verbs: an offering evidencing
+# "audit" satisfies a requested "review" and vice versa. This never adds
+# capabilities, it only recognizes equivalent wording of the same action.
+REVIEW_FAMILY = frozenset({"review", "audit", "evaluate"})
+
+
+def _expand_verbs(verbs: list[str]) -> set[str]:
+    expanded = set(verbs)
+    if expanded & REVIEW_FAMILY:
+        expanded |= REVIEW_FAMILY
+    return expanded
+
+
+# Markers of genuine source-code capability in offering-level text.
+# Deliberately excludes generic words ("analysis", "report", "data") that
+# describe data products rather than code work.
+CODE_CAPABILITY_MARKERS = frozenset({
+    "solidity",
+    "source code",
+    "smart contract",
+    "vulnerability",
+    "vulnerabilities",
+    "code review",
+    "code audit",
+})
+
+def _offering_has_code_capability(candidate: "MarketplaceCandidate") -> bool:
+    blob = _offering_blob(candidate).lower()
+    if any(marker in blob for marker in CODE_CAPABILITY_MARKERS):
+        return True
+    import re as _re
+
+    return bool(_re.search(r"\baudit(s|ed|ing)?\b", blob))
+
+
+def _request_wants_source_code_review(spec: JobSpec, query: "CapabilityQuery") -> bool:
+    text = f"{spec.raw or ''} {' '.join(query.subject_terms)}".lower()
+    if "solidity" in text or "source code" in text:
+        return "review" in query.task_capabilities or "audit" in query.task_capabilities
+    if "smart contract" in text:
+        return bool(set(query.task_capabilities) & {"review", "audit", "evaluate", "analyze"})
+    return False
+
 # Monitoring-family tasks accept verb evidence or explicit tracker naming.
 MONITOR_TASK_VERBS = frozenset({
     "monitor", "track", "report", "watch", "alert", "scan", "detect",
@@ -403,6 +447,9 @@ BRIEF_SLOTS = frozenset({
     "description", "request", "question", "subject", "input", "text",
     "message", "goal", "jobdescription", "taskdescription", "userrequest",
     "instruction", "instructions", "jobbrief",
+    # Code-carrying inputs accept the brief because the brief always embeds
+    # the pasted artifact alongside the task; the worker receives both.
+    "code",
 })
 
 
@@ -634,8 +681,8 @@ def check_task_fit(candidate: MarketplaceCandidate,
     offered_stems = [item["capability"] for item in offered]
     req_verbs = [verb for verb in query.task_capabilities if verb in RESEARCH_TASK_VERBS]
     monitoring_requested = any(verb in MONITOR_TASK_VERBS for verb in query.task_capabilities)
-    if req_verbs and any(verb in offered_stems for verb in req_verbs):
-        evidence = [item for item in offered if item["capability"] in req_verbs]
+    if req_verbs and (_expand_verbs(req_verbs) & _expand_verbs(offered_stems)):
+        evidence = [item for item in offered if item["capability"] in _expand_verbs(req_verbs)]
         return True, "offering evidences the requested task action", evidence
     if monitoring_requested:
         if any(verb in offered_stems for verb in MONITOR_TASK_VERBS):
@@ -667,6 +714,18 @@ def check_compatibility(candidate: MarketplaceCandidate,
         return False, "offering reports no chain information for the execution path"
     if SUPPORTED_CHAIN_ID not in candidate.chain_ids:
         return False, "offering is not usable on PRIOR's supported chain path"
+    from prior.job_spec import missing_review_artifact
+
+    missing = missing_review_artifact(spec.raw or "")
+    if missing:
+        return False, (
+            f"request expects a review target (this {missing}) but none was "
+            "provided; no provider can perform an empty-reference review")
+    if _request_wants_source_code_review(spec, query) \
+            and not _offering_has_code_capability(candidate):
+        return False, (
+            "offering shows no source-code review capability for a "
+            "source-code review request")
     task_ok, task_reason, evidence = check_task_fit(candidate, query)
     if not task_ok:
         return False, task_reason
