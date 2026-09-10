@@ -73,6 +73,68 @@ REVIEW_ARTIFACT_NOUNS = (
     "pull request",
 )
 
+# Semantic transaction-review routing. The same module already decides
+# artifact truthfulness (missing_review_artifact) and worker-brief material
+# preservation (_has_review_artifact); contract generation must agree with
+# that reading instead of falling through to generic company-research
+# deliverables. Detection is verb + topic based and provider-agnostic.
+REVIEW_ACTION_VERBS = (
+    "review",
+    "analyze",
+    "analyse",
+    "audit",
+    "check",
+    "assess",
+    "evaluate",
+    "explain",
+    "summarize",
+    "summarise",
+)
+TRANSACTION_REVIEW_TOPICS = (
+    "transaction",
+    "transactions",
+    "tx",
+    "approval",
+    "approvals",
+    "approve",
+    "allowance",
+    "spender",
+    "contract call",
+    "swap",
+    "bridge",
+    "permit",
+    "signature request",
+    "wallet popup",
+)
+
+TRANSACTION_DELIVERABLES = [
+    "the action or permission being requested",
+    "the network and asset involved",
+    "the target or spender address",
+    "the approval or allowance scope",
+    "the security risks",
+    "an ALLOW, REVIEW, or AVOID verdict with reasoning",
+]
+
+TRANSACTION_ACCEPTANCE = [
+    "Use every transaction field supplied in the request (network, token, "
+    "token address, spender, target, action, allowance) as supplied facts; "
+    "never mark a provided value as unknown.",
+    "Distinguish supplied facts from genuinely unknown information.",
+    "Explain the exact permission the approval would grant the specified spender.",
+    "Ground the risk analysis and the final verdict in the supplied transaction fields.",
+    "Produce a review only: do not broadcast, sign, execute, or mutate any transaction.",
+]
+
+
+def transaction_review_request(raw: str) -> bool:
+    lowered = (raw or "").lower()
+    has_verb = any(re.search(rf"\b{re.escape(v)}\b", lowered) for v in REVIEW_ACTION_VERBS)
+    if not has_verb:
+        return False
+    return any(re.search(rf"\b{re.escape(t)}\b", lowered) for t in TRANSACTION_REVIEW_TOPICS)
+
+
 _URL_RE = re.compile(r"https?://[^\s)]+", re.I)
 _ADDRESS_RE = re.compile(r"0x[0-9a-fA-F]{40}\b")
 _HASH_RE = re.compile(r"\b(?:0x)?[0-9a-fA-F]{64}\b")
@@ -319,6 +381,8 @@ def _extract_comparison_fields(text: str) -> list[str]:
 
 
 def _deliverables(text: str, count: int | None, subject: str = "") -> list[str]:
+    if transaction_review_request(text):
+        return list(TRANSACTION_DELIVERABLES)
     explicit_fields = _extract_comparison_fields(text)
     entity_label = f"{count} {subject}" if count and subject else (f"{count} product names" if count else "names")
     if explicit_fields:
@@ -341,6 +405,8 @@ def _deliverables(text: str, count: int | None, subject: str = "") -> list[str]:
 def _explicit_requirements(text: str) -> list[str]:
     found: list[str] = []
     lowered = text.lower()
+    if transaction_review_request(text):
+        found.extend(TRANSACTION_ACCEPTANCE)
     if "source" in lowered or "citation" in lowered or "link" in lowered:
         found.append("Material factual claims must include source links.")
     if "pricing" in lowered or "price" in lowered:
