@@ -54,6 +54,16 @@ def identity_db_path() -> Path:
     return path
 
 
+def handoff_path() -> Path:
+    """Server-side store for outstanding one-time workspace handoff tokens.
+    Contains ephemeral random tokens only; never commit or expose it."""
+    raw = os.getenv("PRIOR_HANDOFF_STORE", str(data_dir() / "handoff.json"))
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
 def public_url() -> str:
     raw = (os.getenv("PRIOR_PUBLIC_URL", "") or "").strip().rstrip("/")
     if raw:

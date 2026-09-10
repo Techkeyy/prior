@@ -78,6 +78,24 @@ def health() -> dict:
     return snapshot()
 
 
+@app.get("/handoff/{token}")
+def handoff_enter(token: str) -> RedirectResponse:
+    """One-time UAT handoff: redeem a server-issued opaque token, attach the
+    bound guest workspace cookie, and land in /app. Unknown, expired, used,
+    or account-owned bindings all return the same 404."""
+    from prior import handoff
+
+    workspace_id = handoff.redeem(token)
+    if (
+        not workspace_id
+        or auth.get_store().workspace_owner(workspace_id) is not None
+    ):
+        raise HTTPException(404, "This link is not valid.")
+    redirect = RedirectResponse("/app", status_code=302)
+    redirect.set_cookie(COOKIE, workspace_id, **auth.workspace_cookie_kwargs())
+    return redirect
+
+
 
 @app.post("/api/jobs")
 def specify_job(payload: SpecifyIn, request: Request, response: Response) -> dict:
