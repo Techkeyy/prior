@@ -131,6 +131,34 @@ def _request_wants_source_code_review(spec: JobSpec, query: "CapabilityQuery") -
         return bool(set(query.task_capabilities) & {"review", "audit", "evaluate", "analyze"})
     return False
 
+
+# Semantic-fit mirror guard. check_compatibility refuses code-review
+# requests for non-code agents; without the inverse, a transaction-review
+# request can be won by a source-code-only auditor purely on name overlap
+# and marketplace rating. Rating must only rank candidates that are already
+# semantically compatible.
+TX_REVIEW_CAPABILITY_MARKERS = (
+    "transaction", "wallet", "approval", "allowance", "spender", "permit",
+    "swap", "bridge", "signing", "sign ", "tx ", " tx", "web3", "on-chain",
+    "onchain", "crypto safety",
+)
+CODE_ONLY_MARKERS = (
+    "source code", "codebase", "cvss", "static analysis", "code scan",
+    "repository scan", "code audit", "code review", "vulnerability scanner",
+    "github repo",
+)
+
+
+def _offering_declares_tx_review_capability(candidate: "MarketplaceCandidate") -> bool:
+    blob = _offering_blob(candidate).lower()
+    return any(marker in blob for marker in TX_REVIEW_CAPABILITY_MARKERS)
+
+
+def _offering_is_code_only_auditor(candidate: "MarketplaceCandidate") -> bool:
+    blob = _offering_blob(candidate).lower()
+    return (any(marker in blob for marker in CODE_ONLY_MARKERS)
+            or "vulnerabilit" in blob) and not _offering_declares_tx_review_capability(candidate)
+
 # Monitoring-family tasks accept verb evidence or explicit tracker naming.
 MONITOR_TASK_VERBS = frozenset({
     "monitor", "track", "report", "watch", "alert", "scan", "detect",
@@ -726,6 +754,14 @@ def check_compatibility(candidate: MarketplaceCandidate,
         return False, (
             "offering shows no source-code review capability for a "
             "source-code review request")
+    from prior.job_spec import transaction_review_request
+
+    if transaction_review_request(spec.raw or "") \
+            and _offering_is_code_only_auditor(candidate):
+        return False, (
+            "offering is a source-code-only auditor with no declared "
+            "transaction/wallet/approval review capability for a "
+            "transaction-review request")
     task_ok, task_reason, evidence = check_task_fit(candidate, query)
     if not task_ok:
         return False, task_reason
