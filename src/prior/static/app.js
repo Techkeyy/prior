@@ -903,6 +903,20 @@ function render() {
   return renderDashboard();
 }
 
+/* Shared reset: every "Start a new job" / "Start over" / "Discard" control
+   must behave identically. Clears only in-flight selection/form state; the
+   workspace, memory, and job history are untouched and no API is called. */
+function resetToComposer() {
+  state.job = null;
+  state.error = "";
+  state.notification = "";
+  state.showReject = false;
+  state.hirePlan = null;
+  state.fundPlan = null;
+  history.pushState({}, "", "/app");
+  render();
+}
+
 /* -------------------------------------------------------------------- bind */
 
 function bind() {
@@ -1028,16 +1042,8 @@ function bind() {
     render();
   });
 
-  const reset = document.querySelector("[data-reset]");
-  if (reset) reset.addEventListener("click", () => {
-    state.job = null;
-    state.error = "";
-    state.notification = "";
-    state.showReject = false;
-    state.hirePlan = null;
-    state.fundPlan = null;
-    history.pushState({}, "", "/app");
-    render();
+  document.querySelectorAll("[data-reset]").forEach((button) => {
+    button.addEventListener("click", resetToComposer);
   });
 
   const accept = document.querySelector("[data-accept]");
@@ -1388,5 +1394,5 @@ if (typeof document !== "undefined" && document.getElementById("app")) boot();
 
 // Exported for node-based unit tests; browsers ignore this block.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { authStatusNotice, consumeAuthQueryParam, route };
+  module.exports = { authStatusNotice, consumeAuthQueryParam, route, bind, resetToComposer };
 }
