@@ -122,6 +122,11 @@ def prepare_hire(workspace_id: str, job_id: str, discover=None) -> dict[str, Any
         existing = hiring_mod.HirePlan.from_dict(record.hire_plan)
         if existing.contract_fingerprint == hiring_mod.contract_fingerprint(record.contract):
             return record.hire_plan
+    blocker = hiring_mod.blocking_paid_job(record.workspace_id, record.id)
+    if blocker is not None:
+        raise ValueError(
+            "Another paid ACP job in this workspace is still active "
+            f"({blocker.id}); finish or wait for it before preparing another paid hire.")
     provider = VirtualsAcpProvider()
     plan_dict = provider.prepare_hire(record, discover=discover)
     record.hire_plan = plan_dict

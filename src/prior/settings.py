@@ -212,6 +212,41 @@ def max_acp_job_price_usdc() -> float:
     return value
 
 
+def public_max_job_usdc() -> float:
+    """Public per-job spend ceiling, USDC-denominated. Authoritative for
+    ordinary consumer hires. Malformed configuration fails closed."""
+    raw = (os.getenv("PRIOR_PUBLIC_MAX_JOB_USDC", "0.50") or "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"PRIOR_PUBLIC_MAX_JOB_USDC is malformed: {raw!r}. Refusing hires.")
+    if not (value >= 0):
+        raise ValueError(
+            f"PRIOR_PUBLIC_MAX_JOB_USDC must be non-negative: {raw!r}.")
+    return value
+
+
+def public_spend_limit_usdc() -> float:
+    """Global public spend pool ceiling, USDC-denominated. Covers cumulative
+    reserved ACP spend across all workspaces on this deployment."""
+    raw = (os.getenv("PRIOR_PUBLIC_SPEND_LIMIT_USDC", "1.00") or "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"PRIOR_PUBLIC_SPEND_LIMIT_USDC is malformed: {raw!r}. Refusing hires.")
+    if not (value >= 0):
+        raise ValueError(
+            f"PRIOR_PUBLIC_SPEND_LIMIT_USDC must be non-negative: {raw!r}.")
+    return value
+
+
+def effective_max_job_usdc() -> float:
+    """Binding per-job cap: the stricter of operator and public policy."""
+    return min(max_acp_job_price_usdc(), public_max_job_usdc())
+
+
 def seller_ready() -> bool:
     return not missing_virtuals_credentials(role="seller")
 

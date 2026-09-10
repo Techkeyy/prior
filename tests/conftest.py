@@ -17,6 +17,11 @@ def tmp_path():
 def isolate_env(monkeypatch):
     monkeypatch.setenv("PRIOR_LOCAL_PROVIDER", "false")
     monkeypatch.setenv("ACP_ENABLED", "false")
+    # Legacy suites predate the public spend policy; lift the production
+    # ceilings here so they exercise the mechanics they were written for.
+    # tests/test_public_spend_policy.py pins the real production numbers.
+    monkeypatch.setenv("PRIOR_PUBLIC_MAX_JOB_USDC", "100.00")
+    monkeypatch.setenv("PRIOR_PUBLIC_SPEND_LIMIT_USDC", "10000.00")
 
 
 @pytest.fixture(autouse=True)

@@ -127,6 +127,79 @@ def ensure_fundable(record: JobRecord) -> None:
             "An expired job must not be funded.")
 
 
+#: Paid ACP lifecycles that still hold or may still claim escrow. A workspace
+#: with one of these may not start another paid hire until it resolves
+#: (completes, is evaluated, or its deadline passes).
+PAID_ACTIVE_STATUSES = frozenset({"hired", "working", "delivered"})
+
+#: Fund states whose amounts count against the public spend pool.
+RESERVED_FUND_STATES = frozenset({"funding", "fund_ambiguous", "funded"})
+
+
+def blocking_paid_job(workspace_id: str, exclude_job_id: str | None = None):
+    """Return another workspace job still in a paid ACP lifecycle, else None.
+
+    Accepted/rejected jobs are terminal; lifecycle-expired jobs hold dead
+    escrow; jobs without an ACP id are not paid ACP work. Uses only existing
+    JobRecord fields.
+    """
+    from prior import jobs as jobs_mod
+
+    for record in jobs_mod.list_for(workspace_id or ""):
+        if exclude_job_id is not None and record.id == exclude_job_id:
+            continue
+        if not record.acp_job_id:
+            continue
+        if record.status not in PAID_ACTIVE_STATUSES:
+            continue
+        if expiry_state(record.acp_expired_at) == "expired":
+            continue
+        return record
+    return None
+
+
+def public_spend_reserved_usdc() -> float:
+    """Cumulative USDC already committed to paid ACP work on this deployment.
+
+    Sums frozen intent amounts for jobs in funding/funded states. Malformed
+    entries are skipped, never invented.
+    """
+    from prior import jobs as jobs_mod
+
+    total = 0.0
+    for record in jobs_mod.load_all():
+        if record.fund_state not in RESERVED_FUND_STATES:
+            continue
+        try:
+            amount = float((record.fund_intent or {}).get("amount"))
+        except (TypeError, ValueError):
+            continue
+        if amount > 0:
+            total += amount
+    return total
+
+
+def check_public_spend(projected_usdc: float) -> str | None:
+    """Return a refusal message if projected spend breaches the public pool,
+    else None. Malformed policy fails closed."""
+    from prior import settings as settings_mod
+
+    try:
+        limit = settings_mod.public_spend_limit_usdc()
+    except ValueError as exc:
+        return f"public spend policy misconfigured ({exc}); refusing paid work."
+    try:
+        projected = float(projected_usdc)
+    except (TypeError, ValueError):
+        return "projected spend is missing or malformed; refusing paid work."
+    if not (projected >= 0):
+        return "projected spend is missing or malformed; refusing paid work."
+    if public_spend_reserved_usdc() + projected > limit + 1e-9:
+        return ("PRIOR's public agent budget is temporarily unavailable. "
+                "No funds were spent.")
+    return None
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -358,7 +431,7 @@ def verify_freshness(record: JobRecord, plan: HirePlan,
         drift.append("Current offering schema can no longer be interpreted.")
     try:
         from prior import settings as settings_mod
-        price_max = settings_mod.max_acp_job_price_usdc()
+        price_max = settings_mod.effective_max_job_usdc()
     except ValueError as exc:
         return drift + [f"E. price policy misconfigured: {exc}"]
     try:
@@ -432,7 +505,7 @@ def validate_preflight(record: JobRecord, plan: HirePlan) -> list[str]:
         violations.append("D. offering requires fund-transfer flow not yet supported by PRIOR.")
     try:
         from prior import settings as settings_mod
-        price_max = settings_mod.max_acp_job_price_usdc()
+        price_max = settings_mod.effective_max_job_usdc()
     except ValueError as exc:
         return violations + [f"E. price policy misconfigured: {exc}"]
     price_type = str(plan.price_type or "")
@@ -467,6 +540,15 @@ def validate_preflight(record: JobRecord, plan: HirePlan) -> list[str]:
         violations.append("K. plan was not produced by the accepted compatibility path.")
     if plan.contract_fingerprint != contract_fingerprint(record.contract):
         violations.append("K2. contract changed after the plan was frozen; re-prepare required.")
+    blocker = blocking_paid_job(record.workspace_id, record.id)
+    if blocker is not None:
+        violations.append(
+            "L. another paid ACP job in this workspace is still active "
+            f"({blocker.id}); finish or wait for it before starting another paid hire.")
+    if isinstance(price_value, (int, float)) and not isinstance(price_value, bool):
+        spend_refusal = check_public_spend(float(price_value))
+        if spend_refusal:
+            violations.append(f"M. {spend_refusal}")
     return violations
 
 
@@ -633,7 +715,7 @@ def validate_fund_preflight(record: JobRecord, intent: FundIntent,
         approved = None
     try:
         from prior import settings as settings_mod
-        price_max = settings_mod.max_acp_job_price_usdc()
+        price_max = settings_mod.effective_max_job_usdc()
     except ValueError as exc:
         return violations + [f"price policy misconfigured: {exc}"]
     if live_amount is not None and live_amount > 0:
@@ -647,6 +729,12 @@ def validate_fund_preflight(record: JobRecord, intent: FundIntent,
         violations.append("fund intent does not match the stored funding intent (possible substitution).")
     if intent.contract_fingerprint != contract_fingerprint(record.contract):
         violations.append("contract changed after funding was prepared; re-prepare required.")
+    try:
+        spend_refusal = check_public_spend(intent.amount)
+    except (TypeError, ValueError):
+        spend_refusal = "projected spend is missing or malformed; refusing paid work."
+    if spend_refusal:
+        violations.append(spend_refusal)
     return violations
 
 

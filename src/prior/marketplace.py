@@ -935,6 +935,26 @@ def score_candidate(candidate: MarketplaceCandidate,
     return score, breakdown
 
 
+def _price_within_cap(candidate: "MarketplaceCandidate", cap: float) -> bool:
+    """Price gate applied AFTER semantic compatibility: a candidate that is
+    not fixed/USDC-priced, or priced above the public per-job ceiling, can
+    never be selected no matter how it ranks. Cheapness never rescues an
+    incompatible worker (compatibility already filtered those out)."""
+    if str(candidate.price_type or "") != "fixed":
+        return False
+    value = candidate.price_value
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return 0 <= float(value) <= cap
+
+
+def _price_text(candidate: "MarketplaceCandidate") -> str:
+    value = candidate.price_value
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "an unpriced amount"
+    return f"{float(value):g}"
+
+
 def rank_candidates(candidates: list[MarketplaceCandidate],
                     query: CapabilityQuery) -> list[tuple[MarketplaceCandidate, float, dict[str, Any]]]:
     """Rank highest first. Ties break by lower price, then wallet address.
@@ -1133,7 +1153,27 @@ def select_provider_for_spec(spec: JobSpec, contract: Contract,
             query=query, candidates_seen=agents_seen, rejections=rejections,
         )
     ranked = rank_candidates(compatible, query)
-    winner, score, breakdown = ranked[0]
+    try:
+        from prior import settings as settings_mod
+
+        price_cap = settings_mod.public_max_job_usdc()
+    except ValueError as exc:
+        raise NoCompatibleProvider(
+            f"PRIOR public price policy is misconfigured ({exc}); nothing "
+            "was hired and no funds were spent.",
+            query=query, candidates_seen=agents_seen, rejections=rejections,
+        ) from exc
+    within_cap = [item for item in ranked if _price_within_cap(item[0], price_cap)]
+    if not within_cap:
+        best, _, _ = ranked[0]
+        price_text = _price_text(best)
+        raise NoCompatibleProvider(
+            f"This worker costs {price_text} USDC. PRIOR's public safety limit "
+            f"is {price_cap:g} USDC per job, so nothing was hired and no funds "
+            "were spent. Try another available agent.",
+            query=query, candidates_seen=agents_seen, rejections=rejections,
+        )
+    winner, score, breakdown = within_cap[0]
     return MarketplaceSelection(
         candidate=winner,
         score=round(score, 3),
