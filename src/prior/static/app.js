@@ -273,7 +273,7 @@ async function renderDashboard() {
     ${flow}
     ${activitySection(dash.jobs)}
   `);
-  if (job && (job.status === "working" || job.status === "hired")) poll(job.id);
+  if (job && (job.status === "working" || job.status === "hired")) ensurePolling(job);
   maybeShowAuthPrompt();
 }
 
@@ -907,6 +907,7 @@ function render() {
    must behave identically. Clears only in-flight selection/form state; the
    workspace, memory, and job history are untouched and no API is called. */
 function resetToComposer() {
+  stopPolling();
   state.job = null;
   state.error = "";
   state.notification = "";
@@ -1142,19 +1143,52 @@ async function run(fn) {
 }
 
 async function poll(id) {
+  if (inflightPollId !== null) return;
+  if (!state.job || state.job.id !== id) return;
+  inflightPollId = id;
+  let keepPolling = false;
   try {
     const job = await api(`/api/jobs/${id}`);
     if (!state.job || state.job.id !== id) return;
     state.job = job;
-    if ((job.status === "working" || job.status === "hired") && job.prior_lifecycle !== "expired") {
-      setTimeout(() => poll(id), 1200);
-    } else {
-      render();
-    }
+    keepPolling = (job.status === "working" || job.status === "hired")
+      && job.prior_lifecycle !== "expired";
+    render();
   } catch (err) {
     state.error = err.message;
     render();
+    return;
+  } finally {
+    inflightPollId = null;
   }
+  if (keepPolling) schedulePoll(id, 1200);
+}
+
+let pollTimer = null;
+let pollTimerId = null;
+let inflightPollId = null;
+
+function stopPolling() {
+  if (pollTimer !== null) clearTimeout(pollTimer);
+  pollTimer = null;
+  pollTimerId = null;
+}
+
+function schedulePoll(id, delay) {
+  if (pollTimerId === id || inflightPollId === id) return;
+  stopPolling();
+  pollTimerId = id;
+  pollTimer = setTimeout(() => {
+    pollTimer = null;
+    pollTimerId = null;
+    poll(id);
+  }, delay);
+}
+
+function ensurePolling(job) {
+  if (!job || (job.status !== "working" && job.status !== "hired")) return;
+  if (job.prior_lifecycle === "expired") return;
+  schedulePoll(job.id, 1200);
 }
 
 function escapeHtml(value) {
@@ -1394,5 +1428,8 @@ if (typeof document !== "undefined" && document.getElementById("app")) boot();
 
 // Exported for node-based unit tests; browsers ignore this block.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { authStatusNotice, consumeAuthQueryParam, route, bind, resetToComposer };
+  module.exports = {
+    authStatusNotice, consumeAuthQueryParam, route, bind, resetToComposer,
+    state, poll, stopPolling,
+  };
 }
