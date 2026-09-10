@@ -428,6 +428,20 @@ def refresh(workspace_id: str, job_id: str) -> JobRecord:
     if updated.extra.get("funded") is True and record.fund_state != "funded":
         record.fund_state = "funded"
         record.fund_error = None
+    # Concurrency guard: this refresh loaded its snapshot before a slow
+    # bridge call, so a prepare path may have persisted fund/hire intent
+    # meanwhile. Refresh owns ACP observation fields only; never clobber
+    # intent it did not create. Re-read freshest state and carry those
+    # fields forward (the funded transition above is the one exception).
+    latest = jobs.get(record.id, workspace_id)
+    if latest is not None:
+        if record.fund_state != "funded":
+            record.fund_state = latest.fund_state
+            record.fund_intent = latest.fund_intent
+            record.fund_error = latest.fund_error
+        record.hire_state = latest.hire_state
+        record.hire_plan = latest.hire_plan
+        record.hire_error = latest.hire_error
     return _apply_provider_job(record, updated)
 
 
