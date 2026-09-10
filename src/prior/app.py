@@ -489,6 +489,20 @@ if STATIC.exists():
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
+@app.middleware("http")
+async def _static_revalidate(request: Request, call_next):
+    """Static assets must always revalidate (ETag/304 keeps it cheap).
+
+    Without this, browsers heuristically cache an old app.js across deploys
+    (the ?v= pin is manual and was proven stale during the ACP 78200 UAT:
+    the page kept running a pre-fix bundle and never rendered the fund CTA).
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(
