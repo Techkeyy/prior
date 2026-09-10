@@ -206,9 +206,9 @@ DEFAULT_DELIVERABLES = [
 ]
 
 REFUSAL = (
-    "This build currently supports research and information-gathering jobs, "
-    "such as competitor research, product comparisons, market landscapes, "
-    "supplier finding, and pricing surveys."
+    "PRIOR can't handle that kind of task yet. "
+    "Try a research or review request instead, such as a comparison, "
+    "a market or supplier search, or a transaction review."
 )
 
 

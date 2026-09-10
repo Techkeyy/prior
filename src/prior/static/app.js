@@ -283,7 +283,7 @@ function workspaceHeader() {
       <div>
         <p class="eyebrow">Your workspace</p>
         <h1>What do you need done?</h1>
-        <p class="lede">PRIOR checks what it learned from your past jobs, puts it into the contract, then hires an agent to do the work.</p>
+        <p class="lede">Tell PRIOR what you need. It remembers what worked before, improves the job instructions, and finds an agent to do it.</p>
       </div>
     </div>`;
 }
@@ -296,11 +296,12 @@ function composerCard(job) {
         <label class="left" for="need">${blocked ? "This job is in progress" : "Describe the job"}</label>
         <textarea id="need" name="text" placeholder="Example: Research three AI wallets and compare their features, pricing, and where they are available." required ${blocked ? "disabled" : ""}></textarea>
         <div class="row">
-          <button type="submit" class="button button-primary"${state.busy || blocked ? " disabled" : ""}>${state.busy ? "Checking your memory..." : "Prepare contract"}</button>
+          <button type="submit" class="button button-primary"${state.busy || blocked ? " disabled" : ""}>${state.busy ? "Checking your memory..." : "Set up this job"}</button>
           ${blocked ? `<button type="button" class="button button-ghost button-small" data-reset>Abandon and start over</button>` : ""}
         </div>
       </form>
       ${blocked ? "" : `
+      <p class="meta small">PRIOR works best with research and review tasks right now, like comparisons, market research, supplier searches, and transaction reviews.</p>
       <p class="meta small chips-label">Need a starting point?</p>
       <div class="chips">
         <span class="chip" data-chip="Research the top five AI wallet companies and compare their features." role="button" tabindex="0">Top five AI wallet companies</span>
@@ -379,11 +380,11 @@ function contractPanel(job) {
         <div>
           <h3>Task</h3>
           <p>${escapeHtml((job.spec && job.spec.raw) || c.goal || "")}</p>
-          <h3>Deliverables</h3>
+          <h3>What you'll get</h3>
           <ul class="clean">${(c.deliverables || []).map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
         </div>
         <div>
-          <h3>Requirements the agent must meet</h3>
+          <h3>What the agent must follow</h3>
           <ul class="clean req-list">
             ${standard.map((d) => `<li><span class="check" aria-hidden="true">&#8226;</span>${escapeHtml(d)}</li>`).join("")}
             ${learnedList(c.applied_lessons || [])}
@@ -392,7 +393,7 @@ function contractPanel(job) {
         </div>
       </div>
       <div class="row">
-        <button class="button button-primary" data-hire${busy ? " disabled" : ""}>${busy ? "Finding an agent..." : "Find an agent for this contract"}</button>
+          <button class="button button-primary" data-hire${busy ? " disabled" : ""}>${busy ? "Finding an agent..." : "Find the right agent"}</button>
         <button class="button button-ghost" data-reset>Discard</button>
       </div>
       ${hireConfirmHtml()}
@@ -433,11 +434,11 @@ function collapsedContract(job) {
   const learned = (c.applied_lessons || []).length;
   return `
     <details class="disclose" aria-label="Contract for this job">
-      <summary>Contract for this job${learned ? ` (with ${learned} learned ${learned === 1 ? "requirement" : "requirements"})` : ""}</summary>
+      <summary>${learned ? `Your job brief, improved with ${learned} past lesson${learned === 1 ? "" : "s"}` : "Your job brief"}</summary>
       <div class="panel">
-        <h3>Deliverables</h3>
+        <h3>What you'll get</h3>
         <ul class="clean">${(c.deliverables || []).map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
-        <h3>Requirements</h3>
+        <h3>What the agent must follow</h3>
         <ul class="clean req-list">
           ${(c.acceptance || []).map((item) => {
             const isLearned = (c.applied_lessons || []).some((l) => l.requirement === item);

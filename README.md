@@ -2,7 +2,7 @@
 
 **[LIVE APP](https://prior.103-195-188-198.sslip.io)** &middot; **[GITHUB](https://github.com/Techkeyy/prior)** &middot; **[Fresh-Session Proof](evidence/fresh-session-prior.json)** &middot; **[Base B20 Evidence](evidence/base-b20-read.json)** &middot; **[Stable Deployment Evidence](evidence/stable-deployment-flow.json)**
 
-Hire a research agent. When the work is wrong, keep the lesson. The next contract gets stricter.
+Hire an AI agent. When the work is wrong, keep the lesson. The next contract gets stricter.
 
 > *"I already told the last agent to cite verifiable sources. Why am I typing that again?"*
 
@@ -42,14 +42,14 @@ JOB 2 (DEXs)       -> Sibyl Query  -> Contract Mutates (baseline=false) -> Worke
 
 ## Consumer Experience
 
-1. **Natural Request**: User enters a research need (e.g. *"Research the top five decentralized exchanges"*).
-2. **Memory Check**: PRIOR queries Sibyl. If prior rejections produced lessons in this domain, PRIOR displays:
-   `✓ PRIOR remembered 1 lesson from similar jobs: Material factual claims must include identifiable source links.`
-3. **Contract Review**: The user reviews deliverables, baseline requirements, and Sibyl-derived learned requirements.
-4. **Execution**: The provider executes research with real Wikipedia API lookups and source citations.
-5. **Evaluation**: User accepts or rejects the deliverable.
-6. **Reusable Lesson**: If rejected with a reason, PRIOR formulates a reusable rule. The user approves, edits, or ignores it.
-7. **Sibyl Persistence**: Approved lessons are saved immediately to Sibyl and enforced in all future jobs.
+1. **Natural Request**: User enters a research or review need (e.g. *"Research the top five decentralized exchanges"*, or a transaction-approval security review).
+2. **Memory Check**: PRIOR queries Sibyl. If prior rejections produced lessons in this domain, PRIOR displays them and adds them to the new contract.
+3. **Contract Review**: The user reviews what the agent will get and what it must follow, including Sibyl-derived learned requirements.
+4. **Agent Match**: PRIOR selects a live Virtuals ACP offering with scored compatibility evidence and freezes the agent, offering, network, and price in a plan the user confirms. Nothing is hired until the user confirms.
+5. **Execution**: The hired agent executes against the brief, which carries the full request plus every learned requirement.
+6. **Evaluation**: User accepts or rejects the deliverable. Funding a paid job is a separate explicit confirmation (public safety limit: 0.50 USDC per job, 1.00 USDC deployment pool).
+7. **Reusable Lesson**: If rejected with a reason, PRIOR formulates a reusable rule. The user approves, edits, or ignores it.
+8. **Sibyl Persistence**: Approved lessons are saved immediately to Sibyl and enforced in all future jobs.
 
 ---
 
@@ -59,7 +59,15 @@ JOB 2 (DEXs)       -> Sibyl Query  -> Contract Mutates (baseline=false) -> Worke
 | --- | --- | --- |
 | **Sibyl Memory** | **VERIFIED (Load-Bearing)** | SQLite WARM entities (`category="lesson"`), tenant-scoped search, verified across isolated OS processes in [`evidence/fresh-session-prior.json`](evidence/fresh-session-prior.json). |
 | **Base** | **VERIFIED (B20 Read)** | Live `eth_call` read against Base B20 Policy Registry (`policyExists(0) == true`) and Factory, verified on mainnet & Sepolia in [`evidence/base-b20-read.json`](evidence/base-b20-read.json). |
-| **Virtuals ACP** | **NOT VERIFIED (Adapter Prepared)** | `@virtuals-protocol/acp-node-v2` v0.1.12 adapter in [`src/prior/providers/virtuals.py`](src/prior/providers/virtuals.py), with live validation in [`scripts/verify_virtuals_acp.py`](scripts/verify_virtuals_acp.py). Unconfigured runs fail honestly without faking. |
+| **Virtuals ACP** | **VERIFIED (Real Paid Lifecycle)** | Live marketplace selection, real ACP job creation, seller budget, explicit user funding (0.03 USDC), external execution, retrieved seller deliverable, and human review, all against production. |
+
+### The honest Virtuals story
+
+PRIOR completed a real paid ACP lifecycle end to end: dynamic selection picked a transaction-review specialist, the frozen plan carried the Sibyl-derived requirement into the worker payload, the seller posted a budget, the owner explicitly funded 0.03 USDC, the seller submitted, and PRIOR retrieved the deliverable for review.
+
+The seller's answer was low quality: it marked supplied transaction fields as unknown, directly contradicting the remembered requirement PRIOR had transmitted. That failure is the point, not a footnote. PRIOR records verdicts independently of the marketplace outcome, proposes a lesson from the rejection reason, and the next contract carries it. Human review and lesson learning exist precisely because external workers can be wrong.
+
+*Honest scope*: funding is observed via the funded ACP session state and the buyer wallet balance movement recorded during UAT; PRIOR does not display a transaction hash it did not capture. Paid jobs require explicit user confirmation and respect the public 0.50 USDC per-job and 1.00 USDC pool ceilings.
 
 ### Base Integration Details
 - **Mechanism**: PRIOR performs a live B20 Policy Registry read on Base.
@@ -73,7 +81,7 @@ JOB 2 (DEXs)       -> Sibyl Query  -> Contract Mutates (baseline=false) -> Worke
 
 ## Stable Deployment
 
-The live app runs on a VPS at [`prior.103-195-188-198.sslip.io`](https://prior.103-195-188-198.sslip.io), with HTTPS terminated by Caddy and the FastAPI process supervised by `systemd` (`deploy/prior.service`). The laptop and its development tunnel are not required. Sibyl's SQLite database persists at `/var/lib/prior`, and the local research provider is explicitly labelled `Network: Local`.
+The live app runs on a VPS at [`prior.103-195-188-198.sslip.io`](https://prior.103-195-188-198.sslip.io), with HTTPS terminated by Caddy and the FastAPI process supervised by `systemd` (`deploy/prior.service`). The laptop and its development tunnel are not required. Sibyl's SQLite database persists at `/var/lib/prior`, and the local research provider is explicitly labelled `Network: Local` and is only the development fallback; production hires registered Virtuals ACP agents.
 
 The deployed application revision is exposed by `/api/health` as `build_commit` and recorded in the stable deployment evidence, so judges can compare it with the public repository history.
 
@@ -101,12 +109,12 @@ cd acp-bridge && npm install && cd ..
 
 # Configure environment
 cp .env.example .env
-# Set PRIOR_LOCAL_PROVIDER=true in .env for the local Wikipedia-backed demo.
+# Set PRIOR_LOCAL_PROVIDER=true in .env for the local research-agent demo.
 
 # Run self-check doctor
 python -m prior.doctor
 
-# Run test suite (30 tests)
+# Run test suite (431 tests collected)
 python -m pytest
 
 # Run server
@@ -123,21 +131,7 @@ Visit **http://127.0.0.1:8787** in your browser.
 python -m pytest
 ```
 
-```
-collected 30 items
-
-tests/test_base_action.py ..                                             [  7%]
-tests/test_contract.py ...                                               [ 17%]
-tests/test_failures.py ...                                               [ 27%]
-tests/test_job_spec.py .....                                             [ 43%]
-tests/test_lessons.py ....                                               [ 57%]
-tests/test_loop.py ..                                                    [ 63%]
-tests/test_memory_persistence.py ....                                    [ 77%]
-tests/test_providers.py ....                                             [ 90%]
-tests/test_scoping.py ...                                                [100%]
-
-============================== 30 passed ================================
-```
+431 tests collected (`pytest --collect-only`); the suite covers the memory loop, contract routing, marketplace semantic-fit selection, the paid hire/fund lifecycle with spend-policy guards, frontend behavior harnesses, auth/scoping isolation, and failure/ambiguity handling.
 
 ---
 
@@ -147,25 +141,52 @@ tests/test_scoping.py ...                                                [100%]
 prior/
 ├── src/prior/
 │   ├── app.py              # FastAPI application (REST API & static routes)
-│   ├── memory.py           # Sibyl Memory client wrapper (write_lesson, recall_lessons)
+│   ├── service.py          # Core workflow coordinator (specify/hire/fund/review/lessons)
+│   ├── hiring.py           # Frozen hire/fund intents, preflight, spend policy, idempotency
+│   ├── marketplace.py      # Dynamic selection: compatibility gates, scoring, price cap
+│   ├── job_spec.py         # Natural language job normalization + review routing
 │   ├── contract.py         # Dynamic contract builder with learned rules
 │   ├── lessons.py          # Lesson proposer, duplicate check & domain matching
-│   ├── job_spec.py         # Natural language job normalization
+│   ├── memory.py           # Sibyl Memory client wrapper (write_lesson, recall_lessons)
+│   ├── auth.py             # Guest workspaces, Google/email identity, handoff tokens
+│   ├── handoff.py          # Single-use owner-UAT workspace handoff
 │   ├── base_action.py      # Base B20 Policy Registry onchain read
 │   ├── research.py         # Real Wikipedia API research worker
-│   ├── service.py          # Core workflow coordinator
-│   ├── settings.py         # Environment configuration
+│   ├── settings.py         # Environment configuration incl. public spend policy
 │   ├── providers/
 │   │   ├── base.py         # Provider interface & requirement payload constructor
 │   │   ├── local.py        # Local development provider (truthfully labelled)
-│   │   └── virtuals.py     # Virtuals ACP v2 adapter
-│   └── static/             # Clean, responsive consumer web UI
+│   │   └── virtuals.py     # Virtuals ACP v2 adapter (live paid path)
+│   └── static/             # Consumer web UI
 ├── acp-bridge/             # Node.js ACP v2 integration (@virtuals-protocol/acp-node-v2)
-├── evidence/               # Cryptographic and empirical verification files
+├── evidence/               # Empirical verification files
 ├── scripts/                # Fresh-session, Base B20, Virtuals ACP, and live loop scripts
-├── tests/                  # 30 unit & integration tests
-└── docs/                   # Product specifications, demo scripts & status notes
+├── tests/                  # Pytest suite + plain-node frontend harnesses
+└── docs/                   # Product specifications, demo script & submission pack
 ```
+
+---
+
+## How I tried to break it
+
+| Input | Result |
+| --- | --- |
+| Happy path: reject a deliverable, approve the lesson, submit a related job | New contract carries the approved requirement; worker payload includes it |
+| Seller returns content contradicting the transmitted requirement | Human review records the failure independently of the marketplace outcome; lesson proposed from the reason |
+| Over-limit worker wins ranking on name/rating | Rejected before hire: compatibility is semantic-first, price-capped at 0.50 USDC per job |
+| Source-code-only auditor offered for a transaction review | Refused at selection; transaction specialist selected instead |
+| Duplicate hire/fund clicks, concurrent poll vs prepare | Single create, single fund: idempotency keys plus atomic claims; refresh never clobbers prepared intents |
+| Expired ACP session with a pending review | Funding refused; UI shows the timeout truthfully; no auto-retry, no fake completion |
+| Missing/expired auth, wrong workspace | 404/denied; workspaces never leak across tenants |
+| Malformed spend-policy configuration | Fail closed: hires and funding refuse with a plain-language message |
+
+Key invariant: **a transport or timing failure never fabricates a business state, and a placeholder is never presented as a worker's deliverable.**
+
+---
+
+## Platform feedback
+
+PRIOR is built directly on the official `@virtuals-protocol/acp-node-v2` SDK (marketplace discovery, offering jobs, budgets, funding, submission history) and the Sibyl memory client (WARM entities, tenant-scoped FTS5 search). No issues were filed against either platform during the build; integration gaps found (deliverable location in `job.submitted` history events, single-flight UI polling, stale-bundle cache delivery) were fixed in PRIOR's own adapter and UI layers.
 
 ---
 
